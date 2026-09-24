@@ -1,9 +1,4 @@
-"""Analysis domain tool definitions.
-
-The ``analyze_performance_trends`` and ``compare_similar_workouts`` schemas carry
-nested array properties (``minItems``/``maxItems``) that the standard schema
-normalization cannot reproduce, so they use ``input_schema_override``.
-"""
+"""Analysis domain tool definitions."""
 
 from __future__ import annotations
 
@@ -65,21 +60,17 @@ class AnalyzePerformanceTrendsParams(BaseModel):
         description=(
             "pace (s/km), heart_rate, cadence, power, vertical_oscillation, "
             "ground_contact_time, vertical_ratio or elevation_gain (mean per-lap "
-            "gain); distance and training_effect are accepted but always return "
-            "insufficient_data"
+            "gain); any other value returns an error listing these"
         )
     )
     start_date: str = Field(
-        description="Echoed in the result only; does not filter (choose activity_ids)"
+        description="Inclusive start (YYYY-MM-DD); activities dated earlier are dropped"
     )
     end_date: str = Field(
-        description="Echoed in the result only; does not filter (choose activity_ids)"
+        description="Inclusive end (YYYY-MM-DD); activities dated later are dropped"
     )
     activity_ids: list[int] = Field(
-        description="Activities to include; this list alone defines the sample"
-    )
-    activity_type: str | None = Field(
-        default=None, description="Not supported; any value raises an error"
+        description="Activities to consider; only those dated in the window are used"
     )
     temperature_range: (
         Annotated[list[float], Field(min_length=2, max_length=2)] | None
@@ -119,24 +110,6 @@ class GetHeatAdjustedTrendParams(BaseModel):
     )
 
 
-class ExtractInsightsParams(BaseModel):
-    """Arguments for ``extract_insights``.
-
-    NOTE: ``activity_id`` is a deliberately *internal* validation field used by
-    the handler but intentionally absent from the documented MCP surface (the
-    original hand schema never exposed it). Deriving the schema would surface
-    ``activity_id`` and break byte-parity, so this tool keeps an
-    ``input_schema_override`` (the one remaining override).
-    """
-
-    keywords: list[str]
-    activity_id: int | None = None
-    section_types: list[str] | None = None
-    limit: int = 10
-    offset: int = 0
-    max_tokens: int | None = None
-
-
 class CompareSimilarWorkoutsParams(BaseModel):
     """Arguments for ``compare_similar_workouts``."""
 
@@ -157,9 +130,6 @@ class CompareSimilarWorkoutsParams(BaseModel):
         default=None,
         description="Distance tolerance as fraction (default 0.2 = ±20%)",
     )
-    terrain_match: bool | None = Field(
-        default=None, description="Accepted but currently ignored"
-    )
     activity_type_filter: str | None = Field(
         default=None,
         description="Substring matched against activity_name (SQL LIKE), not a workout type",
@@ -171,55 +141,6 @@ class CompareSimilarWorkoutsParams(BaseModel):
     limit: int | None = Field(
         default=None, description="Maximum number of results (default 10)"
     )
-
-
-# ----------------------------------------------------------------------------
-# Remaining hand-written inputSchema override.
-#
-# Only ``extract_insights`` keeps an override: its params model carries an
-# internal ``activity_id`` validation field that the documented MCP surface
-# intentionally hides, so a derived schema would not be byte-identical.
-# ----------------------------------------------------------------------------
-
-_EXTRACT_INSIGHTS_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "keywords": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": (
-                "Top-level analysis_data field names; a row matches when any is "
-                "non-empty. run_note: story, good_points, growth_points, "
-                "next_challenge, next_challenge_evidence, timeline, notes, question. "
-                "key_strengths / improvement_areas / efficiency / evaluation / "
-                "environmental_impact exist only on legacy rows"
-            ),
-        },
-        "section_types": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": (
-                "Restrict to these section types (run_note, or legacy "
-                "efficiency/environment/phase/split/summary)"
-            ),
-        },
-        "limit": {
-            "type": "integer",
-            "description": "Maximum number of results (default: 10)",
-            "default": 10,
-        },
-        "offset": {
-            "type": "integer",
-            "description": "Number of results to skip (default: 0)",
-            "default": 0,
-        },
-        "max_tokens": {
-            "type": "integer",
-            "description": "Ignored by this tool; page with limit/offset",
-        },
-    },
-    "required": ["keywords"],
-}
 
 
 # ----------------------------------------------------------------------------
@@ -297,15 +218,17 @@ def _analyze_performance_trends(
         else None
     )
 
-    return trend_analyzer.analyze_metric_trend(
-        metric=p.metric,
-        start_date=p.start_date,
-        end_date=p.end_date,
-        activity_ids=p.activity_ids,
-        activity_type=p.activity_type,
-        temperature_range=temperature_range,
-        distance_range=distance_range,
-    )
+    try:
+        return trend_analyzer.analyze_metric_trend(
+            metric=p.metric,
+            start_date=p.start_date,
+            end_date=p.end_date,
+            activity_ids=p.activity_ids,
+            temperature_range=temperature_range,
+            distance_range=distance_range,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
 
 
 def _get_heat_adjusted_trend(
@@ -316,25 +239,6 @@ def _get_heat_adjusted_trend(
         start_date=p.start_date,
         end_date=p.end_date,
         ref_temp_c=p.ref_temp_c if p.ref_temp_c is not None else 15.0,
-    )
-
-
-def _extract_insights(reader: GarminDBReader, p: ExtractInsightsParams) -> Any:
-    from garmin_mcp.rag.queries.insights import InsightExtractor
-
-    insight_extractor = InsightExtractor()
-
-    if p.activity_id is not None:
-        return insight_extractor.extract_insights(
-            activity_id=p.activity_id,
-            keywords=p.keywords,
-            max_tokens=p.max_tokens,
-        )
-    return insight_extractor.search_by_keywords(
-        keywords=p.keywords,
-        section_types=p.section_types,
-        limit=p.limit,
-        offset=p.offset,
     )
 
 
@@ -354,7 +258,6 @@ def _compare_similar_workouts(
         distance_tolerance=(
             p.distance_tolerance if p.distance_tolerance is not None else 0.2
         ),
-        terrain_match=p.terrain_match if p.terrain_match is not None else False,
         activity_type_filter=p.activity_type_filter,
         date_range=date_range,
         limit=p.limit if p.limit is not None else 10,
@@ -419,13 +322,16 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="analyze_performance_trends",
         description=(
-            "Linear trend of one metric across the given activity_ids: each "
-            "activity contributes the unweighted mean of the metric over its "
-            "laps, regressed on elapsed days. Returns metric, trend (stable when "
-            "p>0.05, insufficient_data under 3 points), slope (metric units per "
-            "day), correlation, p_value, data_points, start_date, end_date. Only "
-            "pace treats a falling value as improving; for every other metric a "
-            "rising value is labelled improving, so read the slope sign."
+            "Linear trend of one metric across the activity_ids dated within "
+            "start_date..end_date: each activity contributes the unweighted mean "
+            "of the metric over its laps, regressed on elapsed days. Returns "
+            "metric, trend, slope (metric units per day), correlation, p_value, "
+            "data_points, start_date, end_date. trend is stable when p>0.05 and "
+            "insufficient_data under 3 points. Otherwise pace, "
+            "ground_contact_time, vertical_oscillation and vertical_ratio "
+            "(lower is better) read improving / declining, while heart_rate, "
+            "power, cadence and elevation_gain, which are not comparable across "
+            "runs at different paces, read only increasing / decreasing."
         ),
         params=AnalyzePerformanceTrendsParams,
         handler=_analyze_performance_trends,
@@ -450,32 +356,17 @@ ANALYSIS_TOOLS: list[ToolDef] = [
         cli_name="heat-adjusted-trend",
     ),
     ToolDef(
-        name="extract_insights",
-        description=(
-            "List stored section_analyses rows whose analysis_data has a non-empty "
-            "top-level field named in keywords (a field-name match, not a text "
-            "search). Returns a list of {activity_id, activity_date, section_type, "
-            "analysis_data} with the whole JSON, newest first, paged by "
-            "limit/offset; every stored version is returned, not just the latest. "
-            "run_note fields are story, good_points, growth_points, "
-            "next_challenge, timeline, notes, question."
-        ),
-        params=ExtractInsightsParams,
-        handler=_extract_insights,
-        cli_group="analysis",
-        cli_name="extract-insights",
-        input_schema_override=_EXTRACT_INSIGHTS_SCHEMA,
-    ),
-    ToolDef(
         name="compare_similar_workouts",
         description=(
-            "Find other activities whose whole-run average pace and total distance "
-            "are within tolerance of the target, ordered by pace closeness then "
-            "recency. Returns target_activity and similar_activities[] with "
-            "training_type, temperature and its diff, similarity_score (0-100: "
-            "pace 45%, distance 35%, training type 20%), pace_diff (s/km) and "
-            "hr_diff (bpm) as candidate minus target, and a Japanese "
-            "interpretation. Candidates may be dated after the target."
+            "Find earlier activities whose whole-run average pace and total "
+            "distance are within tolerance of the target, ordered by pace "
+            "closeness then recency. Only runs that started before the target "
+            "are candidates (an earlier date, or the same date with an earlier "
+            "start), so an old run is never compared with later ones. Returns "
+            "target_activity and similar_activities[] with training_type, "
+            "temperature and its diff, similarity_score (0-100: pace 45%, "
+            "distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) "
+            "as candidate minus target, and a Japanese interpretation."
         ),
         params=CompareSimilarWorkoutsParams,
         handler=_compare_similar_workouts,

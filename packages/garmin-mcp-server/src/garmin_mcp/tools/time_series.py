@@ -24,8 +24,9 @@ _METRICS_DESCRIPTION = (
 )
 
 _FORM_DESCRIPTOR_METRICS = (
-    "Garmin descriptor keys: directGroundContactTime, directVerticalOscillation, "
-    "directVerticalRatio (the default); short names such as GCT match nothing"
+    "Garmin descriptor keys directGroundContactTime, directVerticalOscillation, "
+    "directVerticalRatio (the default) or the short names GCT / VO / VR, "
+    "case-insensitive. Unknown names return an error"
 )
 
 # ----------------------------------------------------------------------------
@@ -119,9 +120,10 @@ class FormAnomalyDetailsParams(BaseModel):
     metrics: list[str] | None = Field(
         default=None,
         description=(
-            "Descriptor keys to detect and return (default: "
+            "Form metrics to detect and return: descriptor keys "
             "directGroundContactTime, directVerticalOscillation, "
-            "directVerticalRatio)"
+            "directVerticalRatio (the default) or GCT / VO / VR, "
+            "case-insensitive. Unknown names return an error"
         ),
     )
     z_threshold: float | None = Field(
@@ -137,7 +139,10 @@ class FormAnomalyDetailsParams(BaseModel):
     )
     sort_by: Literal["z_score", "timestamp"] = Field(
         default="z_score",
-        description="Currently ignored; results are sorted by |z_score| descending",
+        description=(
+            "z_score = |z_score| descending (default), timestamp = ascending; "
+            "applied before limit"
+        ),
     )
 
 
@@ -198,11 +203,16 @@ def _detect_form_anomalies_summary(
     )
 
     detector = FormAnomalyDetector()
-    return detector.detect_form_anomalies_summary(
-        activity_id=p.activity_id,
-        metrics=p.metrics,
-        z_threshold=p.z_threshold if p.z_threshold is not None else DEFAULT_Z_THRESHOLD,
-    )
+    try:
+        return detector.detect_form_anomalies_summary(
+            activity_id=p.activity_id,
+            metrics=p.metrics,
+            z_threshold=(
+                p.z_threshold if p.z_threshold is not None else DEFAULT_Z_THRESHOLD
+            ),
+        )
+    except ValueError as e:
+        return {"error": str(e)}
 
 
 def _get_form_anomaly_details(
@@ -226,14 +236,20 @@ def _get_form_anomaly_details(
         filters["min_z_score"] = p.z_threshold
     if p.causes is not None:
         filters["causes"] = p.causes
+    filters["sort_by"] = p.sort_by
     filters["limit"] = p.limit
 
-    return detector.get_form_anomaly_details(
-        activity_id=p.activity_id,
-        metrics=p.metrics,
-        z_threshold=p.z_threshold if p.z_threshold is not None else DEFAULT_Z_THRESHOLD,
-        filters=filters if filters else None,
-    )
+    try:
+        return detector.get_form_anomaly_details(
+            activity_id=p.activity_id,
+            metrics=p.metrics,
+            z_threshold=(
+                p.z_threshold if p.z_threshold is not None else DEFAULT_Z_THRESHOLD
+            ),
+            filters=filters,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
 
 
 TIME_SERIES_TOOLS: list[ToolDef] = [
@@ -293,8 +309,8 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
             "value, baseline (rolling mean), z_score, probable_cause "
             "(elevation_change/pace_change/fatigue/isolated), cause_details and "
             "30 s before/after context. Returns total_anomalies, "
-            "returned_anomalies and anomalies sorted by absolute z_score, "
-            "descending, capped by limit."
+            "returned_anomalies and anomalies ordered by sort_by (absolute "
+            "z_score descending, or timestamp ascending), capped by limit."
         ),
         params=FormAnomalyDetailsParams,
         handler=_get_form_anomaly_details,

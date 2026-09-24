@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -88,9 +88,17 @@ class ExportManager:
 
         return {
             "handle": handle,
-            "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
+            "expires_at": datetime.fromtimestamp(expires_at, tz=UTC).isoformat(),
             "size_mb": file_path.stat().st_size / (1024 * 1024),
         }
+
+    def discard_export_handle(self, handle: str) -> None:
+        """Forget a handle whose export produced no file (e.g. an empty result).
+
+        Args:
+            handle: Export file path returned by ``create_export_handle``
+        """
+        self._remove_export(handle)
 
     def _remove_export(self, handle: str) -> None:
         """Remove export file and tracking entry.

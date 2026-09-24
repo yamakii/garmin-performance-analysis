@@ -129,6 +129,66 @@ class TestExportSuccess:
         assert len(result) == 1
         assert result[0].type == "text"
 
+    @pytest.mark.asyncio
+    async def test_export_expires_at_is_utc_aware(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        expires_at = datetime.datetime(
+            2025, 1, 1, 12, 30, tzinfo=datetime.UTC
+        ).timestamp()
+        mock_export_mgr = MagicMock()
+        mock_export_mgr.create_export_handle.return_value = (
+            "/tmp/f.parquet",
+            "h",
+            expires_at,
+        )
+        mocker.patch(
+            "garmin_mcp.mcp_server.export_manager.get_export_manager",
+            return_value=mock_export_mgr,
+        )
+        mock_db_reader.export_query_result.return_value = {
+            "rows": 3,
+            "size_mb": 0.0,
+            "columns": ["a"],
+        }
+
+        result = dispatch_tool(mock_db_reader, "export", {"query": "SELECT 1"})
+
+        value = json.loads(result[0].text)["expires_at"]
+        assert value.endswith(("+00:00", "Z"))
+        parsed = datetime.datetime.fromisoformat(value)
+        assert parsed.utcoffset() == datetime.timedelta(0)
+        assert parsed == datetime.datetime(2025, 1, 1, 12, 30, tzinfo=datetime.UTC)
+
+
+@pytest.mark.unit
+def test_export_empty_result_has_no_handle(mock_db_reader: MagicMock, tmp_path) -> None:
+    """rows == 0 -> handle None, no file written, the handle is released."""
+    from garmin_mcp.mcp_server.export_manager import ExportManager
+
+    manager = ExportManager(export_dir=tmp_path)
+    mock_db_reader.export_query_result.return_value = {
+        "rows": 0,
+        "size_mb": 0.0,
+        "columns": [],
+    }
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            "garmin_mcp.mcp_server.export_manager.get_export_manager",
+            lambda: manager,
+        )
+        result = dispatch_tool(
+            mock_db_reader, "export", {"query": "SELECT 1 WHERE false"}
+        )
+
+    data = json.loads(result[0].text)
+    assert data["rows"] == 0
+    assert data["handle"] is None
+    assert data["expires_at"] is None
+    assert list(tmp_path.iterdir()) == []
+    assert manager._exports == {}
+
 
 @pytest.mark.unit
 class TestExportValueError:

@@ -78,7 +78,6 @@ SAMPLE_DATA = {
         "activity_id": 12345,
         "vo2_max": 52.3,
         "fitness_age": 28,
-        "category": "Excellent",
     },
     "get_lactate_threshold_data": {
         "activity_id": 12345,

@@ -2,11 +2,77 @@
 
 import json
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
+import duckdb
 import pytest
 
 from garmin_mcp.rag.queries.comparisons import WorkoutComparator
+
+
+def _insert_activity(
+    db_path: Path,
+    activity_id: int,
+    activity_date: str,
+    start_time_local: str,
+    pace: float = 360.0,
+    distance_km: float = 8.0,
+) -> None:
+    conn = duckdb.connect(str(db_path))
+    conn.execute(
+        """
+        INSERT INTO activities (
+            activity_id, activity_date, activity_name, start_time_local,
+            total_distance_km, avg_pace_seconds_per_km, avg_heart_rate
+        ) VALUES (?, ?, 'Run', ?, ?, ?, 145)
+        """,
+        [activity_id, activity_date, start_time_local, distance_km, pace],
+    )
+    conn.close()
+
+
+@pytest.mark.integration
+class TestSimilarWorkoutsPastOnly:
+    """Candidates are restricted to runs that started before the target (#1378)."""
+
+    def test_similar_excludes_runs_after_target(self, initialized_db_path: Path):
+        """Target 2026-06-10; candidates 06-01 and 06-20 -> only 06-01."""
+        _insert_activity(
+            initialized_db_path, 913780010, "2026-06-10", "2026-06-10 07:00:00"
+        )
+        _insert_activity(
+            initialized_db_path, 913780001, "2026-06-01", "2026-06-01 07:00:00"
+        )
+        _insert_activity(
+            initialized_db_path, 913780020, "2026-06-20", "2026-06-20 07:00:00"
+        )
+
+        result = WorkoutComparator(str(initialized_db_path)).find_similar_workouts(
+            913780010
+        )
+
+        ids = [a["activity_id"] for a in result["similar_activities"]]
+        assert ids == [913780001]
+
+    def test_similar_same_day_earlier_start_included(self, initialized_db_path: Path):
+        """Same date: an earlier start is a candidate, a later start is not."""
+        _insert_activity(
+            initialized_db_path, 913780110, "2026-06-10", "2026-06-10 12:00:00"
+        )
+        _insert_activity(
+            initialized_db_path, 913780101, "2026-06-10", "2026-06-10 06:30:00"
+        )
+        _insert_activity(
+            initialized_db_path, 913780120, "2026-06-10", "2026-06-10 18:00:00"
+        )
+
+        result = WorkoutComparator(str(initialized_db_path)).find_similar_workouts(
+            913780110
+        )
+
+        ids = [a["activity_id"] for a in result["similar_activities"]]
+        assert ids == [913780101]
 
 
 @pytest.mark.unit
@@ -133,28 +199,6 @@ class TestWorkoutComparator:
 
         assert result is not None
         assert len(result["similar_activities"]) == 1
-
-    def test_find_similar_workouts_with_terrain_match(self, comparator):
-        """Test similar workout search with terrain matching."""
-        target_rows = [
-            (12345, "2025-10-01", "Run", 300.0, 150.0, 10.0, 3.5, 0.5, 180.0, 250.0),
-        ]
-
-        similar_rows: list[tuple] = []
-
-        with patch.object(
-            comparator,
-            "_execute_query",
-            side_effect=[target_rows, similar_rows],
-        ):
-            result = comparator.find_similar_workouts(
-                activity_id=12345,
-                pace_tolerance=0.1,
-                distance_tolerance=0.1,
-                terrain_match=True,
-            )
-
-        assert result is not None
 
     def test_find_similar_workouts_with_activity_type_filter(self, comparator):
         """Test similar workout search with activity type filter."""

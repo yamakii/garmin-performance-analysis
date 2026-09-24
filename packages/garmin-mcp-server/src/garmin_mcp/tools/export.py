@@ -10,7 +10,7 @@ previous hand-written schemas in ``tool_schemas.py``).
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -59,13 +59,25 @@ def _run_export(reader: GarminDBReader, p: ExportParams) -> dict[str, Any]:
         )
         query_duration = time.monotonic() - query_start
 
-        result: dict[str, Any] = {
-            "handle": handle,
-            "rows": metadata["rows"],
-            "size_mb": metadata["size_mb"],
-            "columns": metadata["columns"],
-            "expires_at": datetime.fromtimestamp(expires_at).isoformat() + "Z",
-        }
+        if metadata["rows"] == 0:
+            # No file is written for an empty result, so there is nothing to
+            # hand back or expire.
+            export_manager.discard_export_handle(handle)
+            result: dict[str, Any] = {
+                "handle": None,
+                "rows": 0,
+                "size_mb": 0.0,
+                "columns": metadata["columns"],
+                "expires_at": None,
+            }
+        else:
+            result = {
+                "handle": handle,
+                "rows": metadata["rows"],
+                "size_mb": metadata["size_mb"],
+                "columns": metadata["columns"],
+                "expires_at": datetime.fromtimestamp(expires_at, tz=UTC).isoformat(),
+            }
 
         if query_duration > 5.0:
             result["_warnings"] = [
@@ -88,9 +100,10 @@ EXPORT_TOOLS: list[ToolDef] = [
             "Run a read-only DuckDB SELECT and write the result to a local parquet "
             "or CSV file instead of returning rows. Returns handle (the file path "
             "under /tmp/garmin_exports, deleted after 1 hour), rows, columns, "
-            "size_mb and expires_at, or error (with a suggestion when rows exceed "
-            "max_rows). Use it for multi-activity analysis read back in Python; "
-            "an empty result writes no file."
+            "size_mb and expires_at (UTC ISO 8601), or error (with a suggestion "
+            "when rows exceed max_rows). Use it for multi-activity analysis read "
+            "back in Python. An empty result writes no file and returns rows=0 "
+            "with handle and expires_at null."
         ),
         params=ExportParams,
         handler=_run_export,

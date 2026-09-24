@@ -335,3 +335,37 @@ class TestGetFormAnomalyDetails:
 
         call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
         assert isinstance(call_kwargs["filters"]["time_range"], tuple)
+
+    @pytest.mark.asyncio
+    async def test_sort_by_passed_to_filters(
+        self, mock_db_reader: MagicMock, mocker: MagicMock
+    ) -> None:
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.form_anomaly_detector.FormAnomalyDetector"
+        )
+        mock_cls.return_value.get_form_anomaly_details.return_value = {}
+
+        dispatch_tool(
+            mock_db_reader,
+            "get_form_anomaly_details",
+            {"activity_id": 12345, "sort_by": "timestamp"},
+        )
+
+        call_kwargs = mock_cls.return_value.get_form_anomaly_details.call_args.kwargs
+        assert call_kwargs["filters"]["sort_by"] == "timestamp"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "tool_name", ["detect_form_anomalies_summary", "get_form_anomaly_details"]
+)
+def test_form_anomaly_tools_return_error_for_unknown_metric(
+    mock_db_reader: MagicMock, tool_name: str
+) -> None:
+    """An unknown metric name is an error payload, not a silent 0 anomalies."""
+    result = dispatch_tool(
+        mock_db_reader, tool_name, {"activity_id": 12345, "metrics": ["foo"]}
+    )
+
+    data = json.loads(result[0].text)
+    assert "Unknown form metric(s): foo" in data["error"]

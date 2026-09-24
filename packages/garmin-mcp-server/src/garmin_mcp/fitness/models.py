@@ -54,8 +54,6 @@ class FitnessSummary(BaseModel):
         default_factory=dict,
         description="Distribution of training types (e.g., {'easy': 0.6, 'tempo': 0.2})",
     )
-    strengths: list[str] = Field(default_factory=list)
-    weaknesses: list[str] = Field(default_factory=list)
     gap_detected: bool = Field(
         default=False, description="Whether a training gap (7+ days) was detected"
     )

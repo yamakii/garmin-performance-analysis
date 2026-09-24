@@ -205,7 +205,6 @@
     "weight": "float"
   },
   "get_vo2_max_data": {
-    "category": "str",
     "date": "str",
     "precise_value": "float",
     "value": "float"

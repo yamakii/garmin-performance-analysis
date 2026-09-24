@@ -45,3 +45,14 @@ def test_get_current_fitness_summary_still_works(initialized_db_path: Path) -> N
     assert data["vdot"] > 0
     assert data["pace_zones"] is not None
     assert data["weekly_volume_km"] == pytest.approx(1.2)  # 10km / 8 weeks
+    assert "strengths" not in data
+    assert "weaknesses" not in data
+
+
+@pytest.mark.unit
+def test_fitness_summary_has_no_strengths_weaknesses() -> None:
+    """The always-empty strengths / weaknesses fields are gone (#1378)."""
+    from garmin_mcp.fitness.models import FitnessSummary
+
+    assert "strengths" not in FitnessSummary.model_fields
+    assert "weaknesses" not in FitnessSummary.model_fields

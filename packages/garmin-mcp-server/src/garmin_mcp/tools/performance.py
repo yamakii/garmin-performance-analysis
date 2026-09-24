@@ -54,9 +54,8 @@ PERFORMANCE_TOOLS: list[ToolDef] = [
             "fraction), hr_drift_percentage (half-vs-half decoupling for steady "
             "runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr "
             "per phase (warmup, run, cooldown, plus recovery for intervals). "
-            "cadence_consistency and fatigue_pattern are fixed placeholders "
-            "(安定 / 適切). Null when missing. get_activity_durability gives the "
-            "time-series decoupling."
+            "Null when missing. get_activity_durability gives the time-series "
+            "decoupling."
         ),
         params=ActivityIdParams,
         handler=_get_performance_trends,
@@ -82,7 +81,8 @@ PERFORMANCE_TOOLS: list[ToolDef] = [
         name="prefetch_activity_context",
         description=(
             "Pre-fetch the context a run report does not carry, in a single "
-            "call: training_type, the shoe worn (gear), similar_workouts, the "
+            "call: training_type, the shoe worn (gear), similar_workouts "
+            "(earlier runs only), the "
             "long_run_gate verdict (runs >= 10 km) and the prescription vs "
             "actual layer (that day's prescription, week_position, "
             "previous_same_type + vs_previous and morning_wellness). The run "

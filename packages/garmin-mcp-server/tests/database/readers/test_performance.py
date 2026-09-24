@@ -2,11 +2,10 @@
 
 Covers get_performance_trends (phase parsing, recovery_phase presence),
 get_weather_data (unit conversions, NULL handling),
-and get_section_analysis (deprecation, size limit).
+and find_unanalyzed_activities.
 """
 
 import json
-import warnings
 from pathlib import Path
 
 import duckdb
@@ -88,6 +87,18 @@ class TestGetPerformanceTrends:
         result = perf_reader.get_performance_trends(ACTIVITY_ID)
         assert result is not None
         assert result["pace_consistency"] == 0.92
+
+    def test_performance_trends_reader_omits_placeholders(
+        self, perf_reader: PerformanceReader
+    ):
+        """cadence_consistency / fatigue_pattern never reach the tool output."""
+        result = perf_reader.get_performance_trends(ACTIVITY_ID)
+        assert result is not None
+        assert "cadence_consistency" not in result
+        assert "fatigue_pattern" not in result
+        assert result["hr_drift_percentage"] == 2.5
+        assert result["run_phase"] == {"avg_pace": 300.0, "avg_hr": 155.0}
+        assert result["cooldown_phase"] == {"avg_pace": 420.0, "avg_hr": 125.0}
 
     def test_no_recovery_phase_when_null(self, perf_reader: PerformanceReader):
         """3-phase activity should NOT have recovery_phase key."""
@@ -185,94 +196,6 @@ class TestGetWeatherData:
 
     def test_missing_activity(self, perf_reader: PerformanceReader):
         assert perf_reader.get_weather_data(MISSING_ID) is None
-
-
-# ---------------------------------------------------------------------------
-# get_section_analysis
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetSectionAnalysis:
-    """Tests for PerformanceReader.get_section_analysis()."""
-
-    def test_deprecation_warning(self, perf_reader: PerformanceReader):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            perf_reader.get_section_analysis(ACTIVITY_ID, "phase")
-            assert len(w) == 1
-            assert issubclass(w[0].category, DeprecationWarning)
-
-    def test_returns_parsed_json(self, perf_reader: PerformanceReader):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            result = perf_reader.get_section_analysis(ACTIVITY_ID, "phase")
-        assert result is not None
-        assert result["rating"] == "****"
-
-    def test_max_output_size_exceeded(self, perf_reader: PerformanceReader):
-        with (
-            pytest.raises(ValueError, match="exceeds max_output_size"),
-            warnings.catch_warnings(),
-        ):
-            warnings.simplefilter("ignore", DeprecationWarning)
-            perf_reader.get_section_analysis(ACTIVITY_ID, "phase", max_output_size=5)
-
-    def test_missing_section(self, perf_reader: PerformanceReader):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            result = perf_reader.get_section_analysis(ACTIVITY_ID, "nonexistent")
-        assert result is None
-
-    def test_reader_returns_latest_version(self, reader_db_path: Path):
-        """With multiple versions of a section, the newest one is returned.
-
-        Append-only storage (#720) keeps every version; the reader resolves the
-        canonical result via ORDER BY created_at DESC.
-        """
-        conn = duckdb.connect(str(reader_db_path))
-        conn.execute(
-            "INSERT INTO activities (activity_id, activity_date) VALUES (?, ?)",
-            [ACTIVITY_ID, "2025-06-15"],
-        )
-        # Two versions of the same section, created 1 minute apart.
-        conn.execute(
-            """INSERT INTO section_analyses
-               (analysis_id, activity_id, activity_date, section_type,
-                analysis_data, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            [
-                10,
-                ACTIVITY_ID,
-                "2025-06-15",
-                "efficiency",
-                json.dumps({"summary": "old"}),
-                "2025-06-15 12:00:00",
-            ],
-        )
-        conn.execute(
-            """INSERT INTO section_analyses
-               (analysis_id, activity_id, activity_date, section_type,
-                analysis_data, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            [
-                11,
-                ACTIVITY_ID,
-                "2025-06-15",
-                "efficiency",
-                json.dumps({"summary": "new"}),
-                "2025-06-15 12:01:00",
-            ],
-        )
-        conn.close()
-
-        reader = PerformanceReader(db_path=str(reader_db_path))
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            result = reader.get_section_analysis(ACTIVITY_ID, "efficiency")
-
-        assert result is not None
-        assert result["summary"] == "new"
 
 
 # ---------------------------------------------------------------------------
