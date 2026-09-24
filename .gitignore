@@ -96,3 +96,9 @@ build/
 
 # Serena MCP
 .serena/
+
+# Eval outputs (claude-api hillclimb layout): model outputs, traces and CONTEXT copies hold athlete data
+.claude/hillclimb/*/baseline/
+.claude/hillclimb/*/v[0-9]*/
+.claude/hillclimb/*/report.html
+.claude/hillclimb/*/trajectory/
