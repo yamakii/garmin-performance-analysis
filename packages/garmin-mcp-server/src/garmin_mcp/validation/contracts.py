@@ -150,6 +150,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "afterwards, HRV is 「心拍変動」 and RHR is 「安静時心拍」",
             "Every rep's pace and heart rate one by one -- the steps table "
             "shows them; a rep session is narrated as a set",
+            "A blanket 'every signal is within range' when some signals are "
+            "status insufficient -- those were not judged; say the judged "
+            "ones are within range, or name which were judged",
         ],
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
