@@ -38,6 +38,9 @@ Output (JSON to stdout, one line):
                                           #   plus gate: the progression verdict
                                           #   for W-1's longest run (null when
                                           #   none reached _LONG_RUN_GATE_MIN_KM)
+                                          # + volume: {consecutive_build_weeks,
+                                          #   last_cutback_weeks_ago} over the
+                                          #   same completed weeks (secondary gate)
       "acwr": {...}|null,
       "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
                                           #   _RECOVERY_SERIES_KEEP_DAYS days
@@ -107,10 +110,12 @@ from typing import Any
 
 from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+    count_consecutive_build_weeks,
     count_long_run_build_weeks,
     detect_garmin_conflicts,
     format_gear_label,
     summarize_adherence,
+    weeks_since_last_cutback,
 )
 from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.connection import get_connection, get_db_path
@@ -277,6 +282,28 @@ def _long_run_gate(
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
         "cutback_due_event_window": in_window and verdict in _EVENT_WINDOW_CUTBACK,
         "event_window": _slim_event_window(window),
+    }
+
+
+def _volume_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str, Any]:
+    """The weekly-volume secondary cutback gate over the weeks before W.
+
+    Same week window as :func:`_long_run_gate`, so W's in-progress bucket never
+    breaks the streak. A week with no load reads as 0 km.
+
+    Returns:
+        ``{"consecutive_build_weeks": int, "last_cutback_weeks_ago": int|None}``
+        from :func:`count_consecutive_build_weeks` and
+        :func:`weeks_since_last_cutback`.
+    """
+    loads = [
+        float(w.get("load_km") or 0.0)
+        for w in (load_trend.get("weeks") or [])
+        if str(w.get("week_start") or "") < week_start_date
+    ]
+    return {
+        "consecutive_build_weeks": count_consecutive_build_weeks(loads),
+        "last_cutback_weeks_ago": weeks_since_last_cutback(loads),
     }
 
 
@@ -642,6 +669,7 @@ def prefetch_weekly_review_context(
     # count, so W's own in-progress bucket cannot zero the streak (Issue #929).
     if isinstance(load_trend, dict):
         load_trend["long_run"] = _long_run_gate(load_trend, week_start_s, event_window)
+        load_trend["volume"] = _volume_gate(load_trend, week_start_s)
         # Secondary gate (Issue #982): did W-1's long run hold the legs
         # together? The review reads the same deterministic verdict the
         # activity summary shows, instead of eyeballing the fade itself.
