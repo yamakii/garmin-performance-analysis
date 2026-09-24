@@ -148,8 +148,28 @@ export function checkNumberGrounding(trend, ctx, promptText = '') {
 }
 
 // ── judge ───────────────────────────────────────────────────────────────
-// Long series (fitness_curve alone is ~43KB) are cut to their head and tail for
-// the judge; exact number existence is the programmatic check's job.
+// Long series (fitness_curve alone is ~43KB) are cut for the judge; exact number
+// existence is the programmatic check's job. Date-keyed series are cut to the
+// 90-day window ending at period_end first - the narration is told to read the
+// curve at the period's position, and prefetch currently returns the curve up to
+// today (not bounded by period_end), so a head/tail cut would hide the very
+// points a correct narration cites.
+export function judgeContext(kase, ctx) {
+  const c = structuredClone(ctx)
+  const end = kase.period_end
+  const start = new Date(Date.parse(`${end}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10)
+  const fc = c.fitness_curve
+  if (fc && typeof fc === 'object') {
+    for (const k of Object.keys(fc)) {
+      const s = fc[k]
+      if (Array.isArray(s) && s.every((p) => p && typeof p.date === 'string'))
+        fc[k] = s.filter((p) => p.date >= start && p.date <= end)
+    }
+    if (fc.optimism_gap) fc.optimism_gap_note = 'optimism_gap is computed at the latest curve date (today), not at period_end'
+  }
+  return trimForJudge(c)
+}
+
 export function trimForJudge(obj) {
   if (Array.isArray(obj)) {
     const a = obj.length > 16 ? [...obj.slice(0, 3), `… ${obj.length - 13} items omitted …`, ...obj.slice(-10)] : obj
@@ -197,7 +217,7 @@ Grade each item independently. "applicable=false" only when the CONTEXT gives th
 small_n: Components with status/direction "insufficient_data" or data_points < 3 are not narrated as trends, and an underpowered "stable" is not called 安定 (it must read as 判定不能/検出力不足 or be left out). Applicable when any such component exists.
 descriptive: (weekly periods only; month → applicable=false) The weekly metric_trends are described as this week's median vs last week (delta_pct) — no regression, slope or p-value talk about them — and durability_trend / heat_adjusted_trend are placed on their trailing window rather than claimed as an in-week regression.
 durability: If the narration speaks about durability: which long run held up best/worst comes from durability_trend.best_run/worst_run (judged by decoupling, lower is better), not re-derived; pace_fade is not called good/粘れた unconditionally; if direction is "worsening" and absolute_assessment.all_within_strong_band is true, it states the absolute durability stays in the strong band (<5% decoupling); a non-null direction_caveat is reflected; if fragile is true and band is not "poor", it does not recommend limiting long-run distance or pace because of the worsening. Applicable when durability_trend has a direction other than insufficient_data, or the narration discusses durability.
-consistent: No statement contradicts a direction, flag, band, value or verdict in the CONTEXT (including headline_metrics and fusion_flags); when headline_metrics.cutback_due_long_run is false, no recommendation prescribes a deload/cutback week (mentioning a past cutback, or that a later cutback decision will come, is fine); the 90-day fitness_curve is not read as collapsing or surging within one week. Always applicable.
+consistent: No statement contradicts a direction, flag, band, value or verdict in the CONTEXT (including headline_metrics and fusion_flags); when headline_metrics.cutback_due_long_run is false, no recommendation prescribes a deload/cutback week (mentioning a past cutback, or that a later cutback decision will come, is fine); the 90-day fitness_curve is not read as collapsing or surging within one week. The fitness_curve series shown are cut to the 90 days ending at period_end; the period's objective VDOT is the curve point at or just before period_end, and a value quoted from optimism_gap (which describes the latest date) is not a contradiction either. Always applicable.
 explains_why: 1 = the narrative explains why the trends moved and how signals relate (load, recovery, durability, heat, fitness) using the CONTEXT; 0.5 = partly, mostly restates values; 0 = only lists numbers or is generic.
 actionable: The recommendations are concrete next actions grounded in this period's CONTEXT (not generic advice such as "keep training consistently").
 
@@ -206,7 +226,7 @@ Each reason: one short sentence in English quoting the narration phrase that dec
 export function judgeUserPrompt(kase, ctx, trend) {
   return (
     `PERIOD: ${kase.granularity} ${kase.period_start}..${kase.period_end}\n\n` +
-    `<context>\n${JSON.stringify(trimForJudge(ctx))}\n</context>\n\n` +
+    `<context>\n${JSON.stringify(judgeContext(kase, ctx))}\n</context>\n\n` +
     `<narration>\n${JSON.stringify(trend?.analysis_data ?? trend ?? null)}\n</narration>`
   )
 }

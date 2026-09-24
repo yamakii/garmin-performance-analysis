@@ -9,6 +9,7 @@ import {
   checkNumberGrounding,
   checkTranscription,
   combine,
+  judgeContext,
   proseNumbers,
 } from '../../hillclimb/trend-narration/grade.mjs'
 
@@ -139,4 +140,17 @@ test('test_combine_judge_failure_fails_rule_pass', () => {
   assert.equal(grade.small_n_ok, null)
   assert.equal(grade.rule_pass, 0)
   assert.equal(grade.explains_why, 0.5)
+})
+
+test('test_judge_context_cuts_fitness_curve_to_period_window', () => {
+  // prefetch returns the curve up to today; the judge must see the period's points
+  const day = (i) => new Date(Date.UTC(2026, 0, 1) + i * 86_400_000).toISOString().slice(0, 10)
+  const curve = Array.from({ length: 300 }, (_, i) => ({ date: day(i), vdot: 30 + i / 100 }))
+  const ctx = { fitness_curve: { objective_curve: curve, optimism_gap: { objective_vdot: 32.99 } } }
+  const j = judgeContext({ ...kase, period_end: '2026-06-07' }, ctx)
+  const dates = j.fitness_curve.objective_curve.filter((p) => typeof p === 'object').map((p) => p.date)
+  assert.equal(dates.at(-1), '2026-06-07')
+  assert.ok(dates.every((d) => d >= '2026-03-10' && d <= '2026-06-07'))
+  assert.match(j.fitness_curve.optimism_gap_note, /latest curve date/)
+  assert.equal(ctx.fitness_curve.objective_curve.length, 300) // input untouched
 })

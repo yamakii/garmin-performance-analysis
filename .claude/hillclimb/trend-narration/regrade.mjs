@@ -4,16 +4,17 @@
 // rows with the current grade.mjs - no model calls. Use after a change to the
 // programmatic graders so every row in a comparison is scored by one version.
 //
-//   node .claude/hillclimb/trend-narration/regrade.mjs <variant> [--context-dir DIR]
+//   node .claude/hillclimb/trend-narration/regrade.mjs <variant> [--context-dir DIR] [--rejudge]
 //
 // Reads <variant>/out/<id>_rep<k>.trend.json and the CONTEXT from
 // <variant>/out/<id>_rep<k>.context.json (or --context-dir/<id>_rep<k>/context.json
-// for runs made before the runner kept it). The judge verdicts are not re-run:
-// their grade values are carried over unchanged.
+// for runs made before the runner kept it). Without --rejudge the judge verdicts
+// are carried over unchanged (no model calls). --rejudge re-runs the judge on
+// every row (model usage: one judge call per row) after a judge-side change.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { combine } from './grade.mjs'
+import { combine, judge } from './grade.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const [variant, ...rest] = process.argv.slice(2)
@@ -23,6 +24,7 @@ if (!variant) {
 }
 const ctxDirIdx = rest.indexOf('--context-dir')
 const ctxDir = ctxDirIdx >= 0 ? rest[ctxDirIdx + 1] : null
+const rejudge = rest.includes('--rejudge')
 
 const src = readFileSync(join(HERE, '../../workflows/trend-narration.js'), 'utf8')
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
@@ -36,7 +38,8 @@ const rows = readFileSync(resultsPath, 'utf8').split('\n').filter(Boolean).map((
 
 const JUDGED = ['small_n_ok', 'descriptive_ok', 'durability_ok', 'consistent', 'explains_why', 'actionable']
 let changed = 0
-const out = rows.map((r) => {
+const out = []
+for (const r of rows) {
   const kase = cases.get(r.prompt_id)
   const stem = `${r.prompt_id}_rep${r.rep}`
   const ctxPath = existsSync(join(vdir, 'out', `${stem}.context.json`))
@@ -58,14 +61,24 @@ const out = rows.map((r) => {
     actionable: { pass: g.actionable === 1, reason: '' },
   }
   const prompt = narrationPrompt({ tempDir: '/tmp/x', periodStart: kase.period_start, periodEnd: kase.period_end, granularity: kase.granularity })
+  if (rejudge) {
+    const j = await judge(kase, ctx, trend)
+    const re = combine(kase, ctx, trend, j, prompt)
+    if (JSON.stringify(re.grade) !== JSON.stringify(g)) changed++
+    out.push({ ...r, grade: re.grade, explanation: re.explanation, judge_model: j.judge_model, judge_usage: j.judge_usage,
+      meta: { ...r.meta, judge_cost_usd: j.judge_cost_usd ?? null, rejudged: new Date().toISOString(),
+        prior_judge_cost_usd: (r.meta?.prior_judge_cost_usd ?? 0) + (r.meta?.judge_cost_usd ?? 0) } })
+    console.error(`  ${stem}: rule_pass ${g.rule_pass} -> ${re.grade.rule_pass}`)
+    continue
+  }
   const re = combine(kase, ctx, trend, { verdict }, prompt)
   const grade = { ...re.grade }
   for (const k of JUDGED) grade[k] = g[k] // judge values carried over exactly
   const explanation = { ...r.explanation }
   for (const k of ['format_ok', 'transcription_ok', 'cutback_ok', 'num_grounded', 'rule_pass']) explanation[k] = re.explanation[k]
   if (JSON.stringify(grade) !== JSON.stringify(g)) changed++
-  return { ...r, grade, explanation, meta: { ...r.meta, regraded: new Date().toISOString() } }
-})
+  out.push({ ...r, grade, explanation, meta: { ...r.meta, regraded: new Date().toISOString() } })
+}
 writeFileSync(`${resultsPath}.tmp`, out.map((r) => JSON.stringify(r)).join('\n') + '\n')
 renameSync(`${resultsPath}.tmp`, resultsPath)
 console.error(`[${variant}] regraded ${rows.length} rows, ${changed} changed`)
