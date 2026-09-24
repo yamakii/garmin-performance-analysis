@@ -31,7 +31,7 @@ Run the full ship workflow for the current changes.
 
    f. **All complete**: If none of the above apply → report 「全ステップ完了済みです。未完了の作業はありません。」 and stop.
 
-   If `$ARGUMENTS` is not empty (commit message, `--close`, or `--pr` provided), skip Step 0 entirely and proceed as before.
+   If `$ARGUMENTS` is not empty (commit message, `--close`, or `--pr` provided), skip Step 0 and follow the flow for the given flags.
 
 ---
 
@@ -46,7 +46,7 @@ bash scripts/wait-for-ci.sh {PR_NUMBER} --timeout 900   # run_in_background=true
 ```
 
 exit 0 = `ci-guard` success、1 = failure 系、2 = timeout、3 = 環境エラー（`GITHUB_TOKEN` 無し等）。
-exit 3 のときだけ従来どおり MCP でポーリングする:
+exit 3 のときだけ MCP でポーリングする:
 
 ```
 mcp__github__pull_request_read(method="get_check_runs", owner="yamakii", repo="garmin-performance-analysis", pullNumber={PR_NUMBER})
@@ -59,7 +59,7 @@ mcp__github__pull_request_read(method="get", owner="yamakii", repo="garmin-perfo
 - CI ステータスを確認するが、pending/running でもマージ可能
 - CI failing の場合のみ WARNING を表示（ブロックしない）
 
-**`--validated` フラグなし**（従来動作）:
+**`--validated` フラグなし**:
 - CI checks が全て pass していなければマージしない
 - checks が failing → report to user and stop (do not merge)
 

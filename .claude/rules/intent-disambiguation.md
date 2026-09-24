@@ -1,13 +1,12 @@
 # Intent Disambiguation Rules
 
-## CRITICAL: Understand user intent before acting
+## Understand user intent before acting
 
 ### Command Mappings
 - "ランを分析" → MCP toolsで分析・解釈。スクリプト作成ではない
-- "plan modeで起動しない" → バグ報告。plan mode無効化の指示ではない
 - 日本語の問題報告 → バグレポートとして扱う。コマンドとして実行しない
 
-### Development Task Routing (IMPORTANT)
+### Development Task Routing
 コードを変える開発タスクは Issue を作成してから実装する（例外: `.claude/rules/` `.claude/skills/` `docs/` `CLAUDE.md` だけの skip レベル変更は Issue 不要、PR 本文が記録。Worktree + PR は必須）:
 - **Issue 番号あり**: → 探索フェーズで `mcp__github__issue_read` (method="get") → 設計をベースにプラン作成
 - **Issue 番号なし**: → `Issue: TBD` でプラン作成 → 承認後に Issue 作成

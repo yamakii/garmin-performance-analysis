@@ -27,9 +27,8 @@ Examples:
 ### Step 1: Issue 取得と依存グラフ構築
 
 ```
-# Epic の場合: sub-issues を取得
-epic = mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={epic})
-# body から "- [ ] #N" パターンで sub-issue 番号を抽出
+# Epic の場合: ネイティブ sub-issue を取得（本文 checkbox は使わない）
+mcp__github__issue_read(method="get_sub_issues", owner="yamakii", repo="garmin-performance-analysis", issue_number={epic})
 
 # 各 sub-issue の情報を取得
 mcp__github__issue_read(method="get", owner="yamakii", repo="garmin-performance-analysis", issue_number={N})

@@ -23,12 +23,7 @@ mcp__serena__activate_project(<リポジトリルートの絶対パス>)  # chec
 
 ### Step 2: コードベース調査
 
-タスクの説明から関連するコードを探索:
-
-1. `mcp__serena__find_symbol` / `mcp__serena__get_symbols_overview` で関連シンボルを特定
-2. `mcp__serena__find_referencing_symbols` で依存関係を把握
-3. `mcp__serena__search_for_pattern` でパターン検索
-4. 影響範囲と変更の複雑さを評価
+Serena のシンボル検索・参照検索で関連コードと依存を洗い出し、影響範囲と変更の複雑さを評価する。
 
 **Test Plan 作成時のルール:**
 - Design Interface に記載した各関数・メソッドに対して最低1ケース
