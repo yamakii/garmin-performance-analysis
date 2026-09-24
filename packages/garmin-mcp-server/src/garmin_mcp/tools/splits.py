@@ -1,8 +1,5 @@
 """Splits domain tool definitions.
 
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-
 ``get_interval_analysis`` lives in the splits schema group (and CLI group) even
 though it is delegated to a dedicated analyzer rather than a direct reader call.
 """
@@ -11,23 +8,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.tools.registry import ToolDef
+from garmin_mcp.tools.registry import ACTIVITY_ID_DESCRIPTION, ToolDef
 
 
 class SplitsStatsParams(BaseModel):
     """Shared ``activity_id`` + ``statistics_only`` args for the split readers."""
 
-    activity_id: int
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
     statistics_only: bool = False
 
 
 class IntervalAnalysisParams(BaseModel):
     """Arguments for ``get_interval_analysis``."""
 
-    activity_id: int
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
 
 
 def _inject_split_warnings(result: Any) -> Any:
@@ -42,23 +39,9 @@ def _inject_split_warnings(result: Any) -> Any:
     return result
 
 
-def _get_splits_pace_hr(reader: GarminDBReader, p: SplitsStatsParams) -> Any:
-    result = reader.get_splits_pace_hr(p.activity_id, statistics_only=p.statistics_only)
-    return _inject_split_warnings(result)
-
-
-def _get_splits_form_metrics(reader: GarminDBReader, p: SplitsStatsParams) -> Any:
-    result = reader.get_splits_form_metrics(
-        p.activity_id, statistics_only=p.statistics_only
-    )
-    return _inject_split_warnings(result)
-
-
 def _get_splits_elevation(reader: GarminDBReader, p: SplitsStatsParams) -> Any:
-    result = reader.get_splits_elevation(
-        p.activity_id, statistics_only=p.statistics_only
-    )
-    return _inject_split_warnings(result)
+    # No form-metric warning: elevation rows never carry form metrics.
+    return reader.get_splits_elevation(p.activity_id, statistics_only=p.statistics_only)
 
 
 def _get_splits_comprehensive(reader: GarminDBReader, p: SplitsStatsParams) -> Any:
@@ -77,48 +60,15 @@ def _get_interval_analysis(reader: GarminDBReader, p: IntervalAnalysisParams) ->
 
 SPLITS_TOOLS: list[ToolDef] = [
     ToolDef(
-        name="get_splits_pace_hr",
-        description=(
-            "Deprecated: use get_splits_comprehensive instead. Get pace and heart "
-            "rate data from splits (lightweight: ~3 fields/split, or ~200 bytes "
-            "with statistics_only=True)"
-        ),
-        params=SplitsStatsParams,
-        handler=_get_splits_pace_hr,
-        cli_group="splits",
-        cli_name="pace-hr",
-        field_descriptions={
-            "statistics_only": (
-                "If true, return only aggregated statistics (mean, median, std, "
-                "min, max) instead of per-split data. Reduces output size by ~80%. "
-                "Default: false"
-            )
-        },
-    ),
-    ToolDef(
-        name="get_splits_form_metrics",
-        description=(
-            "Deprecated: use get_splits_comprehensive instead. Get form efficiency "
-            "metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with "
-            "statistics_only=True)"
-        ),
-        params=SplitsStatsParams,
-        handler=_get_splits_form_metrics,
-        cli_group="splits",
-        cli_name="form-metrics",
-        field_descriptions={
-            "statistics_only": (
-                "If true, return only aggregated statistics (mean, median, std, "
-                "min, max) for GCT, VO, VR instead of per-split data. Reduces "
-                "output size by ~80%. Default: false"
-            )
-        },
-    ),
-    ToolDef(
         name="get_splits_elevation",
         description=(
-            "Get elevation and terrain data from splits (lightweight: ~5 "
-            "fields/split, or ~250 bytes with statistics_only=True)"
+            "Per-lap elevation for one activity from the splits table (Garmin "
+            "laps: auto 1 km, or workout/manual laps). Full mode returns splits[] "
+            "with split_number, elevation_gain_m, elevation_loss_m and "
+            "terrain_type (平坦/起伏/丘陵/山岳). statistics_only returns "
+            "metrics.elevation_gain / elevation_loss as {mean, median, std, min, "
+            "max} in metres, without terrain_type. get_splits_comprehensive "
+            "carries the same gain/loss; this tool adds the terrain class."
         ),
         params=SplitsStatsParams,
         handler=_get_splits_elevation,
@@ -128,16 +78,20 @@ SPLITS_TOOLS: list[ToolDef] = [
             "statistics_only": (
                 "If true, return only aggregated statistics (mean, median, std, "
                 "min, max) for elevation gain/loss instead of per-split data. "
-                "Reduces output size by ~80%. Default: false"
+                "Default: false"
             )
         },
     ),
     ToolDef(
         name="get_splits_comprehensive",
         description=(
-            "Get comprehensive split data (12 fields: pace, HR, form, power, "
-            "cadence, elevation). Supports statistics_only mode for 67% token "
-            "reduction."
+            "Per-lap data for one activity from the splits table (Garmin laps: "
+            "auto 1 km, or workout/manual laps). Full mode returns splits[]: "
+            "split_number, distance_km, pace (s/km), HR and max HR, GCT (ms), VO "
+            "(cm), VR (%), power (W), stride (cm), cadence and max cadence (spm), "
+            "elevation gain/loss (m), intensity_type and role_phase; _warnings "
+            "flags laps without form metrics. To judge a single run, start from "
+            "get_run_report; use this for lap-level detail it does not carry."
         ),
         params=SplitsStatsParams,
         handler=_get_splits_comprehensive,
@@ -145,17 +99,23 @@ SPLITS_TOOLS: list[ToolDef] = [
         cli_name="comprehensive",
         field_descriptions={
             "statistics_only": (
-                "If true, return only aggregated statistics (mean, median, std, "
-                "min, max) instead of per-split data. Reduces output size by ~67%. "
-                "Default: false"
+                "If true, return only {mean, median, std, min, max} per metric "
+                "(12 metrics) over all laps instead of per-lap rows: unweighted, "
+                "the short final lap included, and a metric with no data reads "
+                "0.0. Default: false"
             )
         },
     ),
     ToolDef(
         name="get_interval_analysis",
         description=(
-            "Analyze interval training Work/Recovery segments using intensity_type "
-            "from DuckDB"
+            "Classify each lap of one activity as work/recovery/warmup/cooldown/"
+            "steady from its Garmin intensity_type (INTERVAL, RECOVERY, ...; laps "
+            "recorded as ACTIVE, including [MCP] workout steps, read as steady). "
+            "Returns segments[] (per lap: times, duration, pace in decimal min/km, "
+            "HR, GCT, VO, VR), work_recovery_comparison ({} unless both work and "
+            "recovery laps exist) and fatigue_indicators (last minus first work "
+            "lap). Missing values count as 0."
         ),
         params=IntervalAnalysisParams,
         handler=_get_interval_analysis,

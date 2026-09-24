@@ -22,13 +22,21 @@ from garmin_mcp.tools.registry import ToolDef
 class ExportParams(BaseModel):
     """Arguments for ``export`` (drives validation, CLI, and the MCP schema)."""
 
-    query: str = Field(description="DuckDB SQL query to execute")
+    query: str = Field(
+        description=(
+            "A single DuckDB SELECT, wrapped as a subquery, so no trailing semicolon"
+        )
+    )
     format: Literal["parquet", "csv"] = Field(
         default="parquet",
-        description="Output format (parquet recommended for efficiency)",
+        description="parquet (default) or csv with a header row",
     )
     max_rows: int = Field(
-        default=100000, description="Safety limit for export size (default: 100000)"
+        default=100000,
+        description=(
+            "Refuse the export when the result has more rows than this "
+            "(default: 100000)"
+        ),
     )
 
 
@@ -77,8 +85,12 @@ EXPORT_TOOLS: list[ToolDef] = [
     ToolDef(
         name="export",
         description=(
-            "Export query results to file (returns handle only, not data). Use for "
-            "large datasets that need processing in Python."
+            "Run a read-only DuckDB SELECT and write the result to a local parquet "
+            "or CSV file instead of returning rows. Returns handle (the file path "
+            "under /tmp/garmin_exports, deleted after 1 hour), rows, columns, "
+            "size_mb and expires_at, or error (with a suggestion when rows exceed "
+            "max_rows). Use it for multi-activity analysis read back in Python; "
+            "an empty result writes no file."
         ),
         params=ExportParams,
         handler=_run_export,

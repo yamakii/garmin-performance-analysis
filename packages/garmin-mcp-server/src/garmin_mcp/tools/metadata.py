@@ -1,8 +1,4 @@
-"""Metadata domain tool definitions.
-
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-"""
+"""Metadata domain tool definitions."""
 
 from __future__ import annotations
 
@@ -21,13 +17,13 @@ logger = logging.getLogger(__name__)
 class GetActivityByDateParams(BaseModel):
     """Arguments for ``get_activity_by_date``."""
 
-    date: str = Field(description="Date in YYYY-MM-DD format")
+    date: str = Field(description="Local calendar date of the run, YYYY-MM-DD")
 
 
 class GetDateByActivityIdParams(BaseModel):
     """Arguments for ``get_date_by_activity_id``."""
 
-    activity_id: int
+    activity_id: int = Field(description="Garmin activity ID to look up")
 
 
 class IngestActivityParams(BaseModel):
@@ -147,7 +143,15 @@ def _ingest_activity(reader: GarminDBReader, p: IngestActivityParams) -> dict[st
 METADATA_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_activity_by_date",
-        description="Get activity ID and metadata from date",
+        description=(
+            "Resolve a local date to the ingested run(s) on that day. With exactly "
+            "one run, returns success=true plus activity_id, activity_name, "
+            "start_time (local), distance_km, duration_seconds and gear "
+            "(gear_type, gear_model, gear_nickname, gear_label). With none or "
+            "several, returns success=false, an error and an activities list with "
+            "the same fields to pick from. Only runs already ingested into DuckDB "
+            "are found; ingest_activity fetches a new day."
+        ),
         params=GetActivityByDateParams,
         handler=_get_activity_by_date,
         cli_group="metadata",
@@ -155,7 +159,12 @@ METADATA_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="get_date_by_activity_id",
-        description="Get date and activity name from activity ID",
+        description=(
+            "Look up the local activity date of an ingested activity. Returns "
+            "{activity_id, date} with date as YYYY-MM-DD, or date=null when the ID "
+            "is not in DuckDB. It returns no name, distance or metrics; "
+            "get_activity_by_date gives those for a date."
+        ),
         params=GetDateByActivityIdParams,
         handler=_get_date_by_activity_id,
         cli_group="metadata",

@@ -21,154 +21,18 @@ class TestToolRegistration:
 
     @pytest.mark.parametrize(
         "tool_name",
-        [
-            "get_splits_pace_hr",
-            "get_splits_form_metrics",
-            "get_splits_elevation",
-            "get_splits_comprehensive",
-        ],
+        ["get_splits_elevation", "get_splits_comprehensive"],
     )
     def test_splits_tool_registered(self, tool_name: str) -> None:
         assert tool_name in ALL_DEFS_BY_NAME
 
     @pytest.mark.parametrize(
         "tool_name",
-        ["unknown_tool", "", "get_splits_pace_hr_v2"],
+        ["unknown_tool", "", "get_splits_pace_hr", "get_splits_form_metrics"],
     )
     def test_unknown_tool_not_registered(self, tool_name: str) -> None:
+        # The per-family split tools are superseded by get_splits_comprehensive.
         assert tool_name not in ALL_DEFS_BY_NAME
-
-
-# -- get_splits_pace_hr tests -------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetSplitsPaceHr:
-    """Test get_splits_pace_hr handler."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data_statistics_only_false(
-        self,
-        mock_db_reader: MagicMock,
-        sample_splits_result: dict[str, Any],
-    ) -> None:
-        mock_db_reader.get_splits_pace_hr.return_value = sample_splits_result
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "get_splits_pace_hr",
-            {"activity_id": ACTIVITY_ID, "statistics_only": False},
-        )
-
-        mock_db_reader.get_splits_pace_hr.assert_called_once_with(
-            ACTIVITY_ID, statistics_only=False
-        )
-        parsed = json.loads(result[0].text)
-        assert parsed == sample_splits_result
-
-    @pytest.mark.asyncio
-    async def test_returns_data_statistics_only_true(
-        self,
-        mock_db_reader: MagicMock,
-        sample_statistics_result: dict[str, Any],
-    ) -> None:
-        mock_db_reader.get_splits_pace_hr.return_value = sample_statistics_result
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "get_splits_pace_hr",
-            {"activity_id": ACTIVITY_ID, "statistics_only": True},
-        )
-
-        mock_db_reader.get_splits_pace_hr.assert_called_once_with(
-            ACTIVITY_ID, statistics_only=True
-        )
-        parsed = json.loads(result[0].text)
-        assert parsed["statistics_only"] is True
-
-    @pytest.mark.asyncio
-    async def test_defaults_statistics_only_to_false(
-        self, mock_db_reader: MagicMock
-    ) -> None:
-        mock_db_reader.get_splits_pace_hr.return_value = {}
-
-        dispatch_tool(
-            mock_db_reader, "get_splits_pace_hr", {"activity_id": ACTIVITY_ID}
-        )
-
-        mock_db_reader.get_splits_pace_hr.assert_called_once_with(
-            ACTIVITY_ID, statistics_only=False
-        )
-
-    @pytest.mark.asyncio
-    async def test_returns_none_as_json_null(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.get_splits_pace_hr.return_value = None
-
-        result = dispatch_tool(
-            mock_db_reader, "get_splits_pace_hr", {"activity_id": ACTIVITY_ID}
-        )
-
-        parsed = json.loads(result[0].text)
-        assert parsed is None
-
-
-# -- get_splits_form_metrics tests --------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetSplitsFormMetrics:
-    """Test get_splits_form_metrics handler."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data_statistics_only_false(
-        self,
-        mock_db_reader: MagicMock,
-        sample_splits_result: dict[str, Any],
-    ) -> None:
-        mock_db_reader.get_splits_form_metrics.return_value = sample_splits_result
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "get_splits_form_metrics",
-            {"activity_id": ACTIVITY_ID, "statistics_only": False},
-        )
-
-        mock_db_reader.get_splits_form_metrics.assert_called_once_with(
-            ACTIVITY_ID, statistics_only=False
-        )
-        parsed = json.loads(result[0].text)
-        assert parsed == sample_splits_result
-
-    @pytest.mark.asyncio
-    async def test_returns_data_statistics_only_true(
-        self,
-        mock_db_reader: MagicMock,
-        sample_statistics_result: dict[str, Any],
-    ) -> None:
-        mock_db_reader.get_splits_form_metrics.return_value = sample_statistics_result
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "get_splits_form_metrics",
-            {"activity_id": ACTIVITY_ID, "statistics_only": True},
-        )
-
-        mock_db_reader.get_splits_form_metrics.assert_called_once_with(
-            ACTIVITY_ID, statistics_only=True
-        )
-        parsed = json.loads(result[0].text)
-        assert parsed["statistics_only"] is True
-
-    @pytest.mark.asyncio
-    async def test_returns_empty_dict(self, mock_db_reader: MagicMock) -> None:
-        mock_db_reader.get_splits_form_metrics.return_value = {}
-
-        result = dispatch_tool(
-            mock_db_reader, "get_splits_form_metrics", {"activity_id": ACTIVITY_ID}
-        )
-
-        parsed = json.loads(result[0].text)
-        assert parsed == {}
 
 
 # -- get_splits_elevation tests -----------------------------------------------

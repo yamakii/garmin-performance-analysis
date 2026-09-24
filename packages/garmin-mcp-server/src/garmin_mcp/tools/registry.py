@@ -24,6 +24,11 @@ from pydantic import BaseModel
 if TYPE_CHECKING:
     from garmin_mcp.database.db_reader import GarminDBReader
 
+# Shared description of the per-activity ``activity_id`` argument.
+ACTIVITY_ID_DESCRIPTION = (
+    "Garmin activity ID (resolve one from a date with get_activity_by_date)"
+)
+
 
 @dataclass(frozen=True)
 class ToolDef:

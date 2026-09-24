@@ -36,7 +36,11 @@ class CurrentFitnessSummaryParams(BaseModel):
     """Arguments for ``get_current_fitness_summary``."""
 
     lookback_weeks: int | None = Field(
-        default=None, description="Number of weeks to analyze (default: 8)"
+        default=None,
+        description=(
+            "Weeks back from today (default: 8); volume is total km divided by "
+            "this, so a partial current week lowers it"
+        ),
     )
 
 
@@ -106,8 +110,13 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_current_fitness_summary",
         description=(
-            "Get current fitness level assessment (VDOT, pace zones, weekly "
-            "volume, training type distribution)"
+            "Fitness snapshot over the last lookback_weeks up to today: vdot "
+            "(latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when "
+            "none), Daniels pace_zones (s/km), Garmin hr_zones from the latest "
+            "run, weekly_volume_km and runs_per_week (totals / weeks), "
+            "training_type_distribution (shares of Garmin training-effect "
+            "labels), gap fields for a 7+ day break, and body_composition when "
+            "present. strengths/weaknesses are always empty."
         ),
         params=CurrentFitnessSummaryParams,
         handler=_get_current_fitness_summary,

@@ -122,11 +122,18 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_78() -> None:
-    """The live MCP surface is exactly 78 tools (77 -> 78 after #1362)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 78
+def test_tool_count_is_76() -> None:
+    """The live MCP surface is exactly 76 tools (78 -> 76 after #1375)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 76
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 78
+    assert len(golden) == 76
+
+
+@pytest.mark.unit
+def test_deprecated_split_tools_not_exposed() -> None:
+    """The per-family split tools are superseded by get_splits_comprehensive."""
+    assert "get_splits_pace_hr" not in ALL_DEFS_BY_NAME
+    assert "get_splits_form_metrics" not in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.integration
@@ -139,7 +146,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 78
+    assert len(golden_names) == 76
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -232,11 +239,11 @@ def test_objective_fitness_tool_registered() -> None:
 @pytest.mark.unit
 def test_dispatch_all_domains() -> None:
     """Each domain's representative tool routes to the expected underlying call."""
-    # splits -> reader.get_splits_pace_hr(activity_id, statistics_only=...)
+    # splits -> reader.get_splits_comprehensive(activity_id, statistics_only=...)
     reader = MagicMock()
-    reader.get_splits_pace_hr.return_value = {"splits": []}
-    dispatch(ALL_DEFS_BY_NAME, reader, "get_splits_pace_hr", {"activity_id": 1})
-    reader.get_splits_pace_hr.assert_called_once_with(1, statistics_only=False)
+    reader.get_splits_comprehensive.return_value = {"splits": []}
+    dispatch(ALL_DEFS_BY_NAME, reader, "get_splits_comprehensive", {"activity_id": 1})
+    reader.get_splits_comprehensive.assert_called_once_with(1, statistics_only=False)
 
     # metadata -> reader.get_activity_date(activity_id)
     reader = MagicMock()
@@ -324,7 +331,7 @@ def test_dispatch_all_domains() -> None:
 @pytest.mark.unit
 def test_export_derived_schema() -> None:
     """The export tool's inputSchema is now DERIVED from ``ExportParams`` (no
-    ``input_schema_override``) yet remains byte-identical to the hand schema."""
+    ``input_schema_override``): enum, defaults and descriptions come from the model."""
     assert ALL_DEFS_BY_NAME["export"].input_schema_override is None
     export_tool = next(t for t in build_mcp_tools(ALL_DEFS) if t.name == "export")
     assert export_tool.input_schema == {
@@ -332,17 +339,23 @@ def test_export_derived_schema() -> None:
         "properties": {
             "query": {
                 "type": "string",
-                "description": "DuckDB SQL query to execute",
+                "description": (
+                    "A single DuckDB SELECT, wrapped as a subquery, so no "
+                    "trailing semicolon"
+                ),
             },
             "format": {
                 "type": "string",
                 "enum": ["parquet", "csv"],
-                "description": "Output format (parquet recommended for efficiency)",
+                "description": "parquet (default) or csv with a header row",
                 "default": "parquet",
             },
             "max_rows": {
                 "type": "integer",
-                "description": "Safety limit for export size (default: 100000)",
+                "description": (
+                    "Refuse the export when the result has more rows than this "
+                    "(default: 100000)"
+                ),
                 "default": 100000,
             },
         },

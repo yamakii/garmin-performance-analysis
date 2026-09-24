@@ -1,29 +1,28 @@
-"""Performance domain tool definitions.
-
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-"""
+"""Performance domain tool definitions."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.tools.registry import ToolDef
+from garmin_mcp.tools.registry import ACTIVITY_ID_DESCRIPTION, ToolDef
 
 
 class ActivityIdParams(BaseModel):
     """Single ``activity_id`` argument shared by the performance tools."""
 
-    activity_id: int
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
 
 
 class ObjectiveFitnessParams(BaseModel):
     """Arguments for the objective fitness curve tool."""
 
-    window_days: int = 90
+    window_days: int = Field(
+        default=90,
+        description="Rolling window in days for the best-effort maximum (default 90)",
+    )
 
 
 def _get_performance_trends(reader: GarminDBReader, p: ActivityIdParams) -> Any:
@@ -49,7 +48,16 @@ def _prefetch_activity_context(reader: GarminDBReader, p: ActivityIdParams) -> A
 PERFORMANCE_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_performance_trends",
-        description="Get performance trends data (pace consistency, HR drift, phase analysis)",
+        description=(
+            "Within-run pacing summary for one activity: pace_consistency "
+            "(coefficient of variation of representative run-lap paces, a "
+            "fraction), hr_drift_percentage (half-vs-half decoupling for steady "
+            "runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr "
+            "per phase (warmup, run, cooldown, plus recovery for intervals). "
+            "cadence_consistency and fatigue_pattern are fixed placeholders "
+            "(安定 / 適切). Null when missing. get_activity_durability gives the "
+            "time-series decoupling."
+        ),
         params=ActivityIdParams,
         handler=_get_performance_trends,
         cli_group="performance",
@@ -57,7 +65,14 @@ PERFORMANCE_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="get_weather_data",
-        description="Get weather data (temperature, humidity, wind) from activity",
+        description=(
+            "Weather for one activity from Garmin's activity weather record (an "
+            "external weather station's observation near the start time), not "
+            "the watch's body-warmed temperature sensor. Returns temperature_c, "
+            "temperature_f, humidity (%), wind_speed_ms and wind_direction "
+            "(compass point). One snapshot per run; fields are null when Garmin "
+            "had no weather, and the result is null for an unknown activity."
+        ),
         params=ActivityIdParams,
         handler=_get_weather_data,
         cli_group="performance",
