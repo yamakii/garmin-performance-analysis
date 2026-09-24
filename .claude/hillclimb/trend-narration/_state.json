@@ -1,0 +1,88 @@
+{
+  "flow": "trend-narration",
+  "metrics": [
+    {
+      "id": "rule_pass",
+      "label": "rules pass",
+      "kind": "binary",
+      "description": "All applicable rule checks pass (format, transcription, cutback, small-N, weekly descriptive, durability, consistency)"
+    },
+    {
+      "id": "format_ok",
+      "label": "format",
+      "kind": "binary"
+    },
+    {
+      "id": "transcription_ok",
+      "label": "transcribed",
+      "kind": "binary",
+      "description": "headline_metrics and fusion_flags equal the CONTEXT"
+    },
+    {
+      "id": "cutback_ok",
+      "label": "cutback",
+      "kind": "binary",
+      "description": "cutback=true quotes the deload prescription; false prescribes no deload"
+    },
+    {
+      "id": "small_n_ok",
+      "label": "small-N",
+      "kind": "binary",
+      "description": "judge; null when no underpowered component"
+    },
+    {
+      "id": "descriptive_ok",
+      "label": "wk descriptive",
+      "kind": "binary",
+      "description": "judge; weekly only"
+    },
+    {
+      "id": "durability_ok",
+      "label": "durability",
+      "kind": "binary",
+      "description": "judge; null when durability is not in play"
+    },
+    {
+      "id": "consistent",
+      "label": "no contradict",
+      "kind": "binary",
+      "description": "judge"
+    },
+    {
+      "id": "num_grounded",
+      "label": "nums grounded",
+      "kind": "continuous",
+      "description": "share of numbers in the prose found in the CONTEXT"
+    },
+    {
+      "id": "explains_why",
+      "label": "explains why",
+      "kind": "continuous",
+      "description": "judge 0 / 0.5 / 1"
+    },
+    {
+      "id": "actionable",
+      "label": "actionable",
+      "kind": "binary",
+      "description": "judge"
+    }
+  ],
+  "perf_fields": [
+    "cost_usd",
+    "latency_s"
+  ],
+  "variants": {
+    "baseline": "sonnet, effort from settings (production: workflow agent() passes none; user settings effortLevel=xhigh)",
+    "v1": "opus / medium",
+    "v2": "sonnet / high",
+    "v3": "sonnet / medium",
+    "v4": "sonnet / low",
+    "v5": "opus / low"
+  },
+  "harness_paths": [
+    ".claude/hillclimb/trend-narration/grade.mjs",
+    ".claude/hillclimb/trend-narration/cases.json",
+    ".claude/workflows/trend-narration.js"
+  ],
+  "harness_sha": "7114cf67d8b5bd49a2e4a19312ef3379170e5552503e127a3b0b2dfc6b5b073e"
+}
