@@ -114,8 +114,8 @@ PHYSIOLOGY_TOOLS: list[ToolDef] = [
             "with zone_number 1-5, low_boundary and high_boundary (bpm), "
             "time_in_zone_seconds and zone_percentage. Boundaries are the zone "
             "settings in force for that run; high_boundary is the next zone's low "
-            "minus 1, and zone 5's is a fixed 220 placeholder, not the athlete's "
-            "max HR. Null when missing."
+            "minus 1, and null for zone 5, which has no upper bound. Null when "
+            "missing."
         ),
         params=ActivityIdParams,
         handler=lambda r, p: r.get_heart_rate_zones_detail(p.activity_id),
@@ -126,10 +126,8 @@ PHYSIOLOGY_TOOLS: list[ToolDef] = [
         name="get_vo2_max_data",
         description=(
             "Garmin's running VO2max estimate for one activity: precise_value and "
-            "rounded value (ml/kg/min), date (Garmin calendar date of the "
-            "estimate) and category, a Japanese label derived here from "
-            "precise_value on fixed adult-male bands (47/42/38/34). When the "
-            "activity has no row, falls back to the latest estimate dated on or "
+            "rounded value (ml/kg/min) and date (Garmin calendar date of the "
+            "estimate). When the activity has no row, falls back to the latest estimate dated on or "
             "before the activity. Null when none exists."
         ),
         params=ActivityIdParams,

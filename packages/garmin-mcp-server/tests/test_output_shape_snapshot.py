@@ -212,8 +212,8 @@ def test_output_shape_snapshot_all(
     missing (via the ``real_reader`` fixture). Asserts key-sets + value types,
     not values.
 
-    Several of these tools construct their own analyzer (IntervalAnalyzer,
-    FormAnomalyDetector, ...) that resolves the DB via ``get_db_path()`` rather
+    Some of these tools construct their own analyzer (FormAnomalyDetector,
+    ...) that resolves the DB via ``get_db_path()`` rather
     than the passed reader, so point ``GARMIN_DATA_DIR`` at the real DB for the
     duration (the autouse isolation fixture otherwise rewrites it to a tmp dir).
     """
@@ -226,7 +226,6 @@ def test_output_shape_snapshot_all(
 
     invocations: dict[str, dict[str, object]] = {
         "get_splits_comprehensive": {"activity_id": FIXTURE_ACTIVITY_ID},
-        "get_interval_analysis": {"activity_id": FIXTURE_ACTIVITY_ID},
         "get_performance_trends": {"activity_id": FIXTURE_ACTIVITY_ID},
         "get_weather_data": {"activity_id": FIXTURE_ACTIVITY_ID},
         "get_split_time_series_detail": {

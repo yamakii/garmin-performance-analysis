@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **74 tools** (72 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -15,8 +15,8 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
-- [Splits](#splits) (3)
-- [Analysis](#analysis) (10)
+- [Splits](#splits) (2)
+- [Analysis](#analysis) (9)
 - [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
@@ -39,7 +39,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 
 CLI: `garmin-db export run`
 
-Run a read-only DuckDB SELECT and write the result to a local parquet or CSV file instead of returning rows. Returns handle (the file path under /tmp/garmin_exports, deleted after 1 hour), rows, columns, size_mb and expires_at, or error (with a suggestion when rows exceed max_rows). Use it for multi-activity analysis read back in Python; an empty result writes no file.
+Run a read-only DuckDB SELECT and write the result to a local parquet or CSV file instead of returning rows. Returns handle (the file path under /tmp/garmin_exports, deleted after 1 hour), rows, columns, size_mb and expires_at (UTC ISO 8601), or error (with a suggestion when rows exceed max_rows). Use it for multi-activity analysis read back in Python. An empty result writes no file and returns rows=0 with handle and expires_at null.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -104,16 +104,6 @@ Per-lap data for one activity from the splits table (Garmin laps: auto 1 km, or 
 | `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 | `statistics_only` | boolean | optional (default `False`) | If true, return only {mean, median, std, min, max} per metric (12 metrics) over all laps instead of per-lap rows: unweighted, the short final lap included, and a metric with no data reads 0.0. Default: false |
 
-### `get_interval_analysis`
-
-CLI: `garmin-db splits interval-analysis`
-
-Classify each lap of one activity as work/recovery/warmup/cooldown/steady from its Garmin intensity_type (INTERVAL, RECOVERY, ...; laps recorded as ACTIVE, including [MCP] workout steps, read as steady). Returns segments[] (per lap: times, duration, pace in decimal min/km, HR, GCT, VO, VR), work_recovery_comparison ({} unless both work and recovery laps exist) and fatigue_indicators (last minus first work lap). Missing values count as 0.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
-
 ## Analysis
 
 ### `insert_section_analysis_dict`
@@ -166,15 +156,14 @@ Find running activities without an analysis in a date range. An activity counts 
 
 CLI: `garmin-db analysis performance-trends`
 
-Linear trend of one metric across the given activity_ids: each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend (stable when p>0.05, insufficient_data under 3 points), slope (metric units per day), correlation, p_value, data_points, start_date, end_date. Only pace treats a falling value as improving; for every other metric a rising value is labelled improving, so read the slope sign.
+Linear trend of one metric across the activity_ids dated within start_date..end_date: each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend, slope (metric units per day), correlation, p_value, data_points, start_date, end_date. trend is stable when p>0.05 and insufficient_data under 3 points. Otherwise pace, ground_contact_time, vertical_oscillation and vertical_ratio (lower is better) read improving / declining, while heart_rate, power, cadence and elevation_gain, which are not comparable across runs at different paces, read only increasing / decreasing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `metric` | string | **required** | pace (s/km), heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio or elevation_gain (mean per-lap gain); distance and training_effect are accepted but always return insufficient_data |
-| `start_date` | string | **required** | Echoed in the result only; does not filter (choose activity_ids) |
-| `end_date` | string | **required** | Echoed in the result only; does not filter (choose activity_ids) |
-| `activity_ids` | array[integer] | **required** | Activities to include; this list alone defines the sample |
-| `activity_type` | string | optional | Not supported; any value raises an error |
+| `metric` | string | **required** | pace (s/km), heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio or elevation_gain (mean per-lap gain); any other value returns an error listing these |
+| `start_date` | string | **required** | Inclusive start (YYYY-MM-DD); activities dated earlier are dropped |
+| `end_date` | string | **required** | Inclusive end (YYYY-MM-DD); activities dated later are dropped |
+| `activity_ids` | array[integer] | **required** | Activities to consider; only those dated in the window are used |
 | `temperature_range` | array[number] | optional | Keep only activities whose weather-station temperature (°C) is within [min, max]; runs without weather are dropped |
 | `distance_range` | array[number] | optional | Keep only activities whose total distance (km) is within [min, max] |
 
@@ -191,32 +180,17 @@ Climate-neutral HR-at-pace trend: fits HR ~ pace + max(temp - ref_temp_c, 0) + d
 | `activity_ids` | array[integer] | **required** | Activities to fit on; only those dated in the window with HR, pace and temperature are used |
 | `ref_temp_c` | number | optional | Hinge reference temperature in Celsius (default 15) |
 
-### `extract_insights`
-
-CLI: `garmin-db analysis extract-insights`
-
-List stored section_analyses rows whose analysis_data has a non-empty top-level field named in keywords (a field-name match, not a text search). Returns a list of {activity_id, activity_date, section_type, analysis_data} with the whole JSON, newest first, paged by limit/offset; every stored version is returned, not just the latest. run_note fields are story, good_points, growth_points, next_challenge, timeline, notes, question.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `keywords` | array[string] | **required** | Top-level analysis_data field names; a row matches when any is non-empty. run_note: story, good_points, growth_points, next_challenge, next_challenge_evidence, timeline, notes, question. key_strengths / improvement_areas / efficiency / evaluation / environmental_impact exist only on legacy rows |
-| `section_types` | array[string] | optional | Restrict to these section types (run_note, or legacy efficiency/environment/phase/split/summary) |
-| `limit` | integer | optional (default `10`) | Maximum number of results (default: 10) |
-| `offset` | integer | optional (default `0`) | Number of results to skip (default: 0) |
-| `max_tokens` | integer | optional | Ignored by this tool; page with limit/offset |
-
 ### `compare_similar_workouts`
 
 CLI: `garmin-db analysis compare-workouts`
 
-Find other activities whose whole-run average pace and total distance are within tolerance of the target, ordered by pace closeness then recency. Returns target_activity and similar_activities[] with training_type, temperature and its diff, similarity_score (0-100: pace 45%, distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) as candidate minus target, and a Japanese interpretation. Candidates may be dated after the target.
+Find earlier activities whose whole-run average pace and total distance are within tolerance of the target, ordered by pace closeness then recency. Only runs that started before the target are candidates (an earlier date, or the same date with an earlier start), so an old run is never compared with later ones. Returns target_activity and similar_activities[] with training_type, temperature and its diff, similarity_score (0-100: pace 45%, distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) as candidate minus target, and a Japanese interpretation.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** | Garmin activity ID of the target run (resolve one from a date with get_activity_by_date) |
 | `pace_tolerance` | number | optional | Allowed fractional difference from the target's average pace in s/km (default 0.2 = ±20%) |
 | `distance_tolerance` | number | optional | Distance tolerance as fraction (default 0.2 = ±20%) |
-| `terrain_match` | boolean | optional | Accepted but currently ignored |
 | `activity_type_filter` | string | optional | Substring matched against activity_name (SQL LIKE), not a workout type |
 | `date_range` | array[string] | optional | Optional [start, end] (YYYY-MM-DD, inclusive) limiting candidates |
 | `limit` | integer | optional | Maximum number of results (default 10) |
@@ -290,7 +264,7 @@ HR-zone summary for one activity, computed at ingest from Garmin's native zone t
 
 CLI: `garmin-db physiology heart-rate-zones`
 
-Garmin native heart-rate zones recorded with one activity: zones[] with zone_number 1-5, low_boundary and high_boundary (bpm), time_in_zone_seconds and zone_percentage. Boundaries are the zone settings in force for that run; high_boundary is the next zone's low minus 1, and zone 5's is a fixed 220 placeholder, not the athlete's max HR. Null when missing.
+Garmin native heart-rate zones recorded with one activity: zones[] with zone_number 1-5, low_boundary and high_boundary (bpm), time_in_zone_seconds and zone_percentage. Boundaries are the zone settings in force for that run; high_boundary is the next zone's low minus 1, and null for zone 5, which has no upper bound. Null when missing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -300,7 +274,7 @@ Garmin native heart-rate zones recorded with one activity: zones[] with zone_num
 
 CLI: `garmin-db physiology vo2-max`
 
-Garmin's running VO2max estimate for one activity: precise_value and rounded value (ml/kg/min), date (Garmin calendar date of the estimate) and category, a Japanese label derived here from precise_value on fixed adult-male bands (47/42/38/34). When the activity has no row, falls back to the latest estimate dated on or before the activity. Null when none exists.
+Garmin's running VO2max estimate for one activity: precise_value and rounded value (ml/kg/min) and date (Garmin calendar date of the estimate). When the activity has no row, falls back to the latest estimate dated on or before the activity. Null when none exists.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -384,7 +358,7 @@ Judge what one run cost over the following two mornings: joins the activity to t
 
 CLI: `garmin-db performance trends`
 
-Within-run pacing summary for one activity: pace_consistency (coefficient of variation of representative run-lap paces, a fraction), hr_drift_percentage (half-vs-half decoupling for steady runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr per phase (warmup, run, cooldown, plus recovery for intervals). cadence_consistency and fatigue_pattern are fixed placeholders (安定 / 適切). Null when missing. get_activity_durability gives the time-series decoupling.
+Within-run pacing summary for one activity: pace_consistency (coefficient of variation of representative run-lap paces, a fraction), hr_drift_percentage (half-vs-half decoupling for steady runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr per phase (warmup, run, cooldown, plus recovery for intervals). Null when missing. get_activity_durability gives the time-series decoupling.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -404,7 +378,7 @@ Weather for one activity from Garmin's activity weather record (an external weat
 
 CLI: `garmin-db performance prefetch-context`
 
-Pre-fetch the context a run report does not carry, in a single call: training_type, the shoe worn (gear), similar_workouts, the long_run_gate verdict (runs >= 10 km) and the prescription vs actual layer (that day's prescription, week_position, previous_same_type + vs_previous and morning_wellness). The run itself (plan vs actual and its verdict, signals, scenes, conditions) is get_run_report; weather, HR zones and form have their own tools. Auto-generates the form baseline for the activity's month (and prior month) if missing.
+Pre-fetch the context a run report does not carry, in a single call: training_type, the shoe worn (gear), similar_workouts (earlier runs only), the long_run_gate verdict (runs >= 10 km) and the prescription vs actual layer (that day's prescription, week_position, previous_same_type + vs_previous and morning_wellness). The run itself (plan vs actual and its verdict, signals, scenes, conditions) is get_run_report; weather, HR zones and form have their own tools. Auto-generates the form baseline for the activity's month (and prior month) if missing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -460,25 +434,25 @@ Scan one activity's raw activity_details samples for sustained form deterioratio
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
-| `metrics` | array[string] | optional | Garmin descriptor keys: directGroundContactTime, directVerticalOscillation, directVerticalRatio (the default); short names such as GCT match nothing |
+| `metrics` | array[string] | optional | Garmin descriptor keys directGroundContactTime, directVerticalOscillation, directVerticalRatio (the default) or the short names GCT / VO / VR, case-insensitive. Unknown names return an error |
 | `z_threshold` | number | optional | Minimum z versus the rolling baseline (default: 3.0) |
 
 ### `get_form_anomaly_details`
 
 CLI: `garmin-db time-series anomaly-details`
 
-Full records for the anomalies detect_form_anomalies_summary counts, after filters. Each has anomaly_id, timestamp (elapsed s), metric, value, baseline (rolling mean), z_score, probable_cause (elevation_change/pace_change/fatigue/isolated), cause_details and 30 s before/after context. Returns total_anomalies, returned_anomalies and anomalies sorted by absolute z_score, descending, capped by limit.
+Full records for the anomalies detect_form_anomalies_summary counts, after filters. Each has anomaly_id, timestamp (elapsed s), metric, value, baseline (rolling mean), z_score, probable_cause (elevation_change/pace_change/fatigue/isolated), cause_details and 30 s before/after context. Returns total_anomalies, returned_anomalies and anomalies ordered by sort_by (absolute z_score descending, or timestamp ascending), capped by limit.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 | `anomaly_ids` | array[integer] | optional | anomaly_id values from an earlier call with the same metrics and z_threshold |
 | `time_range` | array[integer] | optional | [start, end] elapsed seconds, inclusive |
-| `metrics` | array[string] | optional | Descriptor keys to detect and return (default: directGroundContactTime, directVerticalOscillation, directVerticalRatio) |
+| `metrics` | array[string] | optional | Form metrics to detect and return: descriptor keys directGroundContactTime, directVerticalOscillation, directVerticalRatio (the default) or GCT / VO / VR, case-insensitive. Unknown names return an error |
 | `z_threshold` | number | optional | Detection threshold and minimum |z| filter (default: 3.0) |
 | `causes` | array[string] | optional | Keep only these: elevation_change, pace_change, fatigue, isolated |
 | `limit` | integer | optional (default `50`) | Maximum number of results (default: 50) |
-| `sort_by` | enum: `z_score`, `timestamp` | optional (default `z_score`) | Currently ignored; results are sorted by |z_score| descending |
+| `sort_by` | enum: `z_score`, `timestamp` | optional (default `z_score`) | z_score = |z_score| descending (default), timestamp = ascending; applied before limit |
 
 ## Training Plan
 
@@ -486,7 +460,7 @@ Full records for the anomalies detect_form_anomalies_summary counts, after filte
 
 CLI: `garmin-db training-plan fitness-summary`
 
-Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present. strengths/weaknesses are always empty.
+Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

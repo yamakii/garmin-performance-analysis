@@ -384,7 +384,7 @@ class TestGetVO2MaxData:
         assert result["precise_value"] == 52.3
         assert result["value"] == 52.0
         assert result["date"] == "2025-10-07"
-        assert result["category"] == "優秀"  # VO2 Max 52.0 is categorized as "優秀"
+        assert "category" not in result
 
     @pytest.mark.unit
     def test_get_vo2_max_data_no_data(self, db_reader_with_vo2max):
@@ -402,7 +402,6 @@ class TestGetVO2MaxData:
             "precise_value",
             "value",
             "date",
-            "category",
         ]
         for key in required_keys:
             assert key in result, f"Missing key: {key}"

@@ -25,7 +25,6 @@ class TestToolRegistration:
             "validate_section_json",
             "get_analysis_contract",
             "analyze_performance_trends",
-            "extract_insights",
             "compare_similar_workouts",
         ],
     )
@@ -97,10 +96,9 @@ class TestInsertSectionAnalysisDict:
         assert data["success"] is False
 
 
-# Note: get_interval_analysis, detect_form_anomalies_summary, and
-# get_form_anomaly_details were relocated to SplitsHandler / TimeSeriesHandler in
-# the registry rollout (#329); their behavioral tests now live in
-# test_splits_handler.py and test_time_series_handler.py.
+# Note: detect_form_anomalies_summary and get_form_anomaly_details were
+# relocated to TimeSeriesHandler in the registry rollout (#329); their
+# behavioral tests now live in test_time_series_handler.py.
 
 
 # ---------------------------------------------------------------------------
@@ -140,10 +138,28 @@ class TestAnalyzePerformanceTrends:
             start_date="2025-10-01",
             end_date="2025-10-31",
             activity_ids=[111, 222, 333],
-            activity_type=None,
             temperature_range=None,
             distance_range=None,
         )
+
+    @pytest.mark.asyncio
+    async def test_unsupported_metric_returns_error(
+        self, mock_db_reader: MagicMock
+    ) -> None:
+        result = dispatch_tool(
+            mock_db_reader,
+            "analyze_performance_trends",
+            {
+                "metric": "distance",
+                "start_date": "2025-10-01",
+                "end_date": "2025-10-31",
+                "activity_ids": [111],
+            },
+        )
+
+        data = json.loads(result[0].text)
+        assert "Unsupported metric: distance" in data["error"]
+        assert "ground_contact_time" in data["error"]
 
     @pytest.mark.asyncio
     async def test_with_range_filters(
@@ -162,7 +178,6 @@ class TestAnalyzePerformanceTrends:
                 "start_date": "2025-10-01",
                 "end_date": "2025-10-31",
                 "activity_ids": [111],
-                "activity_type": "running",
                 "temperature_range": [10.0, 25.0],
                 "distance_range": [5.0, 15.0],
             },
@@ -171,7 +186,7 @@ class TestAnalyzePerformanceTrends:
         call_kwargs = mock_cls.return_value.analyze_metric_trend.call_args.kwargs
         assert call_kwargs["temperature_range"] == (10.0, 25.0)
         assert call_kwargs["distance_range"] == (5.0, 15.0)
-        assert call_kwargs["activity_type"] == "running"
+        assert "activity_type" not in call_kwargs
 
     @pytest.mark.asyncio
     async def test_range_lists_converted_to_tuples(
@@ -201,101 +216,6 @@ class TestAnalyzePerformanceTrends:
 
 
 # ---------------------------------------------------------------------------
-# extract_insights
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestExtractInsights:
-    """Test _extract_insights via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_with_activity_id(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        expected = {"insights": ["pace improved"]}
-        mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
-        mock_cls.return_value.extract_insights.return_value = expected
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "extract_insights",
-            {"activity_id": 12345, "keywords": ["improvement"]},
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_cls.return_value.extract_insights.assert_called_once_with(
-            activity_id=12345, keywords=["improvement"], max_tokens=None
-        )
-
-    @pytest.mark.asyncio
-    async def test_with_activity_id_and_max_tokens(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
-        mock_cls.return_value.extract_insights.return_value = {}
-
-        dispatch_tool(
-            mock_db_reader,
-            "extract_insights",
-            {"activity_id": 12345, "keywords": ["pace"], "max_tokens": 500},
-        )
-
-        mock_cls.return_value.extract_insights.assert_called_once_with(
-            activity_id=12345, keywords=["pace"], max_tokens=500
-        )
-
-    @pytest.mark.asyncio
-    async def test_search_mode_without_activity_id(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        expected = {"results": [{"activity_id": 111, "match": "text"}]}
-        mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
-        mock_cls.return_value.search_by_keywords.return_value = expected
-
-        result = dispatch_tool(
-            mock_db_reader,
-            "extract_insights",
-            {"keywords": ["improvement"]},
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_cls.return_value.search_by_keywords.assert_called_once_with(
-            keywords=["improvement"],
-            section_types=None,
-            limit=10,
-            offset=0,
-        )
-
-    @pytest.mark.asyncio
-    async def test_search_mode_with_pagination(
-        self, mock_db_reader: MagicMock, mocker: Any
-    ) -> None:
-        mock_cls = mocker.patch("garmin_mcp.rag.queries.insights.InsightExtractor")
-        mock_cls.return_value.search_by_keywords.return_value = {}
-
-        dispatch_tool(
-            mock_db_reader,
-            "extract_insights",
-            {
-                "keywords": ["pace"],
-                "section_types": ["split", "phase"],
-                "limit": 5,
-                "offset": 10,
-            },
-        )
-
-        mock_cls.return_value.search_by_keywords.assert_called_once_with(
-            keywords=["pace"],
-            section_types=["split", "phase"],
-            limit=5,
-            offset=10,
-        )
-
-
-# ---------------------------------------------------------------------------
 # compare_similar_workouts
 # ---------------------------------------------------------------------------
 
@@ -320,7 +240,6 @@ class TestCompareSimilarWorkouts:
             activity_id=12345,
             pace_tolerance=0.2,
             distance_tolerance=0.2,
-            terrain_match=False,
             activity_type_filter=None,
             date_range=None,
             limit=10,
@@ -375,7 +294,6 @@ class TestCompareSimilarWorkouts:
                 "activity_id": 12345,
                 "pace_tolerance": 0.1,
                 "distance_tolerance": 0.15,
-                "terrain_match": True,
                 "activity_type_filter": "running",
                 "date_range": ["2025-10-01", "2025-10-31"],
                 "limit": 5,
@@ -386,7 +304,6 @@ class TestCompareSimilarWorkouts:
             activity_id=12345,
             pace_tolerance=0.1,
             distance_tolerance=0.15,
-            terrain_match=True,
             activity_type_filter="running",
             date_range=("2025-10-01", "2025-10-31"),
             limit=5,

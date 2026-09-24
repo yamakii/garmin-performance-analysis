@@ -1,8 +1,4 @@
-"""Splits domain tool definitions.
-
-``get_interval_analysis`` lives in the splits schema group (and CLI group) even
-though it is delegated to a dedicated analyzer rather than a direct reader call.
-"""
+"""Splits domain tool definitions."""
 
 from __future__ import annotations
 
@@ -19,12 +15,6 @@ class SplitsStatsParams(BaseModel):
 
     activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
     statistics_only: bool = False
-
-
-class IntervalAnalysisParams(BaseModel):
-    """Arguments for ``get_interval_analysis``."""
-
-    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
 
 
 def _inject_split_warnings(result: Any) -> Any:
@@ -49,13 +39,6 @@ def _get_splits_comprehensive(reader: GarminDBReader, p: SplitsStatsParams) -> A
         p.activity_id, statistics_only=p.statistics_only
     )
     return _inject_split_warnings(result)
-
-
-def _get_interval_analysis(reader: GarminDBReader, p: IntervalAnalysisParams) -> Any:
-    from garmin_mcp.rag.queries.interval_analysis import IntervalAnalyzer
-
-    analyzer = IntervalAnalyzer()
-    return analyzer.get_interval_analysis(activity_id=p.activity_id)
 
 
 SPLITS_TOOLS: list[ToolDef] = [
@@ -105,22 +88,6 @@ SPLITS_TOOLS: list[ToolDef] = [
                 "0.0. Default: false"
             )
         },
-    ),
-    ToolDef(
-        name="get_interval_analysis",
-        description=(
-            "Classify each lap of one activity as work/recovery/warmup/cooldown/"
-            "steady from its Garmin intensity_type (INTERVAL, RECOVERY, ...; laps "
-            "recorded as ACTIVE, including [MCP] workout steps, read as steady). "
-            "Returns segments[] (per lap: times, duration, pace in decimal min/km, "
-            "HR, GCT, VO, VR), work_recovery_comparison ({} unless both work and "
-            "recovery laps exist) and fatigue_indicators (last minus first work "
-            "lap). Missing values count as 0."
-        ),
-        params=IntervalAnalysisParams,
-        handler=_get_interval_analysis,
-        cli_group="splits",
-        cli_name="interval-analysis",
     ),
 ]
 

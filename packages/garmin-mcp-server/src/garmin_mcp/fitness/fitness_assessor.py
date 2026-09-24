@@ -250,8 +250,6 @@ class FitnessAssessor(BaseDBReader):
                 weekly_volume_km=weekly_volume_km,
                 runs_per_week=runs_per_week,
                 training_type_distribution=training_dist,
-                strengths=[],
-                weaknesses=[],
                 gap_detected=gap_detected,
                 gap_weeks=gap_weeks,
                 pre_gap_weekly_volume_km=pre_gap_weekly_volume_km,

@@ -38,37 +38,11 @@
       }
     ]
   },
-  "get_interval_analysis": {
-    "activity_id": "int",
-    "fatigue_indicators": {
-      "gct_degradation_ms": "float",
-      "hr_increase_bpm": "int",
-      "pace_degradation_sec_per_km": "float"
-    },
-    "segments": [
-      "list",
-      {
-        "avg_gct_ms": "float",
-        "avg_hr_bpm": "int",
-        "avg_pace_min_per_km": "float",
-        "avg_vo_cm": "float",
-        "avg_vr_percent": "float",
-        "duration_seconds": "int",
-        "end_time": "int",
-        "segment_number": "int",
-        "segment_type": "str",
-        "start_time": "int"
-      }
-    ],
-    "work_recovery_comparison": {}
-  },
   "get_performance_trends": {
-    "cadence_consistency": "str",
     "cooldown_phase": {
       "avg_hr": "NoneType",
       "avg_pace": "NoneType"
     },
-    "fatigue_pattern": "str",
     "hr_drift_percentage": "NoneType",
     "pace_consistency": "float",
     "recovery_phase": {

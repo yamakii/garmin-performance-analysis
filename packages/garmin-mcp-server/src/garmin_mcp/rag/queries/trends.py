@@ -19,14 +19,18 @@ logger = logging.getLogger(__name__)
 class PerformanceTrendAnalyzer:
     """Analyze performance trends across multiple activities.
 
-    Supports 10 metrics: pace, HR, cadence, power, VO, GCT, VR,
-    distance, training_effect, elevation_gain.
+    Supports 8 metrics: pace, heart_rate, cadence, power, vertical_oscillation,
+    ground_contact_time, vertical_ratio, elevation_gain.
+
+    Trend labels depend on the metric:
+    - Lower is better (pace, ground_contact_time, vertical_oscillation,
+      vertical_ratio): a significant fall is ``improving``, a rise ``declining``.
+    - Neutral (heart_rate, power, cadence, elevation_gain): these are not
+      comparable across runs at different paces, so a significant change is
+      only described as ``increasing`` / ``decreasing``.
 
     Filtering options:
-    - activity_type: NOT SUPPORTED. The ``activities`` table stores only
-      running activities (filtered at ingest) and has no classification
-      column, so passing ``activity_type`` raises ``NotImplementedError``
-      rather than silently returning unfiltered results.
+    - start_date / end_date: activities dated outside the window are dropped
     - temperature_range: (min_temp, max_temp) in Celsius
     - distance_range: (min_km, max_km)
     """
@@ -43,8 +47,10 @@ class PerformanceTrendAnalyzer:
         "elevation_gain": "elevation_gain",
     }
 
-    # Metrics that are not yet supported via bulk query
-    UNSUPPORTED_METRICS = {"distance", "training_effect"}
+    # Metrics where a falling value means better running economy / speed.
+    LOWER_IS_BETTER_METRICS = frozenset(
+        {"pace", "ground_contact_time", "vertical_oscillation", "vertical_ratio"}
+    )
 
     def __init__(self, db_path: str | None = None):
         """Initialize trend analyzer.
@@ -60,7 +66,6 @@ class PerformanceTrendAnalyzer:
         start_date: str,
         end_date: str,
         activity_ids: list[int],
-        activity_type: str | None = None,
         temperature_range: tuple[float, float] | None = None,
         distance_range: tuple[float, float] | None = None,
     ) -> dict[str, Any]:
@@ -68,10 +73,11 @@ class PerformanceTrendAnalyzer:
 
         Args:
             metric: Metric name (pace, heart_rate, cadence, etc.)
-            start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format
+            start_date: Inclusive start date in YYYY-MM-DD format; activities
+                dated earlier are dropped
+            end_date: Inclusive end date in YYYY-MM-DD format; activities dated
+                later are dropped
             activity_ids: List of activity IDs to analyze
-            activity_type: Optional activity type filter
             temperature_range: Optional (min_temp, max_temp) filter in Celsius
             distance_range: Optional (min_km, max_km) filter
 
@@ -79,7 +85,9 @@ class PerformanceTrendAnalyzer:
             Dict with trend analysis:
             {
                 "metric": str,
-                "trend": "improving" | "declining" | "stable",
+                "trend": "improving" | "declining" (lower-is-better metrics)
+                         | "increasing" | "decreasing" (neutral metrics)
+                         | "stable" | "insufficient_data",
                 "slope": float,  # change in metric per day (date-based x-axis)
                 "correlation": float,
                 "p_value": float,
@@ -96,16 +104,16 @@ class PerformanceTrendAnalyzer:
             unequal date intervals as uniform.
 
         Raises:
-            ValueError: If ``metric`` is unsupported.
-            NotImplementedError: If ``activity_type`` is provided (no
-                classification column exists on the ``activities`` table).
+            ValueError: If ``metric`` is unsupported (the message lists the
+                supported metrics) or a date bound is not YYYY-MM-DD.
         """
-        if metric not in self.METRIC_COLUMNS and metric not in self.UNSUPPORTED_METRICS:
-            raise ValueError(f"Unsupported metric: {metric}")
+        self._check_metric(metric)
+        window_start = date.fromisoformat(start_date)
+        window_end = date.fromisoformat(end_date)
 
         # Apply filters
         filtered_ids = self._apply_filters(
-            activity_ids, activity_type, temperature_range, distance_range
+            activity_ids, temperature_range, distance_range
         )
 
         # Extract metric values keyed by activity_id.
@@ -113,7 +121,12 @@ class PerformanceTrendAnalyzer:
 
         # Pair each value with its activity date and sort chronologically so
         # the regression x-axis reflects real elapsed time, not call order.
-        date_value_pairs = self._build_date_value_pairs(metric_values_by_id)
+        # Activities dated outside [start_date, end_date] are dropped.
+        date_value_pairs = [
+            (d, v)
+            for d, v in self._build_date_value_pairs(metric_values_by_id)
+            if window_start <= d <= window_end
+        ]
 
         # Check if we have enough data points. Require at least 3: with exactly
         # 2 points scipy.stats.linregress returns p_value == nan (df=0), and
@@ -138,18 +151,9 @@ class PerformanceTrendAnalyzer:
         metric_values = [v for _, v in date_value_pairs]
         slope, intercept, r_value, p_value, std_err = stats.linregress(x, metric_values)
 
-        # Determine trend
-        if p_value > 0.05:
-            trend = "stable"
-        elif slope < 0:
-            # For pace, lower is better; for HR, lower can indicate efficiency
-            trend = "improving" if metric == "pace" else "declining"
-        else:
-            trend = "declining" if metric == "pace" else "improving"
-
         return {
             "metric": metric,
-            "trend": trend,
+            "trend": self._classify_trend(metric, float(slope), float(p_value)),
             "slope": float(slope),
             "correlation": float(r_value),
             "p_value": float(p_value),
@@ -198,8 +202,7 @@ class PerformanceTrendAnalyzer:
         Raises:
             ValueError: If ``metric`` is unsupported.
         """
-        if metric not in self.METRIC_COLUMNS and metric not in self.UNSUPPORTED_METRICS:
-            raise ValueError(f"Unsupported metric: {metric}")
+        self._check_metric(metric)
 
         current = list(self._extract_metric_values(metric, activity_ids).values())
         previous = list(self._extract_metric_values(metric, prev_activity_ids).values())
@@ -221,10 +224,31 @@ class PerformanceTrendAnalyzer:
             "prev_data_points": len(previous),
         }
 
+    def _check_metric(self, metric: str) -> None:
+        """Raise ``ValueError`` listing the supported metrics if ``metric`` is not one."""
+        if metric not in self.METRIC_COLUMNS:
+            supported = ", ".join(self.METRIC_COLUMNS)
+            raise ValueError(
+                f"Unsupported metric: {metric}. Supported metrics: {supported}"
+            )
+
+    def _classify_trend(self, metric: str, slope: float, p_value: float) -> str:
+        """Label a fitted slope.
+
+        Lower-is-better metrics get ``improving`` / ``declining``; the others are
+        not comparable across runs at different paces, so they only get the
+        neutral ``increasing`` / ``decreasing``. A non-significant (or
+        undefined) p-value is ``stable``.
+        """
+        if not p_value <= 0.05:
+            return "stable"
+        if metric in self.LOWER_IS_BETTER_METRICS:
+            return "improving" if slope < 0 else "declining"
+        return "decreasing" if slope < 0 else "increasing"
+
     def _apply_filters(
         self,
         activity_ids: list[int],
-        activity_type: str | None,
         temperature_range: tuple[float, float] | None,
         distance_range: tuple[float, float] | None,
     ) -> list[int]:
@@ -232,26 +256,12 @@ class PerformanceTrendAnalyzer:
 
         Args:
             activity_ids: List of activity IDs
-            activity_type: Optional activity type filter
             temperature_range: Optional temperature range filter
             distance_range: Optional distance range filter
 
         Returns:
             Filtered list of activity IDs
-
-        Raises:
-            NotImplementedError: If ``activity_type`` is provided. The
-                ``activities`` table has no classification column (only
-                running activities are ingested), so we refuse to silently
-                return unfiltered results.
         """
-        if activity_type is not None:
-            raise NotImplementedError(
-                "activity_type filtering is not supported: the activities "
-                "table has no classification column (only running activities "
-                "are ingested). Remove the activity_type argument."
-            )
-
         filtered = activity_ids.copy()
 
         if temperature_range is None and distance_range is None:
@@ -302,10 +312,7 @@ class PerformanceTrendAnalyzer:
             Dict mapping activity_id -> average metric value. Activities with
             no data are omitted.
         """
-        column = self.METRIC_COLUMNS.get(metric)
-        if column is None:
-            return {}  # distance, training_effect are not yet supported
-
+        column = self.METRIC_COLUMNS[metric]
         return self.db_reader.get_bulk_metric_averages(activity_ids, column)
 
     def _build_date_value_pairs(

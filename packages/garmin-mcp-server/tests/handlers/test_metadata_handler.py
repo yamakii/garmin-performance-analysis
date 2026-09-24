@@ -151,6 +151,30 @@ class TestGetActivityByDate:
         assert data["activities"][1]["activity_id"] == 22222
 
     @pytest.mark.asyncio
+    async def test_activity_by_date_multiple_runs_message(
+        self, mock_db_reader: MagicMock
+    ) -> None:
+        """The tool takes no activity_id, so the error must not ask for one."""
+        mock_db_reader.db_path = "/fake/path.duckdb"
+
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (11111, "Morning Run", datetime(2025, 10, 15, 7, 0), 5.0, 1800)
+            + (None, None, None),
+            (22222, "Evening Run", datetime(2025, 10, 15, 18, 0), 8.0, 2700)
+            + (None, None, None),
+        ]
+
+        with patch("duckdb.connect", return_value=mock_conn):
+            result = dispatch_tool(
+                mock_db_reader, "get_activity_by_date", {"date": "2025-10-15"}
+            )
+
+        error = json.loads(result[0].text)["error"]
+        assert "activity_id" not in error
+        assert "activities" in error
+
+    @pytest.mark.asyncio
     async def test_multiple_results_include_gear(
         self, mock_db_reader: MagicMock
     ) -> None:

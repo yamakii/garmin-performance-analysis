@@ -99,7 +99,10 @@ def _get_activity_by_date(
         else:
             result = {
                 "success": False,
-                "error": f"Multiple activities found for {date}. Please specify activity_id.",
+                "error": (
+                    f"Multiple activities found for {date}. "
+                    "Pick one from activities."
+                ),
                 "activities": activities,
             }
     except Exception as e:  # noqa: BLE001

@@ -168,34 +168,3 @@ class TestErrorHandling:
             dispatch_tool(
                 mock_db_reader, "nonexistent_tool", {"activity_id": ACTIVITY_ID}
             )
-
-
-# ---------------------------------------------------------------------------
-# get_interval_analysis (relocated from AnalysisHandler in #329)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetIntervalAnalysis:
-    """Test get_interval_analysis via handle()."""
-
-    @pytest.mark.asyncio
-    async def test_returns_data(self, mock_db_reader: MagicMock, mocker: Any) -> None:
-        expected = {"intervals": [{"type": "work", "pace": 280}]}
-        mock_cls = mocker.patch(
-            "garmin_mcp.rag.queries.interval_analysis.IntervalAnalyzer"
-        )
-        mock_cls.return_value.get_interval_analysis.return_value = expected
-
-        result = dispatch_tool(
-            mock_db_reader, "get_interval_analysis", {"activity_id": 12345}
-        )
-
-        data = json.loads(result[0].text)
-        assert data == expected
-        mock_cls.return_value.get_interval_analysis.assert_called_once_with(
-            activity_id=12345
-        )
-
-    def test_interval_analysis_registered(self) -> None:
-        assert "get_interval_analysis" in ALL_DEFS_BY_NAME

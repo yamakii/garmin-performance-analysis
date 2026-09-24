@@ -116,7 +116,7 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
             "run, weekly_volume_km and runs_per_week (totals / weeks), "
             "training_type_distribution (shares of Garmin training-effect "
             "labels), gap fields for a 7+ day break, and body_composition when "
-            "present. strengths/weaknesses are always empty."
+            "present."
         ),
         params=CurrentFitnessSummaryParams,
         handler=_get_current_fitness_summary,

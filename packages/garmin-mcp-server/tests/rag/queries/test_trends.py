@@ -405,24 +405,103 @@ class TestPerformanceTrendAnalyzer:
         assert result["data_points"] == 2
 
     @pytest.mark.unit
-    def test_activity_type_filter_not_silent_noop(self, analyzer):
-        """activity_type must raise NotImplementedError, never silently pass."""
+    def test_trend_gct_rising_is_declining(self, analyzer):
+        """GCT is lower-is-better: 240 -> 250 -> 260 ms reads as declining."""
         analyzer.db_reader.get_bulk_metric_averages.return_value = {
-            1: 300.0,
-            2: 305.0,
+            1: 240.0,
+            2: 250.0,
+            3: 260.0,
         }
-        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2])
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
 
-        with pytest.raises(NotImplementedError, match="activity_type"):
+        result = analyzer.analyze_metric_trend(
+            metric="ground_contact_time",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3],
+        )
+
+        assert result["p_value"] <= 0.05
+        assert result["trend"] == "declining"
+
+    @pytest.mark.unit
+    def test_trend_pace_falling_is_improving(self, analyzer):
+        """Pace 400 -> 390 -> 380 s/km reads as improving."""
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 400.0,
+            2: 390.0,
+            3: 380.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3],
+        )
+
+        assert result["trend"] == "improving"
+
+    @pytest.mark.unit
+    def test_trend_heart_rate_rising_is_increasing(self, analyzer):
+        """HR is neutral: 140 -> 145 -> 150 reads increasing, never improving."""
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 140.0,
+            2: 145.0,
+            3: 150.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = _dates_for([1, 2, 3])
+
+        result = analyzer.analyze_metric_trend(
+            metric="heart_rate",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3],
+        )
+
+        assert result["trend"] == "increasing"
+        assert result["trend"] not in {"improving", "declining"}
+
+    @pytest.mark.unit
+    def test_trend_filters_by_date_window(self, analyzer):
+        """An activity dated outside start..end is dropped from the sample."""
+        analyzer.db_reader.get_bulk_metric_averages.return_value = {
+            1: 310.0,
+            2: 305.0,
+            3: 300.0,
+            4: 290.0,
+        }
+        analyzer.db_reader.get_activity_dates.return_value = {
+            1: "2025-01-01",
+            2: "2025-01-10",
+            3: "2025-01-31",
+            4: "2025-02-01",  # outside the window
+        }
+
+        result = analyzer.analyze_metric_trend(
+            metric="pace",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            activity_ids=[1, 2, 3, 4],
+        )
+
+        assert result["data_points"] == 3
+
+    @pytest.mark.unit
+    def test_trend_rejects_unsupported_metric(self, analyzer):
+        """distance is no longer accepted; the error lists the supported metrics."""
+        with pytest.raises(ValueError, match="Unsupported metric: distance") as exc:
             analyzer.analyze_metric_trend(
-                metric="pace",
+                metric="distance",
                 start_date="2025-01-01",
                 end_date="2025-01-31",
-                activity_ids=[1, 2],
-                activity_type="aerobic_base",
+                activity_ids=[1, 2, 3],
             )
 
-        # Filtering raised before any metric extraction happened.
+        message = str(exc.value)
+        for metric in PerformanceTrendAnalyzer.METRIC_COLUMNS:
+            assert metric in message
         analyzer.db_reader.get_bulk_metric_averages.assert_not_called()
 
     @pytest.mark.unit

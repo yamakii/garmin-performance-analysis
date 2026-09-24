@@ -79,6 +79,64 @@ SUSTAINED_ADJACENCY_TOLERANCE_SEC: int = 2
 # be reported as a timestamp (#1137).
 DURATION_DESCRIPTOR_KEYS: tuple[str, ...] = ("sumDuration", "sumElapsedDuration")
 
+# Form metrics the detector analyses (Garmin descriptor keys), in default order.
+FORM_DESCRIPTOR_KEYS: tuple[str, ...] = (
+    "directGroundContactTime",
+    "directVerticalOscillation",
+    "directVerticalRatio",
+)
+
+# Short names accepted as aliases for the descriptor keys (matched
+# case-insensitively, like the descriptor keys themselves).
+FORM_METRIC_ALIASES: dict[str, str] = {
+    "gct": "directGroundContactTime",
+    "vo": "directVerticalOscillation",
+    "vr": "directVerticalRatio",
+}
+
+SORT_KEYS: tuple[str, ...] = ("z_score", "timestamp")
+
+
+def resolve_form_metrics(metrics: list[str] | None) -> list[str] | None:
+    """Map requested form metric names to Garmin descriptor keys.
+
+    Accepts the descriptor keys (``directGroundContactTime`` ...) and the short
+    names ``GCT`` / ``VO`` / ``VR``, both case-insensitively. Duplicates are
+    dropped, order is kept. An unknown name raises instead of silently matching
+    nothing (which used to report 0 anomalies).
+
+    Args:
+        metrics: Requested names, or None for the default set.
+
+    Returns:
+        The descriptor keys, or None when ``metrics`` is None.
+
+    Raises:
+        ValueError: If any name is neither a descriptor key nor an alias; the
+            message lists the accepted names.
+    """
+    if metrics is None:
+        return None
+
+    lookup = {key.lower(): key for key in FORM_DESCRIPTOR_KEYS}
+    lookup.update(FORM_METRIC_ALIASES)
+
+    resolved: list[str] = []
+    unknown: list[str] = []
+    for name in metrics:
+        key = lookup.get(name.strip().lower())
+        if key is None:
+            unknown.append(name)
+        elif key not in resolved:
+            resolved.append(key)
+
+    if unknown:
+        accepted = ", ".join([*FORM_DESCRIPTOR_KEYS, "GCT", "VO", "VR"])
+        raise ValueError(
+            f"Unknown form metric(s): {', '.join(unknown)}. Accepted: {accepted}"
+        )
+    return resolved
+
 
 def _median_sample_interval(elapsed_s: list[float] | None) -> float:
     """Median seconds between consecutive samples (1.0 when unknown).
@@ -632,11 +690,7 @@ class FormAnomalyDetector:
         """
         # Default metrics if not specified
         if metrics is None:
-            metrics = [
-                "directGroundContactTime",
-                "directVerticalOscillation",
-                "directVerticalRatio",
-            ]
+            metrics = list(FORM_DESCRIPTOR_KEYS)
 
         # Load activity_details.json
         activity_details = self.loader.load_activity_details(activity_id)
@@ -992,10 +1046,15 @@ class FormAnomalyDetector:
                 - "metrics": [str, ...] - Metric names
                 - "min_z_score": float - Minimum z-score
                 - "causes": [str, ...] - Probable causes
-                - "limit": int - Max results
+                - "sort_by": "z_score" (|z| descending, the default) or
+                  "timestamp" (ascending)
+                - "limit": int - Max results, applied after sorting
 
         Returns:
             Filtered anomaly list.
+
+        Raises:
+            ValueError: If ``sort_by`` is not one of ``SORT_KEYS``.
         """
         filtered = anomalies.copy()
 
@@ -1024,10 +1083,18 @@ class FormAnomalyDetector:
             causes = set(filters["causes"])
             filtered = [a for a in filtered if a["probable_cause"] in causes]
 
-        # Limit results (after sorting by z-score descending)
-        if "limit" in filters:
-            # Sort by z-score (descending) for importance
+        # Sort, then cap: |z| descending (importance) or chronological.
+        sort_by = filters.get("sort_by", "z_score")
+        if sort_by == "z_score":
             filtered.sort(key=lambda a: abs(a["z_score"]), reverse=True)
+        elif sort_by == "timestamp":
+            filtered.sort(key=lambda a: a["timestamp"])
+        else:
+            raise ValueError(
+                f"Unknown sort_by: {sort_by}. Accepted: {', '.join(SORT_KEYS)}"
+            )
+
+        if "limit" in filters:
             filtered = filtered[: filters["limit"]]
 
         return filtered
@@ -1088,7 +1155,12 @@ class FormAnomalyDetector:
                 ],
                 "recommendations": [str, ...]
             }
+
+        Raises:
+            ValueError: If ``metrics`` names an unknown form metric.
         """
+        metrics = resolve_form_metrics(metrics)
+
         # Extract time series
         metric_map, form_metrics, context_metrics = self._extract_time_series(
             activity_id, metrics
@@ -1192,7 +1264,14 @@ class FormAnomalyDetector:
                 - "min_z_score": float - Minimum z-score threshold
                 - "causes": [str, ...] - Probable causes ("elevation_change",
                                           "pace_change", "fatigue")
+                - "sort_by": "z_score" (default) or "timestamp"
                 - "limit": int - Max results (default: 50)
+
+            ``metrics`` (and ``filters["metrics"]``) accept the descriptor keys
+            or the short names GCT / VO / VR, case-insensitively.
+
+        Raises:
+            ValueError: If a metric name or ``sort_by`` is unknown.
 
         Returns:
             Dictionary with detailed anomaly information:
@@ -1235,6 +1314,10 @@ class FormAnomalyDetector:
                 filters={"min_z_score": 3.0}
             )
         """
+        metrics = resolve_form_metrics(metrics)
+        if filters is not None and "metrics" in filters:
+            filters = {**filters, "metrics": resolve_form_metrics(filters["metrics"])}
+
         # Extract time series
         metric_map, form_metrics, context_metrics = self._extract_time_series(
             activity_id, metrics

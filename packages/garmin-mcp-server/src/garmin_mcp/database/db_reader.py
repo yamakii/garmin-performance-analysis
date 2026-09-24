@@ -1092,29 +1092,6 @@ class GarminDBReader:
         """
         return self.performance.get_weather_data(activity_id)
 
-    def get_section_analysis(
-        self, activity_id: int, section_type: str, max_output_size: int = 10240
-    ) -> dict[str, Any] | None:
-        """Get section analysis from DuckDB.
-
-        DEPRECATED: This function may return large amounts of data.
-        Consider using extract_insights() MCP function instead.
-
-        Args:
-            activity_id: Activity ID
-            section_type: Section type (efficiency, environment, phase, split, summary)
-            max_output_size: Maximum output size in bytes (default: 10KB)
-
-        Returns:
-            Section analysis data, or None if not found
-
-        Raises:
-            ValueError: If output size exceeds max_output_size
-        """
-        return self.performance.get_section_analysis(
-            activity_id, section_type, max_output_size
-        )
-
     def find_unanalyzed_activities(
         self, start_date: str, end_date: str, required_sections: int = 5
     ) -> list[dict[str, Any]]:

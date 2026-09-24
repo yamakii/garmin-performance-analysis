@@ -1,8 +1,82 @@
-"""FormAnomalyDetector: apply_anomaly_filters()."""
+"""FormAnomalyDetector: apply_anomaly_filters(), metric aliases and sort_by."""
 
 import pytest
 
-from garmin_mcp.rag.queries.form_anomaly_detector import FormAnomalyDetector
+from garmin_mcp.rag.queries.form_anomaly_detector import (
+    FormAnomalyDetector,
+    resolve_form_metrics,
+)
+
+
+@pytest.mark.unit
+def test_form_anomaly_metrics_accept_short_names(
+    detector: FormAnomalyDetector,
+) -> None:
+    """["GCT"] behaves exactly like ["directGroundContactTime"] (#1378)."""
+    assert resolve_form_metrics(["GCT", "vo", "Vr"]) == [
+        "directGroundContactTime",
+        "directVerticalOscillation",
+        "directVerticalRatio",
+    ]
+    assert resolve_form_metrics(["directgroundcontacttime", "GCT"]) == [
+        "directGroundContactTime"
+    ]
+    assert resolve_form_metrics(None) is None
+
+    by_alias = detector.detect_form_anomalies_summary(
+        activity_id=12345678901, metrics=["GCT"], z_threshold=2.0
+    )
+    by_key = detector.detect_form_anomalies_summary(
+        activity_id=12345678901, metrics=["directGroundContactTime"], z_threshold=2.0
+    )
+    assert by_alias == by_key
+
+    details = detector.get_form_anomaly_details(
+        activity_id=12345678901,
+        z_threshold=2.0,
+        filters={"metrics": ["gct"]},
+    )
+    assert all(a["metric"] == "directGroundContactTime" for a in details["anomalies"])
+
+
+@pytest.mark.unit
+def test_form_anomaly_metrics_reject_unknown(detector: FormAnomalyDetector) -> None:
+    """An unknown name raises instead of silently yielding 0 anomalies."""
+    with pytest.raises(ValueError, match="Unknown form metric\\(s\\): foo"):
+        resolve_form_metrics(["foo"])
+    with pytest.raises(ValueError, match="foo"):
+        detector.detect_form_anomalies_summary(activity_id=12345678901, metrics=["foo"])
+    with pytest.raises(ValueError, match="foo"):
+        detector.get_form_anomaly_details(activity_id=12345678901, metrics=["foo"])
+
+
+@pytest.mark.unit
+def test_form_anomaly_details_sort_by_timestamp(detector: FormAnomalyDetector) -> None:
+    """sort_by="timestamp" returns anomalies in ascending time order."""
+    anomalies = [
+        {"anomaly_id": 1, "timestamp": 300, "z_score": 3.1},
+        {"anomaly_id": 2, "timestamp": 100, "z_score": 4.8},
+        {"anomaly_id": 3, "timestamp": 200, "z_score": -3.6},
+    ]
+
+    by_time = detector._apply_anomaly_filters(
+        anomalies, {"sort_by": "timestamp", "limit": 50}
+    )
+    by_z = detector._apply_anomaly_filters(anomalies, {"limit": 50})
+
+    assert [a["timestamp"] for a in by_time] == [100, 200, 300]
+    assert [a["anomaly_id"] for a in by_z] == [2, 3, 1]
+    with pytest.raises(ValueError, match="sort_by"):
+        detector._apply_anomaly_filters(anomalies, {"sort_by": "value"})
+
+    details = detector.get_form_anomaly_details(
+        activity_id=12345678901,
+        metrics=["directGroundContactTime"],
+        z_threshold=2.0,
+        filters={"sort_by": "timestamp"},
+    )
+    timestamps = [a["timestamp"] for a in details["anomalies"]]
+    assert timestamps == sorted(timestamps)
 
 
 @pytest.mark.unit

@@ -1,8 +1,7 @@
 """Tests for PhysiologyReader.
 
 Covers get_hr_efficiency_analysis, get_heart_rate_zones_detail,
-_get_vo2_max_category (5-branch parametrize), get_vo2_max_data,
-and get_lactate_threshold_data.
+get_vo2_max_data and get_lactate_threshold_data.
 """
 
 from pathlib import Path
@@ -58,35 +57,6 @@ def phys_reader(reader_db_path: Path) -> PhysiologyReader:
 
     conn.close()
     return PhysiologyReader(db_path=str(reader_db_path))
-
-
-# ---------------------------------------------------------------------------
-# _get_vo2_max_category — 5-branch exhaustive
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestGetVo2MaxCategory:
-    """Exhaustive parametrize of _get_vo2_max_category()."""
-
-    @pytest.mark.parametrize(
-        "value, expected",
-        [
-            (None, "不明"),
-            (50.0, "優秀"),
-            (47.0, "優秀"),
-            (45.0, "良好"),
-            (42.0, "良好"),
-            (40.0, "平均"),
-            (38.0, "平均"),
-            (36.0, "やや低い"),
-            (34.0, "やや低い"),
-            (30.0, "低い"),
-            (33.9, "低い"),
-        ],
-    )
-    def test_category(self, value: float | None, expected: str):
-        assert PhysiologyReader._get_vo2_max_category(value) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +126,50 @@ class TestGetHeartRateZones:
         assert phys_reader.get_heart_rate_zones_detail(MISSING_ID) is None
 
 
+@pytest.mark.integration
+def test_hr_zones_zone5_high_boundary_is_null(reader_db_path: Path):
+    """Stored zone-5 upper bound 220 is a placeholder -> None; zones 1-4 unchanged."""
+    activity_id = 913780501
+    stored = [
+        (1, 100, 119),
+        (2, 120, 139),
+        (3, 140, 154),
+        (4, 155, 169),
+        (5, 170, 220),
+    ]
+    conn = duckdb.connect(str(reader_db_path))
+    for zone, low, high in stored:
+        conn.execute(
+            "INSERT INTO heart_rate_zones VALUES (?, ?, ?, ?, ?, ?)",
+            [activity_id, zone, low, high, 60.0, 20.0],
+        )
+    conn.close()
+
+    result = PhysiologyReader(db_path=str(reader_db_path)).get_heart_rate_zones_detail(
+        activity_id
+    )
+
+    assert result is not None
+    zones = result["zones"]
+    assert [(z["low_boundary"], z["high_boundary"]) for z in zones[:4]] == [
+        (100, 119),
+        (120, 139),
+        (140, 154),
+        (155, 169),
+    ]
+    assert zones[4]["low_boundary"] == 170
+    assert zones[4]["high_boundary"] is None
+    # The stored value is left as is (the web chart reads it).
+    conn = duckdb.connect(str(reader_db_path))
+    row = conn.execute(
+        "SELECT zone_high_boundary FROM heart_rate_zones "
+        "WHERE activity_id = ? AND zone_number = 5",
+        [activity_id],
+    ).fetchone()
+    conn.close()
+    assert row == (220,)
+
+
 # ---------------------------------------------------------------------------
 # get_vo2_max_data
 # ---------------------------------------------------------------------------
@@ -169,7 +183,12 @@ class TestGetVo2MaxData:
         result = phys_reader.get_vo2_max_data(ACTIVITY_ID)
         assert result is not None
         assert result["precise_value"] == 48.5
-        assert result["category"] == "優秀"
+
+    def test_vo2_max_data_has_no_category(self, phys_reader: PhysiologyReader):
+        """No category label derived from fixed population bands (#1378)."""
+        result = phys_reader.get_vo2_max_data(ACTIVITY_ID)
+        assert result is not None
+        assert set(result) == {"precise_value", "value", "date"}
 
     def test_date_is_str(self, phys_reader: PhysiologyReader):
         """Date must be stringified, not datetime.date."""

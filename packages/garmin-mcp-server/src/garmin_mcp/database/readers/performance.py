@@ -5,10 +5,8 @@ Handles queries to performance_trends, activities (weather),
 and section_analyses tables.
 """
 
-import json
 import logging
-import warnings
-from typing import Any, cast
+from typing import Any
 
 from garmin_mcp.database.readers.base import BaseDBReader
 
@@ -21,6 +19,9 @@ class PerformanceReader(BaseDBReader):
     def get_performance_trends(self, activity_id: int) -> dict[str, Any] | None:
         """
         Get performance trends data from performance_trends table.
+
+        The ``cadence_consistency`` / ``fatigue_pattern`` columns are not
+        returned: they only ever held fixed placeholder text and are now NULL.
 
         Args:
             activity_id: Activity ID
@@ -36,8 +37,6 @@ class PerformanceReader(BaseDBReader):
                     SELECT
                         pace_consistency,
                         hr_drift_percentage,
-                        cadence_consistency,
-                        fatigue_pattern,
                         warmup_avg_pace_seconds_per_km,
                         warmup_avg_hr,
                         run_avg_pace_seconds_per_km,
@@ -59,27 +58,25 @@ class PerformanceReader(BaseDBReader):
                 trends_data = {
                     "pace_consistency": result[0],
                     "hr_drift_percentage": result[1],
-                    "cadence_consistency": result[2],
-                    "fatigue_pattern": result[3],
                     "warmup_phase": {
+                        "avg_pace": result[2],
+                        "avg_hr": result[3],
+                    },
+                    "run_phase": {
                         "avg_pace": result[4],
                         "avg_hr": result[5],
                     },
-                    "run_phase": {
-                        "avg_pace": result[6],
-                        "avg_hr": result[7],
-                    },
                     "cooldown_phase": {
-                        "avg_pace": result[11],
-                        "avg_hr": result[12],
+                        "avg_pace": result[9],
+                        "avg_hr": result[10],
                     },
                 }
 
                 # Add recovery_phase only if it exists (4-phase interval training)
-                if result[8] is not None:
+                if result[6] is not None:
                     trends_data["recovery_phase"] = {
-                        "avg_pace": result[9],
-                        "avg_hr": result[10],
+                        "avg_pace": result[7],
+                        "avg_hr": result[8],
                     }
 
                 return trends_data
@@ -198,65 +195,3 @@ class PerformanceReader(BaseDBReader):
         except Exception as e:
             logger.error(f"Error finding unanalyzed activities: {e}")
             return []
-
-    def get_section_analysis(
-        self, activity_id: int, section_type: str, max_output_size: int = 10240
-    ) -> dict[str, Any] | None:
-        """
-        Get section analysis from DuckDB.
-
-        DEPRECATED: This function may return large amounts of data.
-        Consider using extract_insights() MCP function for keyword-based
-        summarized insights instead.
-
-        Args:
-            activity_id: Activity ID
-            section_type: Section type (efficiency, environment, phase, split, summary)
-            max_output_size: Maximum output size in bytes (default: 10KB).
-                           Set to None to disable limit (backward compatibility).
-
-        Returns:
-            Section analysis data as dict, or None if not found
-
-        Raises:
-            ValueError: If output size exceeds max_output_size
-        """
-        # Show deprecation warning
-        warnings.warn(
-            "get_section_analysis() may return large amounts of data. "
-            "Consider using extract_insights() MCP function for "
-            "keyword-based summarized insights instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        try:
-            with self._get_connection() as conn:
-                result = conn.execute(
-                    "SELECT analysis_data FROM section_analyses WHERE activity_id = ? AND section_type = ? ORDER BY created_at DESC, analysis_id DESC LIMIT 1",
-                    [activity_id, section_type],
-                ).fetchone()
-
-                if not result or not result[0]:
-                    return None
-
-                output = cast(dict[str, Any], json.loads(result[0]))
-
-                # Check output size if limit is set
-                if max_output_size is not None:
-                    output_json = json.dumps(output, ensure_ascii=False)
-                    output_size = len(output_json.encode("utf-8"))
-
-                    if output_size > max_output_size:
-                        raise ValueError(
-                            f"Output size ({output_size} bytes) exceeds max_output_size ({max_output_size} bytes). "
-                            f"Consider using extract_insights() MCP function for summarized data instead."
-                        )
-
-                return output
-
-        except Exception as e:
-            if isinstance(e, ValueError):
-                raise
-            logger.error(f"Error querying section analysis: {e}")
-            return None

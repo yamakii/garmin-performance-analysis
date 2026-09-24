@@ -32,10 +32,9 @@ _GOLDEN_PATH = (
 )
 
 # Tools allowed to keep an ``input_schema_override`` (documented exceptions).
-# ``extract_insights`` keeps one because its params model carries an internal
-# ``activity_id`` validation field that the documented MCP surface intentionally
-# hides, so a derived schema would not be byte-identical to the golden snapshot.
-_OVERRIDE_ALLOWLIST = {"extract_insights"}
+# The last one, ``extract_insights``, was removed in #1378, so every tool's schema
+# is now derived from its params model.
+_OVERRIDE_ALLOWLIST: set[str] = set()
 
 
 def _as_dicts(tools: Any) -> list[dict[str, Any]]:
@@ -122,11 +121,18 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_76() -> None:
-    """The live MCP surface is exactly 76 tools (78 -> 76 after #1375)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 76
+def test_tool_count_is_74() -> None:
+    """The live MCP surface is exactly 74 tools (76 -> 74 after #1378)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 74
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 76
+    assert len(golden) == 74
+
+
+@pytest.mark.unit
+def test_interval_and_insights_tools_not_exposed() -> None:
+    """get_interval_analysis and extract_insights were removed (#1378)."""
+    assert "get_interval_analysis" not in ALL_DEFS_BY_NAME
+    assert "extract_insights" not in ALL_DEFS_BY_NAME
 
 
 @pytest.mark.unit
@@ -146,7 +152,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 76
+    assert len(golden_names) == 74
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()
@@ -480,7 +486,6 @@ def test_override_usage_minimized() -> None:
     other tool's schema is derived from its params model."""
     with_override = {d.name for d in ALL_DEFS if d.input_schema_override is not None}
     assert with_override == _OVERRIDE_ALLOWLIST
-    assert len(with_override) == 1
 
 
 @pytest.mark.unit

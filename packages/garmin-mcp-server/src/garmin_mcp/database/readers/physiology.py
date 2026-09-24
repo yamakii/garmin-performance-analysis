@@ -12,6 +12,9 @@ from garmin_mcp.database.readers.base import BaseDBReader
 
 logger = logging.getLogger(__name__)
 
+# Garmin's top HR zone is open-ended; its stored upper boundary is a placeholder.
+_TOP_ZONE_NUMBER = 5
+
 
 class PhysiologyReader(BaseDBReader):
     """Reader for physiological metrics (HR, VO2 max, lactate threshold)."""
@@ -85,7 +88,9 @@ class PhysiologyReader(BaseDBReader):
 
         Returns:
             Heart rate zones data with boundaries and time distribution.
-            None if activity not found.
+            Zone 5 has no upper boundary in Garmin's zones: the stored 220 is an
+            ingest placeholder (kept for the web chart), so it is returned as
+            ``None``. None if activity not found.
         """
         try:
             with self._get_connection() as conn:
@@ -113,7 +118,9 @@ class PhysiologyReader(BaseDBReader):
                         {
                             "zone_number": row[0],
                             "low_boundary": row[1],
-                            "high_boundary": row[2],
+                            "high_boundary": (
+                                None if row[0] == _TOP_ZONE_NUMBER else row[2]
+                            ),
                             "time_in_zone_seconds": row[3],
                             "zone_percentage": row[4],
                         }
@@ -124,33 +131,6 @@ class PhysiologyReader(BaseDBReader):
         except Exception as e:
             logger.error(f"Error getting heart rate zones detail: {e}")
             return None
-
-    @staticmethod
-    def _get_vo2_max_category(vo2_max_value: float | None) -> str:
-        """
-        Convert VO2 max value to Japanese category label.
-
-        Based on ACSM guidelines for adult males.
-
-        Args:
-            vo2_max_value: VO2 max value in ml/kg/min
-
-        Returns:
-            Japanese category label
-        """
-        if vo2_max_value is None:
-            return "不明"
-
-        if vo2_max_value >= 47:
-            return "優秀"
-        elif vo2_max_value >= 42:
-            return "良好"
-        elif vo2_max_value >= 38:
-            return "平均"
-        elif vo2_max_value >= 34:
-            return "やや低い"
-        else:
-            return "低い"
 
     def get_vo2_max_data(self, activity_id: int) -> dict[str, Any] | None:
         """
@@ -163,7 +143,8 @@ class PhysiologyReader(BaseDBReader):
             activity_id: Activity ID
 
         Returns:
-            VO2 max data with precise value and category.
+            VO2 max data (precise_value, value, date). No category label is
+            derived: fixed population bands say nothing about this athlete.
             None if no data found.
         """
         try:
@@ -174,8 +155,7 @@ class PhysiologyReader(BaseDBReader):
                     SELECT
                         precise_value,
                         value,
-                        date,
-                        category
+                        date
                     FROM vo2_max
                     WHERE activity_id = ?
                     """,
@@ -187,7 +167,6 @@ class PhysiologyReader(BaseDBReader):
                         "precise_value": result[0],
                         "value": result[1],
                         "date": str(result[2]) if result[2] else None,
-                        "category": self._get_vo2_max_category(result[0]),
                     }
 
                 # Fallback: Get most recent VO2 max before or on activity date
@@ -208,8 +187,7 @@ class PhysiologyReader(BaseDBReader):
                     SELECT
                         precise_value,
                         value,
-                        date,
-                        category
+                        date
                     FROM vo2_max
                     WHERE date <= ?
                     ORDER BY date DESC
@@ -225,7 +203,6 @@ class PhysiologyReader(BaseDBReader):
                     "precise_value": result[0],
                     "value": result[1],
                     "date": str(result[2]) if result[2] else None,
-                    "category": self._get_vo2_max_category(result[0]),
                 }
 
         except Exception as e:

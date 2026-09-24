@@ -484,10 +484,11 @@ def _extract_performance_trends_from_raw(raw_splits_file: str) -> dict | None:
     else:
         result["cooldown_evaluation"] = "No cooldown"
 
-    # Simplified cadence consistency and fatigue pattern
-    # (would require more sophisticated analysis in production)
-    result["cadence_consistency"] = "安定"
-    result["fatigue_pattern"] = "適切"
+    # cadence_consistency / fatigue_pattern are not derived: the columns stay
+    # (the web detail query selects them) but are written as NULL instead of a
+    # fixed placeholder label.
+    result["cadence_consistency"] = None
+    result["fatigue_pattern"] = None
 
     return result
 

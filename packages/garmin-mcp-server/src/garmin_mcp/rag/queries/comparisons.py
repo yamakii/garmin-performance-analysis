@@ -16,11 +16,10 @@ logger = logging.getLogger(__name__)
 class WorkoutComparator:
     """Find and compare similar past workouts.
 
-    Provides similarity search based on:
-    - Pace tolerance (default ±10%)
-    - Distance tolerance (default ±10%)
-    - Optional terrain matching
-    - Optional activity type filtering
+    Provides similarity search over runs that started before the target, based on:
+    - Pace tolerance (default ±20%)
+    - Distance tolerance (default ±20%)
+    - Optional activity name filtering
     - Optional date range filtering
     """
 
@@ -143,7 +142,6 @@ class WorkoutComparator:
         activity_id: int,
         pace_tolerance: float = 0.2,
         distance_tolerance: float = 0.2,
-        terrain_match: bool = False,
         activity_type_filter: str | None = None,
         date_range: tuple[str, str] | None = None,
         limit: int = 10,
@@ -151,11 +149,13 @@ class WorkoutComparator:
     ) -> dict[str, Any]:
         """Find similar past workouts based on pace and distance.
 
+        Only runs that started before the target are candidates: an earlier
+        ``activity_date``, or the same date with an earlier ``start_time_local``.
+
         Args:
             activity_id: Target activity ID to find similar workouts for
             pace_tolerance: Pace tolerance as fraction (0.2 = ±20%)
             distance_tolerance: Distance tolerance as fraction (0.2 = ±20%)
-            terrain_match: Whether to match terrain characteristics
             activity_type_filter: Optional activity type keyword filter
             date_range: Optional (start_date, end_date) tuple in YYYY-MM-DD format
             limit: Maximum number of results to return
@@ -203,6 +203,19 @@ class WorkoutComparator:
         distance_min = target["distance_km"] * (1 - distance_tolerance)
         distance_max = target["distance_km"] * (1 + distance_tolerance)
 
+        # Only runs that started before the target are candidates: an earlier
+        # date, or the same date with an earlier start. A re-analysed old run
+        # must never be compared with runs that came after it.
+        past_only = """
+                  AND (
+                      a.activity_date < t.activity_date
+                      OR (
+                          a.activity_date = t.activity_date
+                          AND a.start_time_local < t.start_time_local
+                      )
+                  )
+        """
+
         # Build SQL query - different logic for main-set pace comparison
         if target_pace_override:
             # For structured workouts, compare main-set/work paces
@@ -214,6 +227,11 @@ class WorkoutComparator:
                     FROM splits
                     WHERE intensity_type IN ('ACTIVE', 'INTERVAL')
                     GROUP BY activity_id
+                ),
+                t AS (
+                    SELECT activity_date, start_time_local
+                    FROM activities
+                    WHERE activity_id = ?
                 )
                 SELECT
                     a.activity_id,
@@ -224,14 +242,19 @@ class WorkoutComparator:
                     a.total_distance_km
                 FROM activities a
                 JOIN main_paces m ON a.activity_id = m.activity_id
+                CROSS JOIN t
                 WHERE a.activity_id != ?
                   AND m.main_pace BETWEEN ? AND ?
                   AND a.total_distance_km BETWEEN ? AND ?
-            """
-            params = [activity_id, pace_min, pace_max, distance_min, distance_max]
+            """ + past_only
         else:
             # For base runs, compare overall average paces
             query = """
+                WITH t AS (
+                    SELECT activity_date, start_time_local
+                    FROM activities
+                    WHERE activity_id = ?
+                )
                 SELECT
                     a.activity_id,
                     a.activity_date,
@@ -240,11 +263,19 @@ class WorkoutComparator:
                     a.avg_heart_rate,
                     a.total_distance_km
                 FROM activities a
+                CROSS JOIN t
                 WHERE a.activity_id != ?
                   AND a.avg_pace_seconds_per_km BETWEEN ? AND ?
                   AND a.total_distance_km BETWEEN ? AND ?
-            """
-            params = [activity_id, pace_min, pace_max, distance_min, distance_max]
+            """ + past_only
+        params: list[Any] = [
+            activity_id,
+            activity_id,
+            pace_min,
+            pace_max,
+            distance_min,
+            distance_max,
+        ]
 
         # Add activity type filter
         if activity_type_filter:

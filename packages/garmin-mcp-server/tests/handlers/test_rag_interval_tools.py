@@ -2,8 +2,8 @@
 
 After the shim/worker split, the shim no longer dispatches these tools
 in-process: it forwards ``(name, arguments)`` verbatim to the worker via
-``worker.rpc("call", name, args)``. The underlying tool logic (IntervalAnalyzer,
-FormAnomalyDetector, trends, insights, comparisons) is covered by the registry
+``worker.rpc("call", name, args)``. The underlying tool logic
+(FormAnomalyDetector, trends, comparisons) is covered by the registry
 dispatch tests (``tests/test_all_tools_registry.py``) and the per-query unit
 tests. These tests assert the *shim contract*: list_tools surfaces the tools and
 call_tool forwards args + serializes the worker's response.
@@ -68,12 +68,10 @@ class TestRagIntervalToolsShim:
     async def test_list_tools_surfaces_worker_tools(self) -> None:
         """list_tools includes the worker-advertised RAG tools + server tools."""
         worker = _worker_schema(
-            "get_interval_analysis",
             "get_split_time_series_detail",
             "detect_form_anomalies_summary",
             "get_form_anomaly_details",
             "analyze_performance_trends",
-            "extract_insights",
             "compare_similar_workouts",
         )
         with patch.object(server, "worker", worker):
@@ -81,12 +79,10 @@ class TestRagIntervalToolsShim:
 
         names = {t.name for t in tools}
         for expected in (
-            "get_interval_analysis",
             "get_split_time_series_detail",
             "detect_form_anomalies_summary",
             "get_form_anomaly_details",
             "analyze_performance_trends",
-            "extract_insights",
             "compare_similar_workouts",
         ):
             assert expected in names
@@ -102,26 +98,24 @@ class TestRagIntervalToolsShim:
             "ok": True,
             "data": {
                 "activity_id": fixture_activity_id,
-                "segments": [],
-                "work_recovery_comparison": {},
-                "fatigue_indicators": {},
+                "anomalies": [],
             },
         }
         with patch.object(server, "worker", worker):
             result = await call_tool(
                 _ctx(),
                 CallToolRequestParams(
-                    name="get_interval_analysis",
+                    name="get_form_anomaly_details",
                     arguments={"activity_id": fixture_activity_id},
                 ),
             )
 
         worker.rpc.assert_awaited_once_with(
-            "call", "get_interval_analysis", {"activity_id": fixture_activity_id}
+            "call", "get_form_anomaly_details", {"activity_id": fixture_activity_id}
         )
         response_data = json.loads(_text(result))
         assert response_data["activity_id"] == fixture_activity_id
-        assert "segments" in response_data
+        assert "anomalies" in response_data
 
     @pytest.mark.asyncio
     async def test_call_serializes_complex_payload(
@@ -163,7 +157,7 @@ class TestRagIntervalToolsShim:
         with patch.object(server, "worker", worker):
             result = await call_tool(
                 _ctx(),
-                CallToolRequestParams(name="get_interval_analysis", arguments={}),
+                CallToolRequestParams(name="get_form_anomaly_details", arguments={}),
             )
 
         response = json.loads(_text(result))

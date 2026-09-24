@@ -102,6 +102,28 @@ class TestPerformanceTrendsInserter:
         conn.close()
 
     @pytest.mark.integration
+    def test_performance_trends_inserter_writes_null_placeholders(
+        self, sample_raw_splits_file, initialized_db_path
+    ):
+        """cadence_consistency / fatigue_pattern are NULL, not 安定 / 適切 (#1378)."""
+        conn = duckdb.connect(str(initialized_db_path))
+
+        assert insert_performance_trends(
+            activity_id=20636804823,
+            conn=conn,
+            raw_splits_file=str(sample_raw_splits_file),
+        )
+
+        row = conn.execute("""
+            SELECT cadence_consistency IS NULL, fatigue_pattern IS NULL
+            FROM performance_trends
+            WHERE activity_id = 20636804823
+            """).fetchone()
+        conn.close()
+
+        assert row == (True, True)
+
+    @pytest.mark.integration
     def test_insert_4phase_performance_trends(
         self, sample_raw_splits_file, initialized_db_path
     ):

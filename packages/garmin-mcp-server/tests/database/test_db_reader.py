@@ -225,8 +225,8 @@ class TestGarminDBReader:
         assert result is not None
         assert result["pace_consistency"] == 5.2
         assert result["hr_drift_percentage"] == 3.5
-        assert result["cadence_consistency"] == "高い安定性"
-        assert result["fatigue_pattern"] == "適切な疲労管理"
+        assert "cadence_consistency" not in result
+        assert "fatigue_pattern" not in result
 
         # Check warmup phase
         assert "warmup_phase" in result
