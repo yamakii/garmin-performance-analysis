@@ -97,7 +97,6 @@ Skip: Design セクションなし、Issue番号不明、dry-run時。
 
 - **Pre-commit自動実行**: Black (line-length=88), Ruff (E,F,W,I,UP,B,SIM,RUF), Mypy (python 3.12)
 - **Settings**: `pyproject.toml` が source of truth
-- **Bash style**: 独立コマンドは並列 Bash tool calls。チェーンは order-dependent 時のみ
 
 ## 6. Architecture
 

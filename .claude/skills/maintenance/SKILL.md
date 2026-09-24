@@ -76,8 +76,8 @@ Commits (Conventional Commits, single concern each, Co-Authored-By trailer): e.g
 `chore(pre-commit): sync ruff/black revs`.
 Push with the canonical form in `git.md` §2 (inline `GITHUB_TOKEN` credential helper; no pre-push merge of
 origin/main), `create_pull_request` with `Closes #<issue>` and a `## Verification` section
-(ci-check exit 0, pip-audit 0, npm audit 0). Poll `pull_request_read(method="get_check_runs")` until
-`ci-guard` completes. Merge via `merge_pull_request(merge_method="merge")` when ci-guard = success and
+(ci-check exit 0, pip-audit 0, npm audit 0). Wait for `ci-guard` with `bash scripts/wait-for-ci.sh <PR> --timeout 900`
+(exit 3 only → poll `pull_request_read(method="get_check_runs")`, as in `ship/SKILL.md`). Merge via `merge_pull_request(merge_method="merge")` when ci-guard = success and
 mergeable (permanent approval #886 — L2 PASS + ci-guard green). Any other state → report, do not merge.
 
 ## Step 6 — Report

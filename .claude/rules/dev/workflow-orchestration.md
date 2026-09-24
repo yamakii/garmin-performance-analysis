@@ -32,18 +32,14 @@ paths:
 - lessons.md / settings.local.json は **git 管理外**。背景ジョブでは bg-isolation guard が shared checkout への
   Edit/Write を拒否するため、これらの追記・削除は **Bash 経由の `uv run python`** で行う（python 直叩き・Edit は不可）
 - Write rules in `.claude/rules/` that prevent the same mistake from recurring
-- Ruthlessly iterate until mistake rate drops
 - セッション開始時: lessons.md を確認し、関連する過去の教訓を意識する
 
 ## Elegance Check
-- 3+ files changed or new pattern introduced: pause and consider alternatives.
 - If a fix feels hacky: step back and implement the elegant solution with full context.
 - Simple fixes (typos, single-line, config): skip.
 
 ## Bug Fix Autonomy
-- Bug reports: diagnose root cause, fix, verify. No hand-holding.
-- Failing CI: fix without being told. Point at logs → resolve.
-- Zero context switching required from the user.
+- バグ報告と CI 失敗は確認を待たずに根本原因を調べ、修正・検証まで進めてよい（外部副作用は下の Autonomy Boundaries に従う）
 
 ## Autonomy Boundaries
 - **外部副作用は毎回確認する**。PR マージの恒久承認（#886）はマージにしか及ばない。以下は別枠で、実行前にユーザーの確認を取る:
@@ -55,11 +51,7 @@ paths:
 - 背景ジョブ・非対話セッションでも同じ。確認が取れないなら、その操作を残して他を完了し、報告で `needs input:` として明示する
 - 根拠: 2026-09-02 の保守セッションでユーザーが「定期ルーチン化以外は進めて」と明示的に切り分けた（cloud routine 作成は恒久承認の範囲外）
 
-## Task Tracking
-- Multi-step tasks: plan in `.claude/tasks/todo.md` with checkboxes, track progress, document results.
-- Explain changes at each step (high-level summary).
-
 ## Core Principles
 1. Simplicity First: smallest change that solves the problem.
-2. No Laziness: root causes only. No "TODO: fix later" without an Issue.
+2. Root causes: 根本原因を直す。後回しにする `TODO` には Issue を切る。
 3. Minimal Impact: unrelated cleanup goes in separate commit.

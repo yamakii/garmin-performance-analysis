@@ -34,7 +34,7 @@ All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__
 2. Get the run report: mcp__garmin-db__get_run_report(activity_id)
    → plan vs actual, signals vs the athlete's own normal range, scenes, conditions
 3. Then only what the report does not carry:
-   - Splits: mcp__garmin-db__get_splits_pace_hr(activity_id, statistics_only=True)
+   - Splits: mcp__garmin-db__get_splits_comprehensive(activity_id, statistics_only=True)
    - Form inputs: mcp__garmin-db__get_form_evaluations(activity_id)
    - HR zones: mcp__garmin-db__get_hr_efficiency_analysis(activity_id)
    - Trends: mcp__garmin-db__get_performance_trends(activity_id)

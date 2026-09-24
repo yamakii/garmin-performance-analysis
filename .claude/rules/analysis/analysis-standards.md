@@ -4,7 +4,7 @@ Consolidated reference for all analysis rules.
 
 ## 1. Data Access
 
-- **MCP tools only**: `mcp__garmin-db__*` を使う。直接 `duckdb.connect()`, SQL, `.duckdb` ファイルアクセス禁止
+- **MCP tools only**: `mcp__garmin-db__*` を使う。`duckdb.connect()` や `.duckdb` ファイルへの直接アクセスはしない。SQL を書くのは `export` の `query` 引数だけ
 - **Token optimization**: `statistics_only=True` 優先 (67-80% 削減)。`get_splits_comprehensive()` で12フィールド一括取得
 - **10+ activities**: Export workflow — PLAN(SQL設計) → EXPORT(parquet) → CODE(Python) → RESULT → INTERPRET
 - **数値は当該テーブルから**: VO2max / LTHR / 体重 / HR ゾーン境界などの数値は、`athlete_profile.focus_notes` 等のプロフィール散文ではなく該当ツール（`get_vo2_max_data`、`get_lactate_threshold_data`、`get_body_composition_trend`、`get_heart_rate_zones_detail`）から取る。プロフィール記述は執筆時点のスナップショットで陳腐化する（"now 44" と書かれた VO2max の実値は 45.8 だった）
@@ -19,7 +19,7 @@ Consolidated reference for all analysis rules.
 - **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
 - **HR zones**: Garmin native zones のみ (計算式禁止)
 - **Dates**: `datetime.date` → `str()` 変換してから JSON 出力
-- **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値、1-2文/ポイント
+- **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値。ポイントごとに所見と根拠だけを簡潔に書く
 
 - **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**、off-plan の軸、`policy.verdict == "concern"` のシーン（ランの目的から外れた逸脱）の3つだけで、範囲内・有利側のブレを弱点にしない
 
