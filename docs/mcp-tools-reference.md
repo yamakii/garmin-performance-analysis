@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **78 tools** (76 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -15,7 +15,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 
 - [Export](#export) (1)
 - [Metadata](#metadata) (3)
-- [Splits](#splits) (5)
+- [Splits](#splits) (3)
 - [Analysis](#analysis) (10)
 - [Physiology](#physiology) (13)
 - [Performance](#performance) (4)
@@ -39,13 +39,13 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 
 CLI: `garmin-db export run`
 
-Export query results to file (returns handle only, not data). Use for large datasets that need processing in Python.
+Run a read-only DuckDB SELECT and write the result to a local parquet or CSV file instead of returning rows. Returns handle (the file path under /tmp/garmin_exports, deleted after 1 hour), rows, columns, size_mb and expires_at, or error (with a suggestion when rows exceed max_rows). Use it for multi-activity analysis read back in Python; an empty result writes no file.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | **required** | DuckDB SQL query to execute |
-| `format` | enum: `parquet`, `csv` | optional (default `parquet`) | Output format (parquet recommended for efficiency) |
-| `max_rows` | integer | optional (default `100000`) | Safety limit for export size (default: 100000) |
+| `query` | string | **required** | A single DuckDB SELECT, wrapped as a subquery, so no trailing semicolon |
+| `format` | enum: `parquet`, `csv` | optional (default `parquet`) | parquet (default) or csv with a header row |
+| `max_rows` | integer | optional (default `100000`) | Refuse the export when the result has more rows than this (default: 100000) |
 
 ## Metadata
 
@@ -53,21 +53,21 @@ Export query results to file (returns handle only, not data). Use for large data
 
 CLI: `garmin-db metadata activity-by-date`
 
-Get activity ID and metadata from date
+Resolve a local date to the ingested run(s) on that day. With exactly one run, returns success=true plus activity_id, activity_name, start_time (local), distance_km, duration_seconds and gear (gear_type, gear_model, gear_nickname, gear_label). With none or several, returns success=false, an error and an activities list with the same fields to pick from. Only runs already ingested into DuckDB are found; ingest_activity fetches a new day.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `date` | string | **required** | Date in YYYY-MM-DD format |
+| `date` | string | **required** | Local calendar date of the run, YYYY-MM-DD |
 
 ### `get_date_by_activity_id`
 
 CLI: `garmin-db metadata date-by-activity-id`
 
-Get date and activity name from activity ID
+Look up the local activity date of an ingested activity. Returns {activity_id, date} with date as YYYY-MM-DD, or date=null when the ID is not in DuckDB. It returns no name, distance or metrics; get_activity_by_date gives those for a date.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID to look up |
 
 ### `ingest_activity`
 
@@ -82,59 +82,37 @@ Ingest activity data from Garmin Connect into DuckDB. Fetches raw data, stores i
 
 ## Splits
 
-### `get_splits_pace_hr`
-
-CLI: `garmin-db splits pace-hr`
-
-Deprecated: use get_splits_comprehensive instead. Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `statistics_only` | boolean | optional (default `False`) | If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~80%. Default: false |
-
-### `get_splits_form_metrics`
-
-CLI: `garmin-db splits form-metrics`
-
-Deprecated: use get_splits_comprehensive instead. Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `statistics_only` | boolean | optional (default `False`) | If true, return only aggregated statistics (mean, median, std, min, max) for GCT, VO, VR instead of per-split data. Reduces output size by ~80%. Default: false |
-
 ### `get_splits_elevation`
 
 CLI: `garmin-db splits elevation`
 
-Get elevation and terrain data from splits (lightweight: ~5 fields/split, or ~250 bytes with statistics_only=True)
+Per-lap elevation for one activity from the splits table (Garmin laps: auto 1 km, or workout/manual laps). Full mode returns splits[] with split_number, elevation_gain_m, elevation_loss_m and terrain_type (平坦/起伏/丘陵/山岳). statistics_only returns metrics.elevation_gain / elevation_loss as {mean, median, std, min, max} in metres, without terrain_type. get_splits_comprehensive carries the same gain/loss; this tool adds the terrain class.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `statistics_only` | boolean | optional (default `False`) | If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Reduces output size by ~80%. Default: false |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `statistics_only` | boolean | optional (default `False`) | If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Default: false |
 
 ### `get_splits_comprehensive`
 
 CLI: `garmin-db splits comprehensive`
 
-Get comprehensive split data (12 fields: pace, HR, form, power, cadence, elevation). Supports statistics_only mode for 67% token reduction.
+Per-lap data for one activity from the splits table (Garmin laps: auto 1 km, or workout/manual laps). Full mode returns splits[]: split_number, distance_km, pace (s/km), HR and max HR, GCT (ms), VO (cm), VR (%), power (W), stride (cm), cadence and max cadence (spm), elevation gain/loss (m), intensity_type and role_phase; _warnings flags laps without form metrics. To judge a single run, start from get_run_report; use this for lap-level detail it does not carry.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `statistics_only` | boolean | optional (default `False`) | If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~67%. Default: false |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `statistics_only` | boolean | optional (default `False`) | If true, return only {mean, median, std, min, max} per metric (12 metrics) over all laps instead of per-lap rows: unweighted, the short final lap included, and a metric with no data reads 0.0. Default: false |
 
 ### `get_interval_analysis`
 
 CLI: `garmin-db splits interval-analysis`
 
-Analyze interval training Work/Recovery segments using intensity_type from DuckDB
+Classify each lap of one activity as work/recovery/warmup/cooldown/steady from its Garmin intensity_type (INTERVAL, RECOVERY, ...; laps recorded as ACTIVE, including [MCP] workout steps, read as steady). Returns segments[] (per lap: times, duration, pace in decimal min/km, HR, GCT, VO, VR), work_recovery_comparison ({} unless both work and recovery laps exist) and fatigue_indicators (last minus first work lap). Missing values count as 0.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ## Analysis
 
@@ -146,10 +124,10 @@ Append one section_analyses row (activity_id, activity_date, section_type, analy
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `activity_date` | string | **required** |  |
-| `section_type` | string | **required** |  |
-| `analysis_data` | object | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `activity_date` | string | **required** | Activity date, YYYY-MM-DD |
+| `section_type` | string | **required** | Section type of the row, e.g. run_note |
+| `analysis_data` | object | **required** | The section's analysis_data object, stored as given |
 
 ### `validate_section_json`
 
@@ -159,8 +137,8 @@ Validate a run_note coach review against its Pydantic schema. Returns {valid: bo
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `section_type` | enum: `run_note` | **required** |  |
-| `analysis_data` | object | **required** |  |
+| `section_type` | enum: `run_note` | **required** | Section type to validate |
+| `analysis_data` | object | **required** | The analysis_data object to check against the section schema |
 
 ### `get_analysis_contract`
 
@@ -188,59 +166,59 @@ Find running activities without an analysis in a date range. An activity counts 
 
 CLI: `garmin-db analysis performance-trends`
 
-Analyze performance trends across multiple activities with filtering
+Linear trend of one metric across the given activity_ids: each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend (stable when p>0.05, insufficient_data under 3 points), slope (metric units per day), correlation, p_value, data_points, start_date, end_date. Only pace treats a falling value as improving; for every other metric a rising value is labelled improving, so read the slope sign.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `metric` | string | **required** | Metric name (pace, heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio, distance, training_effect, elevation_gain) |
-| `start_date` | string | **required** | Start date in YYYY-MM-DD format |
-| `end_date` | string | **required** | End date in YYYY-MM-DD format |
-| `activity_ids` | array[integer] | **required** | List of activity IDs to analyze |
-| `activity_type` | string | optional | Optional activity type filter |
-| `temperature_range` | array[number] | optional | Optional [min_temp, max_temp] filter in Celsius |
-| `distance_range` | array[number] | optional | Optional [min_km, max_km] filter |
+| `metric` | string | **required** | pace (s/km), heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio or elevation_gain (mean per-lap gain); distance and training_effect are accepted but always return insufficient_data |
+| `start_date` | string | **required** | Echoed in the result only; does not filter (choose activity_ids) |
+| `end_date` | string | **required** | Echoed in the result only; does not filter (choose activity_ids) |
+| `activity_ids` | array[integer] | **required** | Activities to include; this list alone defines the sample |
+| `activity_type` | string | optional | Not supported; any value raises an error |
+| `temperature_range` | array[number] | optional | Keep only activities whose weather-station temperature (°C) is within [min, max]; runs without weather are dropped |
+| `distance_range` | array[number] | optional | Keep only activities whose total distance (km) is within [min, max] |
 
 ### `get_heat_adjusted_trend`
 
 CLI: `garmin-db analysis heat-adjusted-trend`
 
-Climate-neutral HR-at-pace trend with per-run heat_cost (temperature-adjusted fitness)
+Climate-neutral HR-at-pace trend: fits HR ~ pace + max(temp - ref_temp_c, 0) + days on whole-run averages (HR, pace, weather-station temperature) of the activity_ids dated within start_date..end_date. Returns status, coefficients (beta_heat = bpm per °C above ref, n, r_squared), neutral_hr_slope (bpm/day) with its p_value, and points[] {date, temp_c, raw_hr, heat_cost, neutral_hr}. Needs 10 complete runs, else status=insufficient_data. Workout types are mixed.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `start_date` | string | **required** | Start date in YYYY-MM-DD format |
-| `end_date` | string | **required** | End date in YYYY-MM-DD format |
-| `activity_ids` | array[integer] | **required** | List of activity IDs to analyze |
+| `start_date` | string | **required** | Inclusive start (YYYY-MM-DD); runs dated earlier are dropped |
+| `end_date` | string | **required** | Inclusive end (YYYY-MM-DD); runs dated later are dropped |
+| `activity_ids` | array[integer] | **required** | Activities to fit on; only those dated in the window with HR, pace and temperature are used |
 | `ref_temp_c` | number | optional | Hinge reference temperature in Celsius (default 15) |
 
 ### `extract_insights`
 
 CLI: `garmin-db analysis extract-insights`
 
-Extract insights from section analyses using keyword-based search
+List stored section_analyses rows whose analysis_data has a non-empty top-level field named in keywords (a field-name match, not a text search). Returns a list of {activity_id, activity_date, section_type, analysis_data} with the whole JSON, newest first, paged by limit/offset; every stored version is returned, not just the latest. run_note fields are story, good_points, growth_points, next_challenge, timeline, notes, question.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `keywords` | array[string] | **required** | Keywords to search for (e.g., key_strengths, improvement_areas, efficiency, evaluation, environmental_impact) |
-| `section_types` | array[string] | optional | Optional section types to filter by |
+| `keywords` | array[string] | **required** | Top-level analysis_data field names; a row matches when any is non-empty. run_note: story, good_points, growth_points, next_challenge, next_challenge_evidence, timeline, notes, question. key_strengths / improvement_areas / efficiency / evaluation / environmental_impact exist only on legacy rows |
+| `section_types` | array[string] | optional | Restrict to these section types (run_note, or legacy efficiency/environment/phase/split/summary) |
 | `limit` | integer | optional (default `10`) | Maximum number of results (default: 10) |
 | `offset` | integer | optional (default `0`) | Number of results to skip (default: 0) |
-| `max_tokens` | integer | optional | Maximum token count (optional) |
+| `max_tokens` | integer | optional | Ignored by this tool; page with limit/offset |
 
 ### `compare_similar_workouts`
 
 CLI: `garmin-db analysis compare-workouts`
 
-Find and compare similar past workouts based on pace and distance
+Find other activities whose whole-run average pace and total distance are within tolerance of the target, ordered by pace closeness then recency. Returns target_activity and similar_activities[] with training_type, temperature and its diff, similarity_score (0-100: pace 45%, distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) as candidate minus target, and a Japanese interpretation. Candidates may be dated after the target.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** | Target activity ID |
-| `pace_tolerance` | number | optional | Pace tolerance as fraction (default 0.2 = ±20%) |
+| `activity_id` | integer | **required** | Garmin activity ID of the target run (resolve one from a date with get_activity_by_date) |
+| `pace_tolerance` | number | optional | Allowed fractional difference from the target's average pace in s/km (default 0.2 = ±20%) |
 | `distance_tolerance` | number | optional | Distance tolerance as fraction (default 0.2 = ±20%) |
-| `terrain_match` | boolean | optional | Whether to match terrain characteristics |
-| `activity_type_filter` | string | optional | Optional activity type keyword filter |
-| `date_range` | array[string] | optional | Optional [start_date, end_date] in YYYY-MM-DD format |
+| `terrain_match` | boolean | optional | Accepted but currently ignored |
+| `activity_type_filter` | string | optional | Substring matched against activity_name (SQL LIKE), not a workout type |
+| `date_range` | array[string] | optional | Optional [start, end] (YYYY-MM-DD, inclusive) limiting candidates |
 | `limit` | integer | optional | Maximum number of results (default 10) |
 
 ### `get_run_report`
@@ -273,70 +251,70 @@ Get raw form metric statistics (GCT, VO, VR averages, min/max, std) from the for
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_form_evaluations`
 
 CLI: `garmin-db physiology form-evaluations`
 
-Get pace-corrected form evaluation results (expected values, actual values, scores, star ratings, evaluation texts)
+Pace-corrected form inputs for one activity: for GCT (ms), VO (cm), VR (%) and cadence (spm), the actual value, the value expected at that pace from the athlete's own baseline, the delta, a star score and evaluation text; power efficiency (W, W/kg, actual vs expected speed, a self-baseline label); integrated_score, training_mode and overall score/stars. Null when not evaluated. Stars are legacy display values; judge a run with get_run_report.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_form_baseline_trend`
 
 CLI: `garmin-db physiology form-baseline-trend`
 
-Get form baseline trend (1-month coefficient comparison for form_trend analysis)
+Compare the athlete's form-baseline model coefficients for the period containing activity_date with the period one month earlier. Returns success and metrics keyed gct/vo/vr/cadence/power, each with current and previous {coef_d, coef_b, power_a, power_b, period} and deltas (delta_d/delta_b for the pace models, delta_power_a/delta_power_b for power). success=false with an error when either period has no baseline.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `activity_date` | string | **required** | Activity date in YYYY-MM-DD format |
-| `user_id` | string | optional (default `default`) | User ID (default: 'default') |
-| `condition_group` | string | optional (default `flat_road`) | Condition group (default: 'flat_road') |
+| `activity_id` | integer | **required** | Garmin activity ID; echoed only (the lookup uses activity_date) |
+| `activity_date` | string | **required** | Date (YYYY-MM-DD) whose baseline period is compared with the one a month earlier |
+| `user_id` | string | optional (default `default`) | Baseline owner (default: 'default') |
+| `condition_group` | string | optional (default `flat_road`) | Baseline condition group (default: 'flat_road', the group the baseline scripts train) |
 
 ### `get_hr_efficiency_analysis`
 
 CLI: `garmin-db physiology hr-efficiency`
 
-Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table
+HR-zone summary for one activity, computed at ingest from Garmin's native zone times: zone_percentages zone1-zone5 (% of time), primary_zone, training_type (Garmin training-effect label, lowercased), rule-based labels zone_distribution_rating, hr_stability, aerobic_efficiency and training_quality, and flags zone2_focus (>60% Z2) and zone4_threshold_work (>20% Z4-5). Null when missing. Zone boundaries: get_heart_rate_zones_detail.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_heart_rate_zones_detail`
 
 CLI: `garmin-db physiology heart-rate-zones`
 
-Get heart rate zones detail (boundaries, time distribution) from heart_rate_zones table
+Garmin native heart-rate zones recorded with one activity: zones[] with zone_number 1-5, low_boundary and high_boundary (bpm), time_in_zone_seconds and zone_percentage. Boundaries are the zone settings in force for that run; high_boundary is the next zone's low minus 1, and zone 5's is a fixed 220 placeholder, not the athlete's max HR. Null when missing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_vo2_max_data`
 
 CLI: `garmin-db physiology vo2-max`
 
-Get VO2 max data (precise value, fitness age, category) from vo2_max table
+Garmin's running VO2max estimate for one activity: precise_value and rounded value (ml/kg/min), date (Garmin calendar date of the estimate) and category, a Japanese label derived here from precise_value on fixed adult-male bands (47/42/38/34). When the activity has no row, falls back to the latest estimate dated on or before the activity. Null when none exists.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_lactate_threshold_data`
 
 CLI: `garmin-db physiology lactate-threshold`
 
-Get lactate threshold data (HR, speed, power) from lactate_threshold table
+Garmin's lactate-threshold values fetched with one activity: heart_rate (bpm), speed_mps (m/s), date_hr (when Garmin last updated the HR/speed threshold), functional_threshold_power (W), power_to_weight (W/kg), weight and date_power. Null when that activity has no row; there is no fallback to other activities. These are Garmin's auto-estimates as of the fetch.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_body_composition_trend`
 
@@ -406,21 +384,21 @@ Judge what one run cost over the following two mornings: joins the activity to t
 
 CLI: `garmin-db performance trends`
 
-Get performance trends data (pace consistency, HR drift, phase analysis)
+Within-run pacing summary for one activity: pace_consistency (coefficient of variation of representative run-lap paces, a fraction), hr_drift_percentage (half-vs-half decoupling for steady runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr per phase (warmup, run, cooldown, plus recovery for intervals). cadence_consistency and fatigue_pattern are fixed placeholders (安定 / 適切). Null when missing. get_activity_durability gives the time-series decoupling.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_weather_data`
 
 CLI: `garmin-db performance weather`
 
-Get weather data (temperature, humidity, wind) from activity
+Weather for one activity from Garmin's activity weather record (an external weather station's observation near the start time), not the watch's body-warmed temperature sensor. Returns temperature_c, temperature_f, humidity (%), wind_speed_ms and wind_direction (compass point). One snapshot per run; fields are null when Garmin had no weather, and the result is null for an unknown activity.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `prefetch_activity_context`
 
@@ -430,7 +408,7 @@ Pre-fetch the context a run report does not carry, in a single call: training_ty
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
 
 ### `get_objective_fitness_curve`
 
@@ -440,7 +418,7 @@ Objective (non-optimistic) fitness curve: rolling 90-day max best-effort perform
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `window_days` | integer | optional (default `90`) |  |
+| `window_days` | integer | optional (default `90`) | Rolling window in days for the best-effort maximum (default 90) |
 
 ## Time Series
 
@@ -448,59 +426,59 @@ Objective (non-optimistic) fitness curve: rolling 90-day max best-effort perform
 
 CLI: `garmin-db time-series split-detail`
 
-Get second-by-second detailed metrics for a specific 1km split (DuckDB-based, 98.8% token reduction)
+Sample-level data for one lap (split_number as in get_splits_comprehensive; laps are auto 1 km or workout/manual laps) from time_series_metrics. Returns time_range, metrics, statistics {mean, std, min, max} and, unless statistics_only, time_series. With detect_anomalies, anomalies[] {timestamp_s, metric, value, z_score} lists samples in this lap whose absolute z against the whole-activity mean and std exceeds z_threshold, in either direction.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `split_number` | integer | **required** | Split number (1-based) |
-| `metrics` | array[string] | optional | List of metric names to extract (optional) |
-| `statistics_only` | boolean | optional | If true, only return statistics (98.8% token reduction). Default: false |
-| `detect_anomalies` | boolean | optional | Whether to detect anomalies in the data. Default: false |
-| `z_threshold` | number | optional | Z-score threshold for anomaly detection. Default: 2.0 |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `split_number` | integer | **required** | Lap number (1-based), as split_number in get_splits_comprehensive |
+| `metrics` | array[string] | optional | time_series_metrics column names, e.g. heart_rate, speed (m/s), cadence (spm, both feet), power, ground_contact_time, vertical_oscillation, vertical_ratio, stride_length, elevation, grade_adjusted_speed, air_temperature (device sensor); default: heart_rate, speed, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio. Unknown names return an error |
+| `statistics_only` | boolean | optional | If true, return only statistics {mean, std, min, max} per metric, without time_series. Default: false |
+| `detect_anomalies` | boolean | optional | If true, add anomalies[] for this lap (z versus the whole-activity mean/std). Default: false |
+| `z_threshold` | number | optional | Absolute z above which a sample is an anomaly. Default: 2.0 |
 
 ### `get_time_range_detail`
 
 CLI: `garmin-db time-series time-range-detail`
 
-Get second-by-second detailed metrics for arbitrary time range
+Recorded samples of chosen metrics for one activity between start_time_s and end_time_s (elapsed seconds, end exclusive), from time_series_metrics. Returns time_range, metrics, statistics {mean, std, min, max} per metric and, unless statistics_only, time_series [{timestamp_s, metric: value}]. Long runs are recorded about every 2 s, so rows are not per second. A metric with no data reads 0.0 in statistics.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `start_time_s` | integer | **required** | Start time in seconds |
-| `end_time_s` | integer | **required** | End time in seconds |
-| `metrics` | array[string] | optional | List of metric names to extract (optional) |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `start_time_s` | integer | **required** | Inclusive start, seconds elapsed since the activity start |
+| `end_time_s` | integer | **required** | Exclusive end, seconds elapsed since the activity start |
+| `metrics` | array[string] | optional | time_series_metrics column names, e.g. heart_rate, speed (m/s), cadence (spm, both feet), power, ground_contact_time, vertical_oscillation, vertical_ratio, stride_length, elevation, grade_adjusted_speed, air_temperature (device sensor); default: heart_rate, speed, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio. Unknown names return an error |
 | `statistics_only` | boolean | optional | If true, only return statistics (mean, std, min, max) without time series data. Default: false |
 
 ### `detect_form_anomalies_summary`
 
 CLI: `garmin-db time-series anomalies-summary`
 
-Detect form anomalies and return lightweight summary (~700 tokens, 95% reduction)
+Scan one activity's raw activity_details samples for sustained form deterioration: a sample counts when its z against a rolling 60-sample baseline exceeds z_threshold in the worse (higher) direction, passes a magnitude gate (GCT 10 ms, VO 0.5 cm, VR 0.3 %) and lasts 5 s. Returns anomalies_detected, counts per metric and per cause (elevation_change/pace_change/fatigue/isolated), severity bands, 5-minute clusters, the top 5 and Japanese recommendations.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `metrics` | array[string] | optional | Metrics to analyze (default: GCT, VO, VR) |
-| `z_threshold` | number | optional | Z-score threshold for anomaly detection (default: 3.0) |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `metrics` | array[string] | optional | Garmin descriptor keys: directGroundContactTime, directVerticalOscillation, directVerticalRatio (the default); short names such as GCT match nothing |
+| `z_threshold` | number | optional | Minimum z versus the rolling baseline (default: 3.0) |
 
 ### `get_form_anomaly_details`
 
 CLI: `garmin-db time-series anomaly-details`
 
-Get detailed anomaly information with flexible filtering (variable token size)
+Full records for the anomalies detect_form_anomalies_summary counts, after filters. Each has anomaly_id, timestamp (elapsed s), metric, value, baseline (rolling mean), z_score, probable_cause (elevation_change/pace_change/fatigue/isolated), cause_details and 30 s before/after context. Returns total_anomalies, returned_anomalies and anomalies sorted by absolute z_score, descending, capped by limit.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `activity_id` | integer | **required** |  |
-| `anomaly_ids` | array[integer] | optional | Optional specific anomaly IDs to retrieve |
-| `time_range` | array[integer] | optional | Optional [start_sec, end_sec] time range |
-| `metrics` | array[string] | optional | Optional metric names to filter |
-| `z_threshold` | number | optional | Optional minimum z-score threshold |
-| `causes` | array[string] | optional | Optional causes to filter (elevation_change, pace_change, fatigue) |
+| `activity_id` | integer | **required** | Garmin activity ID (resolve one from a date with get_activity_by_date) |
+| `anomaly_ids` | array[integer] | optional | anomaly_id values from an earlier call with the same metrics and z_threshold |
+| `time_range` | array[integer] | optional | [start, end] elapsed seconds, inclusive |
+| `metrics` | array[string] | optional | Descriptor keys to detect and return (default: directGroundContactTime, directVerticalOscillation, directVerticalRatio) |
+| `z_threshold` | number | optional | Detection threshold and minimum |z| filter (default: 3.0) |
+| `causes` | array[string] | optional | Keep only these: elevation_change, pace_change, fatigue, isolated |
 | `limit` | integer | optional (default `50`) | Maximum number of results (default: 50) |
-| `sort_by` | enum: `z_score`, `timestamp` | optional (default `z_score`) | Sort order: z_score (desc) or timestamp (asc) |
+| `sort_by` | enum: `z_score`, `timestamp` | optional (default `z_score`) | Currently ignored; results are sorted by |z_score| descending |
 
 ## Training Plan
 
@@ -508,11 +486,11 @@ Get detailed anomaly information with flexible filtering (variable token size)
 
 CLI: `garmin-db training-plan fitness-summary`
 
-Get current fitness level assessment (VDOT, pace zones, weekly volume, training type distribution)
+Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present. strengths/weaknesses are always empty.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `lookback_weeks` | integer | optional | Number of weeks to analyze (default: 8) |
+| `lookback_weeks` | integer | optional | Weeks back from today (default: 8); volume is total km divided by this, so a partial current week lowers it |
 
 ### `get_garmin_scheduled_workouts`
 

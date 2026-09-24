@@ -376,7 +376,7 @@ User: "Analyze my run from yesterday"
 **Small Dataset:**
 ```
 User: "Show me my last 5 runs"
-→ Use: Loop with get_activity_by_date() + get_splits_pace_hr()
+→ Use: Loop with get_activity_by_date() + get_splits_comprehensive(statistics_only=True)
 → Why: 5 activities × 2 calls = 10 calls < export overhead
 ```
 

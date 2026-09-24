@@ -268,8 +268,8 @@ Combines wind + temperature bands: Negligible (both ideal) → Low → Moderate 
 > **Temperature note**: split-level environmental fields derive from `weather.json` (external station), **not** device temperature in `time_series_metrics.air_temperature` (which runs +5–8°C from body heat).
 
 ### MCP Tools for Splits Data
-- `get_splits_comprehensive(activity_id, statistics_only=True/False)` — 12-field one-call view; ~67% token reduction with `statistics_only=True`.
-- Lightweight: `get_splits_pace_hr()`, `get_splits_form_metrics()`, `get_splits_elevation()`.
+- `get_splits_comprehensive(activity_id, statistics_only=True/False)` — per-lap pace, HR, form, power, cadence and elevation in one call; `statistics_only=True` returns per-metric aggregates.
+- `get_splits_elevation()` adds the per-lap terrain class.
 
 ---
 

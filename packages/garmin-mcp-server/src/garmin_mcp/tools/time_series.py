@@ -1,13 +1,8 @@
 """Time-series domain tool definitions.
 
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-
-All four tools use ``input_schema_override`` because the original hand schemas
-describe optional fields (``statistics_only``, ``z_threshold``, ...) *without*
-emitting a JSON ``default`` key, and carry nested arrays / enums that the
-standard normalization would not reproduce verbatim. The Pydantic models still
-provide runtime defaults for dispatch.
+Optional fields (``statistics_only``, ``z_threshold``, ...) are modeled as
+``... | None = None`` so the derived schema emits no JSON ``default`` key; the
+handlers coalesce them to their runtime defaults.
 """
 
 from __future__ import annotations
@@ -17,7 +12,21 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.tools.registry import ToolDef
+from garmin_mcp.tools.registry import ACTIVITY_ID_DESCRIPTION, ToolDef
+
+_METRICS_DESCRIPTION = (
+    "time_series_metrics column names, e.g. heart_rate, speed (m/s), cadence "
+    "(spm, both feet), power, ground_contact_time, vertical_oscillation, "
+    "vertical_ratio, stride_length, elevation, grade_adjusted_speed, "
+    "air_temperature (device sensor); default: heart_rate, speed, cadence, "
+    "power, vertical_oscillation, ground_contact_time, vertical_ratio. Unknown "
+    "names return an error"
+)
+
+_FORM_DESCRIPTOR_METRICS = (
+    "Garmin descriptor keys: directGroundContactTime, directVerticalOscillation, "
+    "directVerticalRatio (the default); short names such as GCT match nothing"
+)
 
 # ----------------------------------------------------------------------------
 # Params models (drive validation, the CLI signature, and the derived MCP
@@ -35,36 +44,42 @@ _DEFAULT_SPLIT_Z_THRESHOLD = 2.0
 class SplitTimeSeriesDetailParams(BaseModel):
     """Arguments for ``get_split_time_series_detail``."""
 
-    activity_id: int
-    split_number: int = Field(description="Split number (1-based)")
-    metrics: list[str] | None = Field(
-        default=None, description="List of metric names to extract (optional)"
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
+    split_number: int = Field(
+        description="Lap number (1-based), as split_number in get_splits_comprehensive"
     )
+    metrics: list[str] | None = Field(default=None, description=_METRICS_DESCRIPTION)
     statistics_only: bool | None = Field(
         default=None,
         description=(
-            "If true, only return statistics (98.8% token reduction). Default: false"
+            "If true, return only statistics {mean, std, min, max} per metric, "
+            "without time_series. Default: false"
         ),
     )
     detect_anomalies: bool | None = Field(
         default=None,
-        description="Whether to detect anomalies in the data. Default: false",
+        description=(
+            "If true, add anomalies[] for this lap (z versus the whole-activity "
+            "mean/std). Default: false"
+        ),
     )
     z_threshold: float | None = Field(
         default=None,
-        description="Z-score threshold for anomaly detection. Default: 2.0",
+        description="Absolute z above which a sample is an anomaly. Default: 2.0",
     )
 
 
 class TimeRangeDetailParams(BaseModel):
     """Arguments for ``get_time_range_detail``."""
 
-    activity_id: int
-    start_time_s: int = Field(description="Start time in seconds")
-    end_time_s: int = Field(description="End time in seconds")
-    metrics: list[str] | None = Field(
-        default=None, description="List of metric names to extract (optional)"
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
+    start_time_s: int = Field(
+        description="Inclusive start, seconds elapsed since the activity start"
     )
+    end_time_s: int = Field(
+        description="Exclusive end, seconds elapsed since the activity start"
+    )
+    metrics: list[str] | None = Field(default=None, description=_METRICS_DESCRIPTION)
     statistics_only: bool | None = Field(
         default=None,
         description=(
@@ -77,41 +92,52 @@ class TimeRangeDetailParams(BaseModel):
 class DetectFormAnomaliesSummaryParams(BaseModel):
     """Arguments for ``detect_form_anomalies_summary``."""
 
-    activity_id: int
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
     metrics: list[str] | None = Field(
-        default=None, description="Metrics to analyze (default: GCT, VO, VR)"
+        default=None, description=_FORM_DESCRIPTOR_METRICS
     )
     z_threshold: float | None = Field(
         default=None,
-        description="Z-score threshold for anomaly detection (default: 3.0)",
+        description="Minimum z versus the rolling baseline (default: 3.0)",
     )
 
 
 class FormAnomalyDetailsParams(BaseModel):
     """Arguments for ``get_form_anomaly_details``."""
 
-    activity_id: int
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
     anomaly_ids: list[int] | None = Field(
-        default=None, description="Optional specific anomaly IDs to retrieve"
+        default=None,
+        description=(
+            "anomaly_id values from an earlier call with the same metrics and "
+            "z_threshold"
+        ),
     )
     time_range: Annotated[list[int], Field(min_length=2, max_length=2)] | None = Field(
-        default=None, description="Optional [start_sec, end_sec] time range"
+        default=None, description="[start, end] elapsed seconds, inclusive"
     )
     metrics: list[str] | None = Field(
-        default=None, description="Optional metric names to filter"
+        default=None,
+        description=(
+            "Descriptor keys to detect and return (default: "
+            "directGroundContactTime, directVerticalOscillation, "
+            "directVerticalRatio)"
+        ),
     )
     z_threshold: float | None = Field(
-        default=None, description="Optional minimum z-score threshold"
+        default=None,
+        description="Detection threshold and minimum |z| filter (default: 3.0)",
     )
     causes: list[str] | None = Field(
         default=None,
-        description="Optional causes to filter (elevation_change, pace_change, fatigue)",
+        description="Keep only these: elevation_change, pace_change, fatigue, isolated",
     )
     limit: int = Field(
         default=50, description="Maximum number of results (default: 50)"
     )
     sort_by: Literal["z_score", "timestamp"] = Field(
-        default="z_score", description="Sort order: z_score (desc) or timestamp (asc)"
+        default="z_score",
+        description="Currently ignored; results are sorted by |z_score| descending",
     )
 
 
@@ -214,8 +240,13 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_split_time_series_detail",
         description=(
-            "Get second-by-second detailed metrics for a specific 1km split "
-            "(DuckDB-based, 98.8% token reduction)"
+            "Sample-level data for one lap (split_number as in "
+            "get_splits_comprehensive; laps are auto 1 km or workout/manual laps) "
+            "from time_series_metrics. Returns time_range, metrics, statistics "
+            "{mean, std, min, max} and, unless statistics_only, time_series. With "
+            "detect_anomalies, anomalies[] {timestamp_s, metric, value, z_score} "
+            "lists samples in this lap whose absolute z against the "
+            "whole-activity mean and std exceeds z_threshold, in either direction."
         ),
         params=SplitTimeSeriesDetailParams,
         handler=_get_split_time_series_detail,
@@ -224,7 +255,15 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="get_time_range_detail",
-        description="Get second-by-second detailed metrics for arbitrary time range",
+        description=(
+            "Recorded samples of chosen metrics for one activity between "
+            "start_time_s and end_time_s (elapsed seconds, end exclusive), from "
+            "time_series_metrics. Returns time_range, metrics, statistics {mean, "
+            "std, min, max} per metric and, unless statistics_only, time_series "
+            "[{timestamp_s, metric: value}]. Long runs are recorded about every "
+            "2 s, so rows are not per second. A metric with no data reads 0.0 in "
+            "statistics."
+        ),
         params=TimeRangeDetailParams,
         handler=_get_time_range_detail,
         cli_group="time-series",
@@ -233,8 +272,13 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
     ToolDef(
         name="detect_form_anomalies_summary",
         description=(
-            "Detect form anomalies and return lightweight summary (~700 tokens, "
-            "95% reduction)"
+            "Scan one activity's raw activity_details samples for sustained form "
+            "deterioration: a sample counts when its z against a rolling "
+            "60-sample baseline exceeds z_threshold in the worse (higher) "
+            "direction, passes a magnitude gate (GCT 10 ms, VO 0.5 cm, VR 0.3 %) "
+            "and lasts 5 s. Returns anomalies_detected, counts per metric and per "
+            "cause (elevation_change/pace_change/fatigue/isolated), severity "
+            "bands, 5-minute clusters, the top 5 and Japanese recommendations."
         ),
         params=DetectFormAnomaliesSummaryParams,
         handler=_detect_form_anomalies_summary,
@@ -244,8 +288,13 @@ TIME_SERIES_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_form_anomaly_details",
         description=(
-            "Get detailed anomaly information with flexible filtering (variable "
-            "token size)"
+            "Full records for the anomalies detect_form_anomalies_summary counts, "
+            "after filters. Each has anomaly_id, timestamp (elapsed s), metric, "
+            "value, baseline (rolling mean), z_score, probable_cause "
+            "(elevation_change/pace_change/fatigue/isolated), cause_details and "
+            "30 s before/after context. Returns total_anomalies, "
+            "returned_anomalies and anomalies sorted by absolute z_score, "
+            "descending, capped by limit."
         ),
         params=FormAnomalyDetailsParams,
         handler=_get_form_anomaly_details,

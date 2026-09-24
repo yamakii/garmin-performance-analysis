@@ -1,17 +1,17 @@
 [
   {
     "name": "export",
-    "description": "Export query results to file (returns handle only, not data). Use for large datasets that need processing in Python.",
+    "description": "Run a read-only DuckDB SELECT and write the result to a local parquet or CSV file instead of returning rows. Returns handle (the file path under /tmp/garmin_exports, deleted after 1 hour), rows, columns, size_mb and expires_at, or error (with a suggestion when rows exceed max_rows). Use it for multi-activity analysis read back in Python; an empty result writes no file.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "query": {
           "type": "string",
-          "description": "DuckDB SQL query to execute"
+          "description": "A single DuckDB SELECT, wrapped as a subquery, so no trailing semicolon"
         },
         "format": {
           "type": "string",
-          "description": "Output format (parquet recommended for efficiency)",
+          "description": "parquet (default) or csv with a header row",
           "enum": [
             "parquet",
             "csv"
@@ -20,7 +20,7 @@
         },
         "max_rows": {
           "type": "integer",
-          "description": "Safety limit for export size (default: 100000)",
+          "description": "Refuse the export when the result has more rows than this (default: 100000)",
           "default": 100000
         }
       },
@@ -31,13 +31,13 @@
   },
   {
     "name": "get_activity_by_date",
-    "description": "Get activity ID and metadata from date",
+    "description": "Resolve a local date to the ingested run(s) on that day. With exactly one run, returns success=true plus activity_id, activity_name, start_time (local), distance_km, duration_seconds and gear (gear_type, gear_model, gear_nickname, gear_label). With none or several, returns success=false, an error and an activities list with the same fields to pick from. Only runs already ingested into DuckDB are found; ingest_activity fetches a new day.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "date": {
           "type": "string",
-          "description": "Date in YYYY-MM-DD format"
+          "description": "Local calendar date of the run, YYYY-MM-DD"
         }
       },
       "required": [
@@ -47,12 +47,13 @@
   },
   {
     "name": "get_date_by_activity_id",
-    "description": "Get date and activity name from activity ID",
+    "description": "Look up the local activity date of an ingested activity. Returns {activity_id, date} with date as YYYY-MM-DD, or date=null when the ID is not in DuckDB. It returns no name, distance or metrics; get_activity_by_date gives those for a date.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID to look up"
         }
       },
       "required": [
@@ -82,58 +83,19 @@
     }
   },
   {
-    "name": "get_splits_pace_hr",
-    "description": "Deprecated: use get_splits_comprehensive instead. Get pace and heart rate data from splits (lightweight: ~3 fields/split, or ~200 bytes with statistics_only=True)",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "activity_id": {
-          "type": "integer"
-        },
-        "statistics_only": {
-          "type": "boolean",
-          "default": false,
-          "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~80%. Default: false"
-        }
-      },
-      "required": [
-        "activity_id"
-      ]
-    }
-  },
-  {
-    "name": "get_splits_form_metrics",
-    "description": "Deprecated: use get_splits_comprehensive instead. Get form efficiency metrics from splits (lightweight: ~4 fields/split, or ~300 bytes with statistics_only=True)",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "activity_id": {
-          "type": "integer"
-        },
-        "statistics_only": {
-          "type": "boolean",
-          "default": false,
-          "description": "If true, return only aggregated statistics (mean, median, std, min, max) for GCT, VO, VR instead of per-split data. Reduces output size by ~80%. Default: false"
-        }
-      },
-      "required": [
-        "activity_id"
-      ]
-    }
-  },
-  {
     "name": "get_splits_elevation",
-    "description": "Get elevation and terrain data from splits (lightweight: ~5 fields/split, or ~250 bytes with statistics_only=True)",
+    "description": "Per-lap elevation for one activity from the splits table (Garmin laps: auto 1 km, or workout/manual laps). Full mode returns splits[] with split_number, elevation_gain_m, elevation_loss_m and terrain_type (平坦/起伏/丘陵/山岳). statistics_only returns metrics.elevation_gain / elevation_loss as {mean, median, std, min, max} in metres, without terrain_type. get_splits_comprehensive carries the same gain/loss; this tool adds the terrain class.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "statistics_only": {
           "type": "boolean",
           "default": false,
-          "description": "If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Reduces output size by ~80%. Default: false"
+          "description": "If true, return only aggregated statistics (mean, median, std, min, max) for elevation gain/loss instead of per-split data. Default: false"
         }
       },
       "required": [
@@ -143,17 +105,18 @@
   },
   {
     "name": "get_splits_comprehensive",
-    "description": "Get comprehensive split data (12 fields: pace, HR, form, power, cadence, elevation). Supports statistics_only mode for 67% token reduction.",
+    "description": "Per-lap data for one activity from the splits table (Garmin laps: auto 1 km, or workout/manual laps). Full mode returns splits[]: split_number, distance_km, pace (s/km), HR and max HR, GCT (ms), VO (cm), VR (%), power (W), stride (cm), cadence and max cadence (spm), elevation gain/loss (m), intensity_type and role_phase; _warnings flags laps without form metrics. To judge a single run, start from get_run_report; use this for lap-level detail it does not carry.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "statistics_only": {
           "type": "boolean",
           "default": false,
-          "description": "If true, return only aggregated statistics (mean, median, std, min, max) instead of per-split data. Reduces output size by ~67%. Default: false"
+          "description": "If true, return only {mean, median, std, min, max} per metric (12 metrics) over all laps instead of per-lap rows: unweighted, the short final lap included, and a metric with no data reads 0.0. Default: false"
         }
       },
       "required": [
@@ -163,12 +126,13 @@
   },
   {
     "name": "get_interval_analysis",
-    "description": "Analyze interval training Work/Recovery segments using intensity_type from DuckDB",
+    "description": "Classify each lap of one activity as work/recovery/warmup/cooldown/steady from its Garmin intensity_type (INTERVAL, RECOVERY, ...; laps recorded as ACTIVE, including [MCP] workout steps, read as steady). Returns segments[] (per lap: times, duration, pace in decimal min/km, HR, GCT, VO, VR), work_recovery_comparison ({} unless both work and recovery laps exist) and fatigue_indicators (last minus first work lap). Missing values count as 0.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -183,16 +147,20 @@
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "activity_date": {
-          "type": "string"
+          "type": "string",
+          "description": "Activity date, YYYY-MM-DD"
         },
         "section_type": {
-          "type": "string"
+          "type": "string",
+          "description": "Section type of the row, e.g. run_note"
         },
         "analysis_data": {
-          "type": "object"
+          "type": "object",
+          "description": "The section's analysis_data object, stored as given"
         }
       },
       "required": [
@@ -211,12 +179,14 @@
       "properties": {
         "section_type": {
           "type": "string",
+          "description": "Section type to validate",
           "enum": [
             "run_note"
           ]
         },
         "analysis_data": {
-          "type": "object"
+          "type": "object",
+          "description": "The analysis_data object to check against the section schema"
         }
       },
       "required": [
@@ -272,36 +242,36 @@
   },
   {
     "name": "analyze_performance_trends",
-    "description": "Analyze performance trends across multiple activities with filtering",
+    "description": "Linear trend of one metric across the given activity_ids: each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend (stable when p>0.05, insufficient_data under 3 points), slope (metric units per day), correlation, p_value, data_points, start_date, end_date. Only pace treats a falling value as improving; for every other metric a rising value is labelled improving, so read the slope sign.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "metric": {
           "type": "string",
-          "description": "Metric name (pace, heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio, distance, training_effect, elevation_gain)"
+          "description": "pace (s/km), heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio or elevation_gain (mean per-lap gain); distance and training_effect are accepted but always return insufficient_data"
         },
         "start_date": {
           "type": "string",
-          "description": "Start date in YYYY-MM-DD format"
+          "description": "Echoed in the result only; does not filter (choose activity_ids)"
         },
         "end_date": {
           "type": "string",
-          "description": "End date in YYYY-MM-DD format"
+          "description": "Echoed in the result only; does not filter (choose activity_ids)"
         },
         "activity_ids": {
           "type": "array",
-          "description": "List of activity IDs to analyze",
+          "description": "Activities to include; this list alone defines the sample",
           "items": {
             "type": "integer"
           }
         },
         "activity_type": {
           "type": "string",
-          "description": "Optional activity type filter"
+          "description": "Not supported; any value raises an error"
         },
         "temperature_range": {
           "type": "array",
-          "description": "Optional [min_temp, max_temp] filter in Celsius",
+          "description": "Keep only activities whose weather-station temperature (°C) is within [min, max]; runs without weather are dropped",
           "items": {
             "type": "number"
           },
@@ -310,7 +280,7 @@
         },
         "distance_range": {
           "type": "array",
-          "description": "Optional [min_km, max_km] filter",
+          "description": "Keep only activities whose total distance (km) is within [min, max]",
           "items": {
             "type": "number"
           },
@@ -328,21 +298,21 @@
   },
   {
     "name": "get_heat_adjusted_trend",
-    "description": "Climate-neutral HR-at-pace trend with per-run heat_cost (temperature-adjusted fitness)",
+    "description": "Climate-neutral HR-at-pace trend: fits HR ~ pace + max(temp - ref_temp_c, 0) + days on whole-run averages (HR, pace, weather-station temperature) of the activity_ids dated within start_date..end_date. Returns status, coefficients (beta_heat = bpm per °C above ref, n, r_squared), neutral_hr_slope (bpm/day) with its p_value, and points[] {date, temp_c, raw_hr, heat_cost, neutral_hr}. Needs 10 complete runs, else status=insufficient_data. Workout types are mixed.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "start_date": {
           "type": "string",
-          "description": "Start date in YYYY-MM-DD format"
+          "description": "Inclusive start (YYYY-MM-DD); runs dated earlier are dropped"
         },
         "end_date": {
           "type": "string",
-          "description": "End date in YYYY-MM-DD format"
+          "description": "Inclusive end (YYYY-MM-DD); runs dated later are dropped"
         },
         "activity_ids": {
           "type": "array",
-          "description": "List of activity IDs to analyze",
+          "description": "Activities to fit on; only those dated in the window with HR, pace and temperature are used",
           "items": {
             "type": "integer"
           }
@@ -361,7 +331,7 @@
   },
   {
     "name": "extract_insights",
-    "description": "Extract insights from section analyses using keyword-based search",
+    "description": "List stored section_analyses rows whose analysis_data has a non-empty top-level field named in keywords (a field-name match, not a text search). Returns a list of {activity_id, activity_date, section_type, analysis_data} with the whole JSON, newest first, paged by limit/offset; every stored version is returned, not just the latest. run_note fields are story, good_points, growth_points, next_challenge, timeline, notes, question.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -370,14 +340,14 @@
           "items": {
             "type": "string"
           },
-          "description": "Keywords to search for (e.g., key_strengths, improvement_areas, efficiency, evaluation, environmental_impact)"
+          "description": "Top-level analysis_data field names; a row matches when any is non-empty. run_note: story, good_points, growth_points, next_challenge, next_challenge_evidence, timeline, notes, question. key_strengths / improvement_areas / efficiency / evaluation / environmental_impact exist only on legacy rows"
         },
         "section_types": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Optional section types to filter by"
+          "description": "Restrict to these section types (run_note, or legacy efficiency/environment/phase/split/summary)"
         },
         "limit": {
           "type": "integer",
@@ -391,7 +361,7 @@
         },
         "max_tokens": {
           "type": "integer",
-          "description": "Maximum token count (optional)"
+          "description": "Ignored by this tool; page with limit/offset"
         }
       },
       "required": [
@@ -401,17 +371,17 @@
   },
   {
     "name": "compare_similar_workouts",
-    "description": "Find and compare similar past workouts based on pace and distance",
+    "description": "Find other activities whose whole-run average pace and total distance are within tolerance of the target, ordered by pace closeness then recency. Returns target_activity and similar_activities[] with training_type, temperature and its diff, similarity_score (0-100: pace 45%, distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) as candidate minus target, and a Japanese interpretation. Candidates may be dated after the target.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
           "type": "integer",
-          "description": "Target activity ID"
+          "description": "Garmin activity ID of the target run (resolve one from a date with get_activity_by_date)"
         },
         "pace_tolerance": {
           "type": "number",
-          "description": "Pace tolerance as fraction (default 0.2 = ±20%)"
+          "description": "Allowed fractional difference from the target's average pace in s/km (default 0.2 = ±20%)"
         },
         "distance_tolerance": {
           "type": "number",
@@ -419,15 +389,15 @@
         },
         "terrain_match": {
           "type": "boolean",
-          "description": "Whether to match terrain characteristics"
+          "description": "Accepted but currently ignored"
         },
         "activity_type_filter": {
           "type": "string",
-          "description": "Optional activity type keyword filter"
+          "description": "Substring matched against activity_name (SQL LIKE), not a workout type"
         },
         "date_range": {
           "type": "array",
-          "description": "Optional [start_date, end_date] in YYYY-MM-DD format",
+          "description": "Optional [start, end] (YYYY-MM-DD, inclusive) limiting candidates",
           "items": {
             "type": "string"
           }
@@ -449,7 +419,8 @@
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -459,12 +430,13 @@
   },
   {
     "name": "get_form_evaluations",
-    "description": "Get pace-corrected form evaluation results (expected values, actual values, scores, star ratings, evaluation texts)",
+    "description": "Pace-corrected form inputs for one activity: for GCT (ms), VO (cm), VR (%) and cadence (spm), the actual value, the value expected at that pace from the athlete's own baseline, the delta, a star score and evaluation text; power efficiency (W, W/kg, actual vs expected speed, a self-baseline label); integrated_score, training_mode and overall score/stars. Null when not evaluated. Stars are legacy display values; judge a run with get_run_report.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -474,25 +446,26 @@
   },
   {
     "name": "get_form_baseline_trend",
-    "description": "Get form baseline trend (1-month coefficient comparison for form_trend analysis)",
+    "description": "Compare the athlete's form-baseline model coefficients for the period containing activity_date with the period one month earlier. Returns success and metrics keyed gct/vo/vr/cadence/power, each with current and previous {coef_d, coef_b, power_a, power_b, period} and deltas (delta_d/delta_b for the pace models, delta_power_a/delta_power_b for power). success=false with an error when either period has no baseline.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID; echoed only (the lookup uses activity_date)"
         },
         "activity_date": {
           "type": "string",
-          "description": "Activity date in YYYY-MM-DD format"
+          "description": "Date (YYYY-MM-DD) whose baseline period is compared with the one a month earlier"
         },
         "user_id": {
           "type": "string",
-          "description": "User ID (default: 'default')",
+          "description": "Baseline owner (default: 'default')",
           "default": "default"
         },
         "condition_group": {
           "type": "string",
-          "description": "Condition group (default: 'flat_road')",
+          "description": "Baseline condition group (default: 'flat_road', the group the baseline scripts train)",
           "default": "flat_road"
         }
       },
@@ -504,12 +477,13 @@
   },
   {
     "name": "get_hr_efficiency_analysis",
-    "description": "Get HR efficiency analysis (zone distribution, training type) from hr_efficiency table",
+    "description": "HR-zone summary for one activity, computed at ingest from Garmin's native zone times: zone_percentages zone1-zone5 (% of time), primary_zone, training_type (Garmin training-effect label, lowercased), rule-based labels zone_distribution_rating, hr_stability, aerobic_efficiency and training_quality, and flags zone2_focus (>60% Z2) and zone4_threshold_work (>20% Z4-5). Null when missing. Zone boundaries: get_heart_rate_zones_detail.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -519,12 +493,13 @@
   },
   {
     "name": "get_heart_rate_zones_detail",
-    "description": "Get heart rate zones detail (boundaries, time distribution) from heart_rate_zones table",
+    "description": "Garmin native heart-rate zones recorded with one activity: zones[] with zone_number 1-5, low_boundary and high_boundary (bpm), time_in_zone_seconds and zone_percentage. Boundaries are the zone settings in force for that run; high_boundary is the next zone's low minus 1, and zone 5's is a fixed 220 placeholder, not the athlete's max HR. Null when missing.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -534,12 +509,13 @@
   },
   {
     "name": "get_vo2_max_data",
-    "description": "Get VO2 max data (precise value, fitness age, category) from vo2_max table",
+    "description": "Garmin's running VO2max estimate for one activity: precise_value and rounded value (ml/kg/min), date (Garmin calendar date of the estimate) and category, a Japanese label derived here from precise_value on fixed adult-male bands (47/42/38/34). When the activity has no row, falls back to the latest estimate dated on or before the activity. Null when none exists.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -549,12 +525,13 @@
   },
   {
     "name": "get_lactate_threshold_data",
-    "description": "Get lactate threshold data (HR, speed, power) from lactate_threshold table",
+    "description": "Garmin's lactate-threshold values fetched with one activity: heart_rate (bpm), speed_mps (m/s), date_hr (when Garmin last updated the HR/speed threshold), functional_threshold_power (W), power_to_weight (W/kg), weight and date_power. Null when that activity has no row; there is no fallback to other activities. These are Garmin's auto-estimates as of the fetch.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -564,12 +541,13 @@
   },
   {
     "name": "get_performance_trends",
-    "description": "Get performance trends data (pace consistency, HR drift, phase analysis)",
+    "description": "Within-run pacing summary for one activity: pace_consistency (coefficient of variation of representative run-lap paces, a fraction), hr_drift_percentage (half-vs-half decoupling for steady runs, rep-matched drift for intervals) and avg_pace (s/km) / avg_hr per phase (warmup, run, cooldown, plus recovery for intervals). cadence_consistency and fatigue_pattern are fixed placeholders (安定 / 適切). Null when missing. get_activity_durability gives the time-series decoupling.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -579,12 +557,13 @@
   },
   {
     "name": "get_weather_data",
-    "description": "Get weather data (temperature, humidity, wind) from activity",
+    "description": "Weather for one activity from Garmin's activity weather record (an external weather station's observation near the start time), not the watch's body-warmed temperature sensor. Returns temperature_c, temperature_f, humidity (%), wind_speed_ms and wind_direction (compass point). One snapshot per run; fields are null when Garmin had no weather, and the result is null for an unknown activity.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -599,7 +578,8 @@
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         }
       },
       "required": [
@@ -615,6 +595,7 @@
       "properties": {
         "window_days": {
           "type": "integer",
+          "description": "Rolling window in days for the best-effort maximum (default 90)",
           "default": 90
         }
       }
@@ -622,35 +603,36 @@
   },
   {
     "name": "get_split_time_series_detail",
-    "description": "Get second-by-second detailed metrics for a specific 1km split (DuckDB-based, 98.8% token reduction)",
+    "description": "Sample-level data for one lap (split_number as in get_splits_comprehensive; laps are auto 1 km or workout/manual laps) from time_series_metrics. Returns time_range, metrics, statistics {mean, std, min, max} and, unless statistics_only, time_series. With detect_anomalies, anomalies[] {timestamp_s, metric, value, z_score} lists samples in this lap whose absolute z against the whole-activity mean and std exceeds z_threshold, in either direction.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "split_number": {
           "type": "integer",
-          "description": "Split number (1-based)"
+          "description": "Lap number (1-based), as split_number in get_splits_comprehensive"
         },
         "metrics": {
           "type": "array",
-          "description": "List of metric names to extract (optional)",
+          "description": "time_series_metrics column names, e.g. heart_rate, speed (m/s), cadence (spm, both feet), power, ground_contact_time, vertical_oscillation, vertical_ratio, stride_length, elevation, grade_adjusted_speed, air_temperature (device sensor); default: heart_rate, speed, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio. Unknown names return an error",
           "items": {
             "type": "string"
           }
         },
         "statistics_only": {
           "type": "boolean",
-          "description": "If true, only return statistics (98.8% token reduction). Default: false"
+          "description": "If true, return only statistics {mean, std, min, max} per metric, without time_series. Default: false"
         },
         "detect_anomalies": {
           "type": "boolean",
-          "description": "Whether to detect anomalies in the data. Default: false"
+          "description": "If true, add anomalies[] for this lap (z versus the whole-activity mean/std). Default: false"
         },
         "z_threshold": {
           "type": "number",
-          "description": "Z-score threshold for anomaly detection. Default: 2.0"
+          "description": "Absolute z above which a sample is an anomaly. Default: 2.0"
         }
       },
       "required": [
@@ -661,24 +643,25 @@
   },
   {
     "name": "get_time_range_detail",
-    "description": "Get second-by-second detailed metrics for arbitrary time range",
+    "description": "Recorded samples of chosen metrics for one activity between start_time_s and end_time_s (elapsed seconds, end exclusive), from time_series_metrics. Returns time_range, metrics, statistics {mean, std, min, max} per metric and, unless statistics_only, time_series [{timestamp_s, metric: value}]. Long runs are recorded about every 2 s, so rows are not per second. A metric with no data reads 0.0 in statistics.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "start_time_s": {
           "type": "integer",
-          "description": "Start time in seconds"
+          "description": "Inclusive start, seconds elapsed since the activity start"
         },
         "end_time_s": {
           "type": "integer",
-          "description": "End time in seconds"
+          "description": "Exclusive end, seconds elapsed since the activity start"
         },
         "metrics": {
           "type": "array",
-          "description": "List of metric names to extract (optional)",
+          "description": "time_series_metrics column names, e.g. heart_rate, speed (m/s), cadence (spm, both feet), power, ground_contact_time, vertical_oscillation, vertical_ratio, stride_length, elevation, grade_adjusted_speed, air_temperature (device sensor); default: heart_rate, speed, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio. Unknown names return an error",
           "items": {
             "type": "string"
           }
@@ -697,23 +680,24 @@
   },
   {
     "name": "detect_form_anomalies_summary",
-    "description": "Detect form anomalies and return lightweight summary (~700 tokens, 95% reduction)",
+    "description": "Scan one activity's raw activity_details samples for sustained form deterioration: a sample counts when its z against a rolling 60-sample baseline exceeds z_threshold in the worse (higher) direction, passes a magnitude gate (GCT 10 ms, VO 0.5 cm, VR 0.3 %) and lasts 5 s. Returns anomalies_detected, counts per metric and per cause (elevation_change/pace_change/fatigue/isolated), severity bands, 5-minute clusters, the top 5 and Japanese recommendations.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "metrics": {
           "type": "array",
-          "description": "Metrics to analyze (default: GCT, VO, VR)",
+          "description": "Garmin descriptor keys: directGroundContactTime, directVerticalOscillation, directVerticalRatio (the default); short names such as GCT match nothing",
           "items": {
             "type": "string"
           }
         },
         "z_threshold": {
           "type": "number",
-          "description": "Z-score threshold for anomaly detection (default: 3.0)"
+          "description": "Minimum z versus the rolling baseline (default: 3.0)"
         }
       },
       "required": [
@@ -723,23 +707,24 @@
   },
   {
     "name": "get_form_anomaly_details",
-    "description": "Get detailed anomaly information with flexible filtering (variable token size)",
+    "description": "Full records for the anomalies detect_form_anomalies_summary counts, after filters. Each has anomaly_id, timestamp (elapsed s), metric, value, baseline (rolling mean), z_score, probable_cause (elevation_change/pace_change/fatigue/isolated), cause_details and 30 s before/after context. Returns total_anomalies, returned_anomalies and anomalies sorted by absolute z_score, descending, capped by limit.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "activity_id": {
-          "type": "integer"
+          "type": "integer",
+          "description": "Garmin activity ID (resolve one from a date with get_activity_by_date)"
         },
         "anomaly_ids": {
           "type": "array",
-          "description": "Optional specific anomaly IDs to retrieve",
+          "description": "anomaly_id values from an earlier call with the same metrics and z_threshold",
           "items": {
             "type": "integer"
           }
         },
         "time_range": {
           "type": "array",
-          "description": "Optional [start_sec, end_sec] time range",
+          "description": "[start, end] elapsed seconds, inclusive",
           "items": {
             "type": "integer"
           },
@@ -748,18 +733,18 @@
         },
         "metrics": {
           "type": "array",
-          "description": "Optional metric names to filter",
+          "description": "Descriptor keys to detect and return (default: directGroundContactTime, directVerticalOscillation, directVerticalRatio)",
           "items": {
             "type": "string"
           }
         },
         "z_threshold": {
           "type": "number",
-          "description": "Optional minimum z-score threshold"
+          "description": "Detection threshold and minimum |z| filter (default: 3.0)"
         },
         "causes": {
           "type": "array",
-          "description": "Optional causes to filter (elevation_change, pace_change, fatigue)",
+          "description": "Keep only these: elevation_change, pace_change, fatigue, isolated",
           "items": {
             "type": "string"
           }
@@ -771,7 +756,7 @@
         },
         "sort_by": {
           "type": "string",
-          "description": "Sort order: z_score (desc) or timestamp (asc)",
+          "description": "Currently ignored; results are sorted by |z_score| descending",
           "enum": [
             "z_score",
             "timestamp"
@@ -786,13 +771,13 @@
   },
   {
     "name": "get_current_fitness_summary",
-    "description": "Get current fitness level assessment (VDOT, pace zones, weekly volume, training type distribution)",
+    "description": "Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present. strengths/weaknesses are always empty.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "lookback_weeks": {
           "type": "integer",
-          "description": "Number of weeks to analyze (default: 8)"
+          "description": "Weeks back from today (default: 8); volume is total km divided by this, so a partial current week lowers it"
         }
       }
     }

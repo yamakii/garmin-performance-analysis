@@ -1,8 +1,5 @@
 """Analysis domain tool definitions.
 
-Descriptions are copied verbatim from the previous hand-written schemas in
-``tool_schemas.py`` to guarantee byte-for-byte MCP parity.
-
 The ``analyze_performance_trends`` and ``compare_similar_workouts`` schemas carry
 nested array properties (``minItems``/``maxItems``) that the standard schema
 normalization cannot reproduce, so they use ``input_schema_override``.
@@ -15,7 +12,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field
 
 from garmin_mcp.database.db_reader import GarminDBReader
-from garmin_mcp.tools.registry import ToolDef
+from garmin_mcp.tools.registry import ACTIVITY_ID_DESCRIPTION, ToolDef
 
 _SECTION_TYPES = Literal["run_note"]
 
@@ -27,17 +24,21 @@ _SECTION_TYPES = Literal["run_note"]
 class InsertSectionAnalysisParams(BaseModel):
     """Arguments for ``insert_section_analysis_dict``."""
 
-    activity_id: int
-    activity_date: str
-    section_type: str
-    analysis_data: dict[str, Any]
+    activity_id: int = Field(description=ACTIVITY_ID_DESCRIPTION)
+    activity_date: str = Field(description="Activity date, YYYY-MM-DD")
+    section_type: str = Field(description="Section type of the row, e.g. run_note")
+    analysis_data: dict[str, Any] = Field(
+        description="The section's analysis_data object, stored as given"
+    )
 
 
 class ValidateSectionJsonParams(BaseModel):
     """Arguments for ``validate_section_json``."""
 
-    section_type: _SECTION_TYPES
-    analysis_data: dict[str, Any]
+    section_type: _SECTION_TYPES = Field(description="Section type to validate")
+    analysis_data: dict[str, Any] = Field(
+        description="The analysis_data object to check against the section schema"
+    )
 
 
 class GetAnalysisContractParams(BaseModel):
@@ -62,33 +63,56 @@ class AnalyzePerformanceTrendsParams(BaseModel):
 
     metric: str = Field(
         description=(
-            "Metric name (pace, heart_rate, cadence, power, vertical_oscillation, "
-            "ground_contact_time, vertical_ratio, distance, training_effect, "
-            "elevation_gain)"
+            "pace (s/km), heart_rate, cadence, power, vertical_oscillation, "
+            "ground_contact_time, vertical_ratio or elevation_gain (mean per-lap "
+            "gain); distance and training_effect are accepted but always return "
+            "insufficient_data"
         )
     )
-    start_date: str = Field(description="Start date in YYYY-MM-DD format")
-    end_date: str = Field(description="End date in YYYY-MM-DD format")
-    activity_ids: list[int] = Field(description="List of activity IDs to analyze")
+    start_date: str = Field(
+        description="Echoed in the result only; does not filter (choose activity_ids)"
+    )
+    end_date: str = Field(
+        description="Echoed in the result only; does not filter (choose activity_ids)"
+    )
+    activity_ids: list[int] = Field(
+        description="Activities to include; this list alone defines the sample"
+    )
     activity_type: str | None = Field(
-        default=None, description="Optional activity type filter"
+        default=None, description="Not supported; any value raises an error"
     )
     temperature_range: (
         Annotated[list[float], Field(min_length=2, max_length=2)] | None
     ) = Field(
-        default=None, description="Optional [min_temp, max_temp] filter in Celsius"
+        default=None,
+        description=(
+            "Keep only activities whose weather-station temperature (°C) is within "
+            "[min, max]; runs without weather are dropped"
+        ),
     )
     distance_range: Annotated[list[float], Field(min_length=2, max_length=2)] | None = (
-        Field(default=None, description="Optional [min_km, max_km] filter")
+        Field(
+            default=None,
+            description="Keep only activities whose total distance (km) is within [min, max]",
+        )
     )
 
 
 class GetHeatAdjustedTrendParams(BaseModel):
     """Arguments for ``get_heat_adjusted_trend``."""
 
-    start_date: str = Field(description="Start date in YYYY-MM-DD format")
-    end_date: str = Field(description="End date in YYYY-MM-DD format")
-    activity_ids: list[int] = Field(description="List of activity IDs to analyze")
+    start_date: str = Field(
+        description="Inclusive start (YYYY-MM-DD); runs dated earlier are dropped"
+    )
+    end_date: str = Field(
+        description="Inclusive end (YYYY-MM-DD); runs dated later are dropped"
+    )
+    activity_ids: list[int] = Field(
+        description=(
+            "Activities to fit on; only those dated in the window with HR, pace "
+            "and temperature are used"
+        )
+    )
     ref_temp_c: float | None = Field(
         default=None,
         description="Hinge reference temperature in Celsius (default 15)",
@@ -116,23 +140,33 @@ class ExtractInsightsParams(BaseModel):
 class CompareSimilarWorkoutsParams(BaseModel):
     """Arguments for ``compare_similar_workouts``."""
 
-    activity_id: int = Field(description="Target activity ID")
+    activity_id: int = Field(
+        description=(
+            "Garmin activity ID of the target run (resolve one from a date with "
+            "get_activity_by_date)"
+        )
+    )
     pace_tolerance: float | None = Field(
-        default=None, description="Pace tolerance as fraction (default 0.2 = ±20%)"
+        default=None,
+        description=(
+            "Allowed fractional difference from the target's average pace in s/km "
+            "(default 0.2 = ±20%)"
+        ),
     )
     distance_tolerance: float | None = Field(
         default=None,
         description="Distance tolerance as fraction (default 0.2 = ±20%)",
     )
     terrain_match: bool | None = Field(
-        default=None, description="Whether to match terrain characteristics"
+        default=None, description="Accepted but currently ignored"
     )
     activity_type_filter: str | None = Field(
-        default=None, description="Optional activity type keyword filter"
+        default=None,
+        description="Substring matched against activity_name (SQL LIKE), not a workout type",
     )
     date_range: list[str] | None = Field(
         default=None,
-        description="Optional [start_date, end_date] in YYYY-MM-DD format",
+        description="Optional [start, end] (YYYY-MM-DD, inclusive) limiting candidates",
     )
     limit: int | None = Field(
         default=None, description="Maximum number of results (default 10)"
@@ -153,12 +187,21 @@ _EXTRACT_INSIGHTS_SCHEMA: dict[str, Any] = {
         "keywords": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Keywords to search for (e.g., key_strengths, improvement_areas, efficiency, evaluation, environmental_impact)",
+            "description": (
+                "Top-level analysis_data field names; a row matches when any is "
+                "non-empty. run_note: story, good_points, growth_points, "
+                "next_challenge, next_challenge_evidence, timeline, notes, question. "
+                "key_strengths / improvement_areas / efficiency / evaluation / "
+                "environmental_impact exist only on legacy rows"
+            ),
         },
         "section_types": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Optional section types to filter by",
+            "description": (
+                "Restrict to these section types (run_note, or legacy "
+                "efficiency/environment/phase/split/summary)"
+            ),
         },
         "limit": {
             "type": "integer",
@@ -172,7 +215,7 @@ _EXTRACT_INSIGHTS_SCHEMA: dict[str, Any] = {
         },
         "max_tokens": {
             "type": "integer",
-            "description": "Maximum token count (optional)",
+            "description": "Ignored by this tool; page with limit/offset",
         },
     },
     "required": ["keywords"],
@@ -375,7 +418,15 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="analyze_performance_trends",
-        description="Analyze performance trends across multiple activities with filtering",
+        description=(
+            "Linear trend of one metric across the given activity_ids: each "
+            "activity contributes the unweighted mean of the metric over its "
+            "laps, regressed on elapsed days. Returns metric, trend (stable when "
+            "p>0.05, insufficient_data under 3 points), slope (metric units per "
+            "day), correlation, p_value, data_points, start_date, end_date. Only "
+            "pace treats a falling value as improving; for every other metric a "
+            "rising value is labelled improving, so read the slope sign."
+        ),
         params=AnalyzePerformanceTrendsParams,
         handler=_analyze_performance_trends,
         cli_group="analysis",
@@ -384,8 +435,14 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_heat_adjusted_trend",
         description=(
-            "Climate-neutral HR-at-pace trend with per-run heat_cost "
-            "(temperature-adjusted fitness)"
+            "Climate-neutral HR-at-pace trend: fits HR ~ pace + max(temp - "
+            "ref_temp_c, 0) + days on whole-run averages (HR, pace, "
+            "weather-station temperature) of the activity_ids dated within "
+            "start_date..end_date. Returns status, coefficients (beta_heat = bpm "
+            "per °C above ref, n, r_squared), neutral_hr_slope (bpm/day) with its "
+            "p_value, and points[] {date, temp_c, raw_hr, heat_cost, neutral_hr}. "
+            "Needs 10 complete runs, else status=insufficient_data. Workout types "
+            "are mixed."
         ),
         params=GetHeatAdjustedTrendParams,
         handler=_get_heat_adjusted_trend,
@@ -394,7 +451,15 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="extract_insights",
-        description="Extract insights from section analyses using keyword-based search",
+        description=(
+            "List stored section_analyses rows whose analysis_data has a non-empty "
+            "top-level field named in keywords (a field-name match, not a text "
+            "search). Returns a list of {activity_id, activity_date, section_type, "
+            "analysis_data} with the whole JSON, newest first, paged by "
+            "limit/offset; every stored version is returned, not just the latest. "
+            "run_note fields are story, good_points, growth_points, "
+            "next_challenge, timeline, notes, question."
+        ),
         params=ExtractInsightsParams,
         handler=_extract_insights,
         cli_group="analysis",
@@ -403,7 +468,15 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="compare_similar_workouts",
-        description="Find and compare similar past workouts based on pace and distance",
+        description=(
+            "Find other activities whose whole-run average pace and total distance "
+            "are within tolerance of the target, ordered by pace closeness then "
+            "recency. Returns target_activity and similar_activities[] with "
+            "training_type, temperature and its diff, similarity_score (0-100: "
+            "pace 45%, distance 35%, training type 20%), pace_diff (s/km) and "
+            "hr_diff (bpm) as candidate minus target, and a Japanese "
+            "interpretation. Candidates may be dated after the target."
+        ),
         params=CompareSimilarWorkoutsParams,
         handler=_compare_similar_workouts,
         cli_group="analysis",
