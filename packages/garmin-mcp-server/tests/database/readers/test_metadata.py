@@ -129,3 +129,24 @@ class TestGetBulkActivityFields:
 
     def test_empty_ids_returns_empty(self, bulk_metadata_reader: MetadataReader):
         assert bulk_metadata_reader.get_bulk_activity_fields([], ["temp_celsius"]) == {}
+
+
+@pytest.mark.integration
+class TestGetActivityIdsBetween:
+    """Tests for MetadataReader.get_activity_ids_between()."""
+
+    def test_get_activity_ids_between_returns_window_ascending(
+        self, bulk_metadata_reader: MetadataReader
+    ):
+        result = bulk_metadata_reader.get_activity_ids_between(
+            "2025-01-01", "2025-01-31"
+        )
+        assert result == [1001, 1002]
+
+    def test_get_activity_ids_between_empty_window(
+        self, bulk_metadata_reader: MetadataReader
+    ):
+        assert (
+            bulk_metadata_reader.get_activity_ids_between("2024-01-01", "2024-12-31")
+            == []
+        )

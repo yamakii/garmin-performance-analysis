@@ -119,7 +119,8 @@ class TestWorkflowPlannerDateResolution:
 
             assert result["activity_id"] == 20594901208
             assert result["date"] == "2025-10-05"
-            assert result["validation_status"] == "passed"
+            assert "validation_status" not in result
+            assert "quality_score" not in result
             mock_worker_instance.process_activity_by_date.assert_called_once_with(
                 "2025-10-05"
             )

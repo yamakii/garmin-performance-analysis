@@ -44,6 +44,7 @@ from mcp.types import (
     Tool,
 )
 
+from garmin_mcp.server_tools import SERVER_TOOLS
 from garmin_mcp.worker_client import WorkerClient
 
 logger = logging.getLogger(__name__)
@@ -55,27 +56,7 @@ _STARTED_AT: str = datetime.now(UTC).isoformat()
 
 # The two server-level tools are owned by the shim, not the worker. They are
 # appended to the worker's domain-tool schema in ``list_tools``.
-_SERVER_TOOLS: list[Tool] = [
-    Tool(
-        name="get_server_info",
-        description=(
-            "Get diagnostic info about the running MCP server (shim started_at "
-            "plus worker DB diagnostics). Use to verify readiness."
-        ),
-        input_schema={"type": "object", "properties": {}},
-    ),
-    Tool(
-        name="reload_server",
-        description=(
-            "Restart the execution worker to pick up code changes. The MCP shim "
-            "process stays alive (the session is preserved) and a "
-            "tools/list_changed notification is sent. Signature-compatible "
-            "changes apply with no reconnect; schema changes (added/removed "
-            "tools or changed args) need one /mcp reconnect."
-        ),
-        input_schema={"type": "object", "properties": {}},
-    ),
-]
+_SERVER_TOOLS: list[Tool] = SERVER_TOOLS
 _SERVER_TOOL_NAMES = {t.name for t in _SERVER_TOOLS}
 
 

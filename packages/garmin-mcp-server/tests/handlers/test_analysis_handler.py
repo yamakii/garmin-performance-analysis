@@ -143,6 +143,30 @@ class TestAnalyzePerformanceTrends:
         )
 
     @pytest.mark.asyncio
+    async def test_analyze_performance_trends_params_ids_optional(
+        self, mock_db_reader: MagicMock, mocker: Any
+    ) -> None:
+        mock_cls = mocker.patch(
+            "garmin_mcp.rag.queries.trends.PerformanceTrendAnalyzer"
+        )
+        mock_cls.return_value.analyze_metric_trend.return_value = {"trend": "stable"}
+
+        dispatch_tool(
+            mock_db_reader,
+            "analyze_performance_trends",
+            {"metric": "pace", "start_date": "2025-10-01", "end_date": "2025-10-31"},
+        )
+
+        mock_cls.return_value.analyze_metric_trend.assert_called_once_with(
+            metric="pace",
+            start_date="2025-10-01",
+            end_date="2025-10-31",
+            activity_ids=None,
+            temperature_range=None,
+            distance_range=None,
+        )
+
+    @pytest.mark.asyncio
     async def test_unsupported_metric_returns_error(
         self, mock_db_reader: MagicMock
     ) -> None:

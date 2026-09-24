@@ -36,20 +36,16 @@ class WorkflowPlanner:
         self.db_path = db_path
         self.db_reader = GarminDBReader(self.db_path)
 
-    def execute_full_workflow(
-        self,
-        date: str,
-        force_regenerate: bool = False,
-    ) -> dict[str, Any]:
+    def execute_full_workflow(self, date: str) -> dict[str, Any]:
         """
         Execute the full analysis workflow.
 
         Args:
             date: Activity date YYYY-MM-DD format
-            force_regenerate: Force regeneration of all data
 
         Returns:
-            Workflow result with validation status and quality score
+            Workflow result: activity_id, date, form_evaluation_status, files,
+            timestamp
 
         Raises:
             ValueError: If no activity found for date
@@ -99,24 +95,15 @@ class WorkflowPlanner:
             logger.error(f"Form evaluation unexpected error: {e}", exc_info=True)
             form_evaluation_status = "error"
 
-        # Step 3: Data validation (precheck.json removed - using defaults)
-        validation_status = "passed"
-        quality_score = 1.0
-
         result = {
             "activity_id": activity_id,
             "date": date,
-            "validation_status": validation_status,
-            "quality_score": quality_score,
-            "form_evaluation_status": form_evaluation_status,  # NEW
+            "form_evaluation_status": form_evaluation_status,
             "files": ingest_result["files"],
             "timestamp": datetime.now().isoformat(),
         }
 
-        logger.info(
-            f"Workflow completed: validation={validation_status}, "
-            f"quality={quality_score}, form_evaluation={form_evaluation_status}"
-        )
+        logger.info(f"Workflow completed: form_evaluation={form_evaluation_status}")
         return result
 
 

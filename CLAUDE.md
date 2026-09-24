@@ -43,14 +43,11 @@ All MCP tools have docstrings describing their parameters. Use `mcp__garmin-db__
 
 **2. Multi-Activity Trends**
 ```
-1. Get the IDs: mcp__garmin-db__get_activity_by_date(date=...) for each run in the range
-   (10+ activities → use the export workflow in "For Data Analysis" instead)
-2. Compare: mcp__garmin-db__analyze_performance_trends(
-     metric="pace",
-     start_date="2025-10-01",
-     end_date="2025-10-31",
-     activity_ids=[...]
-   )
+mcp__garmin-db__analyze_performance_trends(
+  metric="pace",
+  start_date="2025-10-01",
+  end_date="2025-10-31"
+)   # every run in the window; pass activity_ids=[...] to narrow it
 ```
 
 **3. Similar Workout Comparison**

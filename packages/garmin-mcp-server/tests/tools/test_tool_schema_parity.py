@@ -111,3 +111,19 @@ def test_dispatch_unknown_tool_raises() -> None:
     reader = MagicMock()
     with pytest.raises(KeyError):
         dispatch(PHYSIOLOGY_TOOLS_BY_NAME, reader, "no_such_tool", {})
+
+
+@pytest.mark.unit
+def test_server_tool_schemas_match_server_descriptions() -> None:
+    """The reference docs' server tools carry the shim's own descriptions."""
+    from garmin_mcp import server
+    from garmin_mcp.server_tools import SERVER_TOOLS
+
+    assert server._SERVER_TOOLS is SERVER_TOOLS
+    assert [
+        {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+        for t in SERVER_TOOLS
+    ] == tool_schemas._SERVER_TOOLS
+    served = {t.name: t.description for t in tool_schemas.get_tool_definitions()}
+    for t in SERVER_TOOLS:
+        assert served[t.name] == t.description

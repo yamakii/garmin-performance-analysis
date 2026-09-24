@@ -73,12 +73,11 @@ Look up the local activity date of an ingested activity. Returns {activity_id, d
 
 CLI: `garmin-db metadata ingest`
 
-Ingest activity data from Garmin Connect into DuckDB. Fetches raw data, stores in DuckDB, and runs form evaluation.
+Ingest the one run on date from Garmin Connect (raw files are cache-first), write it to DuckDB and run the pace-corrected form evaluation. Returns {success: true, activity_id, date, form_evaluation_status} where form_evaluation_status is success, model_not_found, failed or error; returns {success: false, error} when the day has no run or several. Use catch_up_ingest for a date range and get_activity_by_date to read a run that is already ingested.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `date` | string | **required** | Activity date in YYYY-MM-DD format |
-| `force_regenerate` | boolean | optional (default `False`) | Force regeneration of all data (default: false) |
 
 ## Splits
 
@@ -123,7 +122,7 @@ Append one section_analyses row (activity_id, activity_date, section_type, analy
 
 CLI: `garmin-db analysis validate-section`
 
-Validate a run_note coach review against its Pydantic schema. Returns {valid: bool, errors: list[str]}.
+Validate a run_note coach review against its Pydantic schema. Returns {valid: bool, errors: list[str]}. Only section_type run_note is accepted. This checks the schema only: the grounding gate (every evidence key must resolve against the run report) runs at merge, so valid: true does not mean the merge will accept it.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -156,14 +155,14 @@ Find running activities without an analysis in a date range. An activity counts 
 
 CLI: `garmin-db analysis performance-trends`
 
-Linear trend of one metric across the activity_ids dated within start_date..end_date: each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend, slope (metric units per day), correlation, p_value, data_points, start_date, end_date. trend is stable when p>0.05 and insufficient_data under 3 points. Otherwise pace, ground_contact_time, vertical_oscillation and vertical_ratio (lower is better) read improving / declining, while heart_rate, power, cadence and elevation_gain, which are not comparable across runs at different paces, read only increasing / decreasing.
+Linear trend of one metric across the activity_ids dated within start_date..end_date (omit activity_ids to use every run in the window): each activity contributes the unweighted mean of the metric over its laps, regressed on elapsed days. Returns metric, trend, slope (metric units per day), correlation, p_value, data_points, start_date, end_date. trend is stable when p>0.05 and insufficient_data under 3 points. Otherwise pace, ground_contact_time, vertical_oscillation and vertical_ratio (lower is better) read improving / declining, while heart_rate, power, cadence and elevation_gain, which are not comparable across runs at different paces, read only increasing / decreasing.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `metric` | string | **required** | pace (s/km), heart_rate, cadence, power, vertical_oscillation, ground_contact_time, vertical_ratio or elevation_gain (mean per-lap gain); any other value returns an error listing these |
 | `start_date` | string | **required** | Inclusive start (YYYY-MM-DD); activities dated earlier are dropped |
 | `end_date` | string | **required** | Inclusive end (YYYY-MM-DD); activities dated later are dropped |
-| `activity_ids` | array[integer] | **required** | Activities to consider; only those dated in the window are used |
+| `activity_ids` | array[integer] | optional | Activities to consider; only those dated in the window are used. Omit to use every run dated in the window |
 | `temperature_range` | array[number] | optional | Keep only activities whose weather-station temperature (°C) is within [min, max]; runs without weather are dropped |
 | `distance_range` | array[number] | optional | Keep only activities whose total distance (km) is within [min, max] |
 
@@ -388,7 +387,7 @@ Pre-fetch the context a run report does not carry, in a single call: training_ty
 
 CLI: `garmin-db performance objective-fitness-curve`
 
-Objective (non-optimistic) fitness curve: rolling 90-day max best-effort performance VDOT from splits, side-by-side with Garmin VO2max and the optimism gap.
+Objective (non-optimistic) fitness curve: rolling 90-day max best-effort performance VDOT from splits, side-by-side with Garmin VO2max and the optimism gap. Returns objective_curve [{date, vdot, source_distance_km}] ascending by run day (best contiguous 2 / 5 / 10 km efforts), garmin_vo2max [{date, value}] ascending, and optimism_gap {garmin_vdot, objective_vdot, gap_vdot, gap_speed_mps, gap_pace_sec_per_km}, or null when either series is empty. get_race_readiness reads the latest objective VDOT per distance bucket from this curve.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -460,7 +459,7 @@ Full records for the anomalies detect_form_anomalies_summary counts, after filte
 
 CLI: `garmin-db training-plan fitness-summary`
 
-Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present.
+Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin VO2max x 0.98, or from the fastest 3 km+ run when none), Daniels pace_zones (s/km), Garmin hr_zones from the latest run, weekly_volume_km and runs_per_week (totals / weeks), training_type_distribution (shares of Garmin training-effect labels), gap fields for a 7+ day break, and body_composition when present. This vdot is Garmin-derived and runs optimistic; the objective one comes from get_objective_fitness_curve and is what get_race_readiness uses.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -470,7 +469,7 @@ Fitness snapshot over the last lookback_weeks up to today: vdot (latest Garmin V
 
 CLI: `garmin-db training-plan scheduled-workouts`
 
-Fetch scheduled workouts (including adaptive plan workouts) from the Garmin Connect calendar-service for a date range. Returns workout-type calendar items sorted by date.
+Fetch scheduled workouts (including adaptive plan workouts) live from the Garmin Connect calendar-service for a date range; nothing is read from DuckDB. Returns {start_date, end_date, count, workouts} where each workout is {date, title, item_type, schedule_id, training_plan_id, training_plan_name, workout_uuid} (missing keys null), ascending by date and de-duplicated. Items titled [MCP] are copies of saved prescriptions, whose canonical form is get_weekly_prescriptions; adaptive-plan items are reference only. Returns {error} when the Garmin call fails.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -887,12 +886,12 @@ Get every shoe with its lifetime mileage and whether it is due for replacement, 
 
 ### `get_server_info`
 
-Get diagnostic info about the running MCP server (server_dir). Use to verify which directory the server is running from.
+Get diagnostic info about the running MCP server (shim started_at plus worker DB diagnostics). Use to verify readiness.
 
 _No parameters._
 
 ### `reload_server`
 
-Restart the worker to pick up the latest code. The launcher process stays alive, so the MCP connection is preserved (no reconnect needed).
+Restart the execution worker to pick up code changes. The MCP shim process stays alive (the session is preserved) and a tools/list_changed notification is sent. Signature-compatible changes apply with no reconnect; schema changes (added/removed tools or changed args) need one /mcp reconnect. Shim code (server.py, worker_client.py) is not reloaded and needs /mcp or a new session. The worker is pinned to the caller's working directory, so reload from the main checkout, not from a worktree that will be deleted. A subagent that calls it loses its garmin-db tools.
 
 _No parameters._

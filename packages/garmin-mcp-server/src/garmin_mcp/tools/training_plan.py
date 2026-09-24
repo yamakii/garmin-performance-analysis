@@ -116,7 +116,9 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
             "run, weekly_volume_km and runs_per_week (totals / weeks), "
             "training_type_distribution (shares of Garmin training-effect "
             "labels), gap fields for a 7+ day break, and body_composition when "
-            "present."
+            "present. This vdot is Garmin-derived and runs optimistic; the "
+            "objective one comes from get_objective_fitness_curve and is what "
+            "get_race_readiness uses."
         ),
         params=CurrentFitnessSummaryParams,
         handler=_get_current_fitness_summary,
@@ -126,9 +128,15 @@ TRAINING_PLAN_TOOLS: list[ToolDef] = [
     ToolDef(
         name="get_garmin_scheduled_workouts",
         description=(
-            "Fetch scheduled workouts (including adaptive plan workouts) from the "
-            "Garmin Connect calendar-service for a date range. Returns "
-            "workout-type calendar items sorted by date."
+            "Fetch scheduled workouts (including adaptive plan workouts) live "
+            "from the Garmin Connect calendar-service for a date range; nothing "
+            "is read from DuckDB. Returns {start_date, end_date, count, workouts} "
+            "where each workout is {date, title, item_type, schedule_id, "
+            "training_plan_id, training_plan_name, workout_uuid} (missing keys "
+            "null), ascending by date and de-duplicated. Items titled [MCP] are "
+            "copies of saved prescriptions, whose canonical form is "
+            "get_weekly_prescriptions; adaptive-plan items are reference only. "
+            "Returns {error} when the Garmin call fails."
         ),
         params=GarminScheduledWorkoutsParams,
         handler=_get_garmin_scheduled_workouts,

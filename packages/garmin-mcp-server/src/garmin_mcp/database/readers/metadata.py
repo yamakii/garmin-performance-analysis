@@ -117,6 +117,30 @@ class MetadataReader(BaseDBReader):
             logger.error(f"Error bulk-querying activity dates: {e}")
             return {}
 
+    def get_activity_ids_between(self, start_date: str, end_date: str) -> list[int]:
+        """List the activities dated within an inclusive date window.
+
+        Args:
+            start_date: Inclusive start, YYYY-MM-DD
+            end_date: Inclusive end, YYYY-MM-DD
+
+        Returns:
+            Activity IDs ascending by activity_date (then activity_id); empty
+            when none fall in the window.
+        """
+        sql = (
+            "SELECT activity_id FROM activities "
+            "WHERE activity_date BETWEEN ? AND ? "
+            "ORDER BY activity_date, activity_id"
+        )
+        try:
+            with self._get_connection() as conn:
+                rows = conn.execute(sql, [start_date, end_date]).fetchall()
+            return [int(row[0]) for row in rows]
+        except Exception as e:
+            logger.error(f"Error listing activities in window: {e}")
+            return []
+
     def get_bulk_activity_fields(
         self, activity_ids: list[int], fields: list[str]
     ) -> dict[int, dict[str, Any]]:
