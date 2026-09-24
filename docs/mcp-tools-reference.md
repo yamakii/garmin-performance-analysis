@@ -142,7 +142,7 @@ Analyze interval training Work/Recovery segments using intensity_type from DuckD
 
 CLI: `garmin-db analysis insert-section`
 
-Insert section analysis dict directly into DuckDB (no file creation)
+Append one section_analyses row (activity_id, activity_date, section_type, analysis_data) verbatim to DuckDB as a new version (fresh run_id); readers treat the latest version as canonical and prior versions are kept. Does NOT run the run_note schema or grounding gate - the normal path is validate_section_json then merge_section_analyses via the analyze-activity workflow. Use only for manual repair.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -188,7 +188,7 @@ Find running activities without an analysis in a date range. An activity counts 
 
 CLI: `garmin-db analysis performance-trends`
 
-Analyze performance trends across multiple activities with filtering (Phase 3.1)
+Analyze performance trends across multiple activities with filtering
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -217,7 +217,7 @@ Climate-neutral HR-at-pace trend with per-run heat_cost (temperature-adjusted fi
 
 CLI: `garmin-db analysis extract-insights`
 
-Extract insights from section analyses using keyword-based search (Phase 3.2)
+Extract insights from section analyses using keyword-based search
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -231,7 +231,7 @@ Extract insights from section analyses using keyword-based search (Phase 3.2)
 
 CLI: `garmin-db analysis compare-workouts`
 
-Find and compare similar past workouts based on pace and distance (Phase 4.5)
+Find and compare similar past workouts based on pace and distance
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

@@ -78,26 +78,28 @@ function narrationPrompt(ctx) {
     `この実データのみに基づき、値の再計算・捏造をしないこと。CONTEXT の全文を出力へ書き写す必要はありません:\n` +
     `散文フィールドのみを書く: narrative（なぜトレンドが動いているか・シグナル相互関係）, ` +
     `key_learnings（配列）, recommendations（最大2件、具体的な次アクション）。\n` +
-    `【小Nガード（統計的誠実性, #813）】status="insufficient_data" もしくは data_points < 3 の成分は、` +
+    `CONTEXT はすべての判定（direction、best/worst_run、band、caveat、cutback フラグ、insufficient_data）を決定的に持つ。` +
+    `散文はそれを転記・解釈し、再導出しない。\n` +
+    `【小Nガード（統計的誠実性）】status="insufficient_data" もしくは data_points < 3 の成分は、` +
     `トレンドとして語らないこと。検出力不足の "stable" は「安定」ではなく「判定不能（検出力不足）」と表現する。\n` +
     `週次の metric_trends は mode="descriptive"（回帰ではなく median と前週比 delta_pct）。回帰・傾き・p値を語らず、` +
     `「今週の median を前週と比べた記述」として扱うこと。\n` +
     `週次の durability_trend / heat_adjusted_trend はトレーリング窓（8週 / 12週）で当てたトレンドで、` +
     `in_period_activity_ids が今週の該当ラン。今週の値をそのトレーリングトレンド上に位置づけて語り、週内で回帰を主張しないこと。\n` +
-    `【durability の優劣判断（#823）】どのロングランが最も「粘れた」かは decoupling（心拍ドリフト, 低いほど良, ` +
+    `【durability の優劣判断】どのロングランが最も「粘れた」かは decoupling（心拍ドリフト, 低いほど良, ` +
     `ペーシング戦略に依存しない）で判断し、durability_trend の best_run / worst_run（決定的に算出済み）を転記すること。` +
     `生の符号付き値から自分で優劣を導出しない（0 に近い＝良い、ではない）。\n` +
     `pace_fade は遂行の記述（負＝後半が速い/ネガティブスプリット）であって優劣軸ではない。大きな負値を無条件に「良い」「粘れた」と表現しない。` +
     `理想かどうかは training_type の意図（steady aerobic か progression/fast-finish か）と併記し、意図が不明なら断定しないこと。\n` +
-    `【durability の傾き判定は絶対水準・頑健性と併せて語る（#845）】durability_trend.trend には ` +
+    `【durability の傾き判定は絶対水準・頑健性と併せて語る】durability_trend.trend には ` +
     `absolute_assessment（band=strong/moderate/poor, all_within_strong_band, recent_decoupling_pct）と ` +
     `fragile / direction_caveat が決定的に付与されている。direction は傾き（slope）の記述にすぎず、それ単独で` +
-    `「粘りが落ちた」と断じないこと。次を厳守する:\n` +
+    `「粘りが落ちた」と断じないこと。次のように扱う:\n` +
     `  ・direction="worsening" でも all_within_strong_band=true なら「絶対的な粘りは優秀レンジ（decoupling<5%）を維持」と明記する。\n` +
-    `  ・direction_caveat が非null なら、その内容（頑健性・レバレッジ点・絶対水準）を必ず散文に反映して緩衝する。\n` +
+    `  ・direction_caveat が非null なら、その内容（頑健性・レバレッジ点・絶対水準）を散文に反映して緩衝する。\n` +
     `  ・fragile=true の direction は「単一点のレバレッジに依存し統計的に頑健でない（例外的に良い初回ロング走がアンカーになっている等）」ものとして扱い、` +
     `absolute_assessment.band が poor でない限り、worsening を根拠にロング走の距離制限・ペース抑制などの強い介入を推奨しないこと。\n` +
-    `【カットバック判定（#927 / #1110）】headline_metrics.cutback_due_long_run は、ロング走の連続延伸が` +
+    `【カットバック判定】headline_metrics.cutback_due_long_run は、ロング走の連続延伸が` +
     `カットバック閾値に達したかを決定的に判定済みのフラグ。true のときは recommendations に次週のディロード` +
     `（ロング走 −30〜40%、週間量 −20〜30%、質セッションはゼロ）を具体的な数値で明記すること。` +
     `「距離を据え置く」「増加を +10% 以内に抑える」といった、より弱い代替で置き換えないこと。` +

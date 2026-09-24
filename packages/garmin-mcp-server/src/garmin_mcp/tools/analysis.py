@@ -321,7 +321,15 @@ def _compare_similar_workouts(
 ANALYSIS_TOOLS: list[ToolDef] = [
     ToolDef(
         name="insert_section_analysis_dict",
-        description="Insert section analysis dict directly into DuckDB (no file creation)",
+        description=(
+            "Append one section_analyses row (activity_id, activity_date, "
+            "section_type, analysis_data) verbatim to DuckDB as a new version "
+            "(fresh run_id); readers treat the latest version as canonical and "
+            "prior versions are kept. Does NOT run the run_note schema or "
+            "grounding gate - the normal path is validate_section_json then "
+            "merge_section_analyses via the analyze-activity workflow. Use only "
+            "for manual repair."
+        ),
         params=InsertSectionAnalysisParams,
         handler=_insert_section_analysis_dict,
         cli_group="analysis",
@@ -367,7 +375,7 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="analyze_performance_trends",
-        description="Analyze performance trends across multiple activities with filtering (Phase 3.1)",
+        description="Analyze performance trends across multiple activities with filtering",
         params=AnalyzePerformanceTrendsParams,
         handler=_analyze_performance_trends,
         cli_group="analysis",
@@ -386,7 +394,7 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="extract_insights",
-        description="Extract insights from section analyses using keyword-based search (Phase 3.2)",
+        description="Extract insights from section analyses using keyword-based search",
         params=ExtractInsightsParams,
         handler=_extract_insights,
         cli_group="analysis",
@@ -395,7 +403,7 @@ ANALYSIS_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="compare_similar_workouts",
-        description="Find and compare similar past workouts based on pace and distance (Phase 4.5)",
+        description="Find and compare similar past workouts based on pace and distance",
         params=CompareSimilarWorkoutsParams,
         handler=_compare_similar_workouts,
         cli_group="analysis",

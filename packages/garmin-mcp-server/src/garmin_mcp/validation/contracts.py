@@ -52,7 +52,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "next_challenge": {
                 "type": "string",
                 "description": (
-                    "持ち越す 1 点 (#1358): ONE sentence, 10-120 chars -- one of "
+                    "持ち越す 1 点: ONE sentence, 10-120 chars -- one of "
                     "today's growth_points (or, with none, a good point to keep) "
                     "turned into one behaviour cue for the runs ahead "
                     "('最初の 2 km は上限の 150 に近づく前に抑える'). Not a "
@@ -159,7 +159,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "hr_ceiling is judged on the steady time above the ceiling "
                 "(plan.hr_ceiling.seconds_over / pct_over), not the average: "
                 "off plan when more than 5% of it AND at least 5 minutes sat "
-                "above (#1357), so an average under the ceiling does not mean "
+                "above, so an average under the ceiling does not mean "
                 "the ceiling was kept"
             ),
             "plan.strides": (
@@ -171,7 +171,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "the continuity row of report.plan.checks -- whether the run "
                 "delivered the prescription's purpose by holding its effort to "
                 "the end ('保てた' / '18 km から崩れ'); present only with a "
-                "prescription whose purpose is one of holding an effort (#1353)"
+                "prescription whose purpose is one of holding an effort"
             ),
             "signals.<metric>": "a metric of report.signals",
             "moments.<id>": "an id of report.moments",
@@ -204,7 +204,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "A run that came apart on a prescribed day is off plan on "
                 "plan.continuity AND carries a breakdown scene: that is one "
                 "collapse, so it is ONE growth point on plan.continuity, and "
-                "the breakdown scene is told in the timeline (#1353)"
+                "the breakdown scene is told in the timeline"
             ),
             # What the run was *for* (#1312, #1314). The report resolves the
             # purpose and judges every scene against it, so the same walk break
@@ -289,7 +289,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 ),
             },
             "next_challenge": (
-                "持ち越す 1 点 (#1358). A single run cannot set the next "
+                "持ち越す 1 点. A single run cannot set the next "
                 "session -- the prescription and the morning check-in do -- so "
                 "carry ONE point over from today instead: choose one of "
                 "good_points / growth_points (a growth point when there is "

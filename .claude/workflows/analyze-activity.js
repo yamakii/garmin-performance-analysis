@@ -112,8 +112,7 @@ function fetchPrompt(date) {
   return (
     `あなたは分析パイプラインの fetch ステージです。対象日 ${date ?? 'today'} のランニング activity を取り込み、` +
     `その activity_id を返します（ランレポートと CONTEXT は後段の分析エージェントが自分で取得するので、ここでは取得しない）。\n` +
-    `**手順1・2は MCP ツールの呼び出しそのもの**。ToolSearch で読み込んだら直接呼ぶこと。` +
-    `Bash・python・スクリプト・CLI で代替したり、ソースを読んで呼び方を調べたりしない。\n\n` +
+    `\n` +
     `1. mcp__garmin-db__catch_up_ingest(end_date=${date ? `"${date}"` : '省略（内部既定 today）'}) で ` +
     `ランニング・体重・補強の差分を取り込む。短い要約を catch_up_summary に（例「ラン1/体重0/補強0」「差分なし」）。\n` +
     `   - 返り値のどれかのドメインに error があれば、**そのドメインとエラー名を catch_up_summary に必ず書く**` +
@@ -141,7 +140,6 @@ function buildRunNotePrompt(ctx) {
     `返り値に error があるときは JSON を書かずにその error を報告して終了すること。\n` +
     `evidence キー・moment_id・signal 名は REPORT に実在するものだけを使うこと` +
     `（merge 時の grounding ゲートが解決できないキーを拒否します）。\n` +
-    `ONLY run_note: run_note.json だけを生成・validate・保存し、他セクションは一切生成しないこと。\n` +
     `保存先: ${ctx.tempDir}/run_note.json`
   )
 }
