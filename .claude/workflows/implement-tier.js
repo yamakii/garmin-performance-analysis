@@ -212,14 +212,8 @@ const results = await pipeline(
     return agent(
       `あなたは validation-agent です。worktree のコード変更を ${manifest.validation_level} で検証してください。\n` +
         `manifest: ${JSON.stringify(manifest)}\n` +
-        `.claude/rules/dev/worktree-validation-protocol.md の L1/L2 手順（reload_server を使わず subprocess: ` +
-        `uv run --directory ${manifest.worktree_path} ...）で実行する。\n` +
-        `L1 = in-process import check: 下層関数を verification_activity_id で呼び、非null・型一致・値範囲・json.dumps 可能・exit 0 を確認。\n` +
-        `L2 = L1 + **CI 同一ゲート**: \`uv run --directory ${manifest.worktree_path} bash scripts/ci-check.sh\` が exit 0 ` +
-        `（whole-package の pytest -m "unit or integration" + black --check + mypy + doc-guard、web 変更時は web チェック）。` +
-        `ci-check.sh は integration も既定で回すため、別途 integration を実行する必要はない（Issue #743）。` +
-        `これにより doc-sync/unit 漏れ（README/CLAUDE のカウント、golden snapshot、count テスト等）を ci-guard 前に検出する。\n` +
-        `完了条件: L1 OK かつ（L2 なら）ci-check.sh exit 0。結果を schema で返す（pass/fail/warning）。`,
+        `.claude/rules/dev/worktree-validation-protocol.md §3 の ${manifest.validation_level} 手順を ` +
+        `worktree ${manifest.worktree_path} に対して実行し、同書の完了条件で判定した結果を schema で返す（pass/fail/warning）。`,
       { label: `val:#${issue.number}`, phase: 'Validate', agentType: 'validation-agent', schema: VALIDATION_SCHEMA }
     ).then((v) => ({ manifest, validation: v }))
   },
@@ -232,7 +226,7 @@ const results = await pipeline(
       `次の worktree ブランチを ship してください（merge はまだしない）。\n` +
         `worktree_path=${m.worktree_path}, branch=${m.branch}, issue=#${issue.number}。\n\n` +
         `1. ${pushCmd(m.worktree_path, m.branch)}。origin/main の事前取り込みはしない（遅れているだけの PR はそのままマージできる。.claude/rules/dev/git.md）。\n` +
-        `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\nPart of the tier")。\n` +
+        `2. mcp__github__create_pull_request(${repoCtx()}, head="${m.branch}", base="main", title=コミット要約, body="Closes #${issue.number}\\n\\n## Verification\\n- validation: ${acc.validation?.level ?? ''} ${acc.validation?.status ?? ''}\\n- ci-guard: 手順 3 の結果")。\n` +
         `3. リポジトリルートで bash scripts/wait-for-ci.sh PR番号 --timeout 900 を **フォアグラウンドで 1 回** 実行して ci-guard の完了を待つ` +
         `（Bash tool の timeout を 960000 ms 以上にする。run_in_background・Monitor・pgrep・kill・sleep ループは使わない: ` +
         `kill/pkill は ask ルールで権限プロンプトになり Workflow が止まる。exit 0=success / 1=failure / 2=timeout）。` +

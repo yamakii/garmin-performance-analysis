@@ -2,8 +2,7 @@
 # Block until a PR's required check (default: ci-guard) completes, then print
 # one line of JSON and exit by conclusion. Replaces the `sleep N` →
 # `pull_request_read(get_check_runs)` polling loop that used to cost 3-6 LLM
-# round-trips per PR (dev-reference.md §8: loops of the same tool become one
-# script call).
+# round-trips per PR.
 #
 # READ-ONLY. Uses the GitHub REST API (pulls → head sha → check-runs) with
 # GITHUB_TOKEN. It never writes to GitHub; merging stays with

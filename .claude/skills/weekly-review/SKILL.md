@@ -18,23 +18,9 @@ argument-hint: [target week]
 
 > **`week_start_day` の規約**: `0`=月曜 〜 `6`=日曜 の整数（Python の `date.weekday()` と同じ）。`get_athlete_profile()` に `week_start_day` が無い／null の場合は **`0`（月曜始まり）にフォールバック**します。以下「週の開始日」「週の終了日」は、この設定で決まる週境界を指します（開始日の曜日 = `week_start_day`、終了日 = 開始日の6日後）。
 
-- **省略時（スマート既定）**: today が W 内のどこにいるかで対象週を切り替える
-  - today が **週の最終日**（= 週の開始曜日の前日。既定では日曜） → 対象週 W = **翌週**（今週は消化済みなので、先を計画してレビュー）
-  - today が **週の最終日以外**（既定では開始日〜終了日前日） → 対象週 W = **今週**（今いる週をレビュー）
-- `$ARGUMENTS` = `this` → W = today を含む週
-- `$ARGUMENTS` = `next` → W = today を含む週の **翌週**
-- `$ARGUMENTS` = `YYYY-MM-DD` → W = その日を含む週
+`$ARGUMENTS`（省略 / `this` / `next` / `YYYY-MM-DD`）はそのまま Step 2 の `prefetch_weekly_review_context(target=...)` に渡し、W の確定はツールに任せる（省略時は today が週の最終日なら翌週、それ以外は今週）。確定した W と W-1 の日付はバンドルから読み、Step 6 の冒頭で示す。
 
 実績材料は常に **W の直前の完了週 W-1（開始日〜終了日）** を主軸とし、**W が進行中（today が W 内）なら today までに W で実走した分**を「今週ここまで」として補足的に加味します。
-
-例（`week_start_day=0`＝既定の月曜始まり。日曜終了）:
-- today = 日曜 2026-06-14（= 週の最終日）・引数なし → **W = 翌週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14
-- today = 火曜 2026-06-16・引数なし → **W = 今週 2026-06-15〜2026-06-21**、実績 = W-1 = 2026-06-08〜2026-06-14 ＋ 6/15・6/16 の実走（W 進行中分）
-- `$ARGUMENTS` = `this`（today = 火 2026-06-16）→ W = 2026-06-15〜2026-06-21
-- `$ARGUMENTS` = `next`（today = 火 2026-06-16）→ W = 2026-06-22〜2026-06-28
-- `$ARGUMENTS` = 2026-06-16 → W = 2026-06-15〜2026-06-21
-
-> `week_start_day=6`（日曜始まり・土曜終了）の例: today = 土曜 2026-06-20（= 週の最終日）・引数なし → **W = 翌週 2026-06-21〜2026-06-27**、実績 = W-1 = 2026-06-14〜2026-06-20。開始曜日が変われば各日付も同様にずれます。
 
 ## ワークフロー
 
@@ -52,7 +38,7 @@ argument-hint: [target week]
 mcp__garmin-db__catch_up_ingest(end_date=today)
 ```
 
-**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。`catch_up_ingest` の返却に `trend_pending`（全ドメイン成功かつ直近4完了週のいずれかで縦断トレンド未生成のときに返る `{granularity, period_start, period_end}`）があれば控えておいてかまいませんが、**これは補助的なヒント**です。Step 8 は Step 1 の実行有無に依存せず `get_pending_trend_period` を直接呼んで判定します。
+**日次運用なら差分は小さく、Garmin 呼び出しはわずかです（内部スロットル済み）**。
 
 `catch_up_ingest` は running ドメイン成功時に、その取込範囲の**処方と実績の突き合わせ**も行い `prescriptions_reconciled`（`{updated, done, replaced, skipped}`、失敗時 null）を返します。W-1 の遵守状況はこの結果が反映された `prescriptions_prev_week.adherence`（Step 3）から読むので、**この場で個別に照合し直す必要はありません**。
 
@@ -76,7 +62,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
 - **ロング走の連続伸長（Step 5-A-4 の主ゲート）**: `load_trend.long_run`（`{weekly_longest_sec(古い→新しい、ラン無し週は null), long_run_build_weeks(整数), cutback_due_long_run(bool)}`）。**決定的に算出済みなので再計算しない**（伸長判定 = 前週比 +3% 以上、据え置き = 前週比 75%〜103% で streak 保持、−25% 超の低下またはラン無し週でリセット。`cutback_due_long_run` = `long_run_build_weeks >= 3`）。なお最新週が進行中（`week_in_progress = true`）でロング未実施の場合、`weekly_longest_sec` の末尾は暫定値なので、確定済みの W-1 までの系列も併せて確認する。
 - **レース後の保護期間（Step 5-A-4 のもう一つの主ゲート）**: 同じ `load_trend.long_run` の `cutback_due_event_window(bool)` と `event_window`（`{last_event, days_since_event, in_window, ceiling_km, verdict}`、collector 失敗時は null）。`verdict` は green / yellow / red / no_event / insufficient_data で、**決定的に算出済みなので再判定しない**（`cutback_due_event_window` = 保護期間中（`in_window = true`）かつ `verdict` が yellow か red）。`ceiling_km` は**レース前8週の最長走**＝ W のロングの上限距離として使う。
 - **直近ロングの翌朝コスト（Step 5-A-4 / 5-A-5 の材料）**: `recovery.long_run_recovery_cost`（W-1 の最長ロングについて `{activity_id, activity_date, distance_km, criteria(3基準), criteria_fired, cost_flag, insufficient_data, reason_ja}`。W-1 にロングが無ければ null）。`cost_flag = true`（3基準中2つ以上が発火）なら W はロングを伸ばさず同距離で反復する。`insufficient_data = true` は「翌朝コストは未評価」と明示する。
-- **回復指標（Step 5-A-5 の回復サブ分析の材料）**: `recovery.trend`（`{weeks, rhr:{median_7d, median_30d, rhr_trend}, hrv:{latest_ms, status, hrv_below_baseline_days, under_recovery}, series:[{date, resting_hr, hrv_overnight_ms}]}`。**`series` は直近14日分のみ**（「HRV 割れが2夜連続か」等の直近確認用）。中央値・`rhr_trend`・`hrv_below_baseline_days`・`under_recovery` は **8週窓で算出済みの値**なので、短い `series` から再計算しない）、`recovery.status`（`{date, recommendation, score, reasons, training_readiness, body_battery_high, sleep_score}`、`recommendation` は rest/easy/moderate/quality/unknown）、`recovery.baseline_deviation`（#555 HRV/readiness/RHR の個人ベースライン z 逸脱）。
+- **回復指標（Step 5-A-5 の回復サブ分析の材料）**: `recovery.trend`（`{weeks, rhr:{median_7d, median_30d, rhr_trend}, hrv:{latest_ms, status, hrv_below_baseline_days, under_recovery}, series:[{date, resting_hr, hrv_overnight_ms}]}`。**`series` は直近14日分のみ**（「HRV 割れが2夜連続か」等の直近確認用）。中央値・`rhr_trend`・`hrv_below_baseline_days`・`under_recovery` は **8週窓で算出済みの値**なので、短い `series` から再計算しない）、`recovery.status`（`{date, recommendation, score, reasons, training_readiness, body_battery_high, sleep_score}`、`recommendation` は rest/easy/moderate/quality/unknown）、`recovery.baseline_deviation`（HRV/readiness/RHR の個人ベースライン z 逸脱）。
   - `rhr_trend`: 7日中央値が 30日中央値より **2bpm 以上低ければ `improving`**、**3bpm 以上高ければ `fatigued`**、それ以外 `stable`。
   - `hrv.under_recovery`: **HRV ベースライン割れが 2夜以上連続**で `true`。これと `acwr` の高値を **AND して「積み過ぎ・回復不足」を判定**する。
   - **データ欠損時**（中央値・HRV が軒並み null、または `recommendation = unknown`）は「回復データ不足のため負荷ベースで講評」と明示する（破綻させない）。
@@ -86,7 +72,7 @@ Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキー
 
 ### Step 3: W のブロックとラダー段（レビュー骨格）
 
-**レビューの骨格は登録済みメゾサイクル（トレーニングブロック）と、その週のロング走ラダー段です**。Garmin の適応プランは骨格ではなく、**ブロックと衝突する項目だけを拾う参照材料**に降格しています（`/plan-block` で登録したブロックが正、Garmin Coach は正ではない）。
+**レビューの骨格は登録済みメゾサイクル（トレーニングブロック）と、その週のロング走ラダー段です**。Garmin の適応プランは骨格ではなく、**ブロックと衝突する項目だけを拾う参照材料**です（`/plan-block` で登録したブロックが正、Garmin Coach は正ではない）。
 
 バンドルの以下のキーを読みます:
 
@@ -120,26 +106,19 @@ mcp__garmin-db__get_garmin_scheduled_workouts(start_date=week_start_date, end_da
 
 ### Step 5: コーチ視点でレビューを生成（このコマンドの核）
 
-以下の **評価方針** に従い、対象週 W の各ワークアウトを評価してください。
+以下の **評価方針** に従い、対象週 W の各日の処方を組み立ててください。
 
-#### Step 5-A: 目標逆算フェーズ分析（必須）
+#### Step 5-A: 目標逆算フェーズ分析
 
-対象週 W に「本来あるべきトレーニングフェーズ」を目標から逆算し、Garmin Coach の実プランとのギャップを言語化します。
+対象週 W に「本来あるべきトレーニングフェーズ」を目標から逆算し、登録ブロック（Step 3）とのギャップを言語化します。
 
-**1. 各レースの残り週数を算出**
+**1. 各レースの残り週数**
 
-`goals_with_weeks_to_race[]` の各レース（`priority` A=本命 / B=中間）について、**対象週 W の開始日（`week_start_date`）時点での残り週数**を求めます:
-
-- `race_date` が確定している場合:
-  - `weeks_to_race = ceil((race_date − week_start_date) / 7)`（整数。週単位に切り上げ）
-  - 例: W 開始日 = 2026-06-15（月曜）、race_date = 2026-10-11 → 約 17 週（例示）
-- `race_date` が null の場合（開催日が未確定）:
-  - `weeks_to_race = null` とし、レビュー文では「**残り週数は概算/未確定**」と明示して扱う
-  - 概算が必要なら `notes` 等に書かれた開催時期を仮置きして「概算 約 N 週（未確定）」と注記する。null を黙って 0 扱いにしない
+各レース（`priority` A=本命 / B=中間）の残り週数は `goals_with_weeks_to_race[].weeks_to_race` をそのまま使う。null（開催日未確定）はレビュー文で「**残り週数は概算/未確定**」と明示し、0 扱いにしない（`notes` に開催時期があれば「概算 約 N 週（未確定）」と注記する）。
 
 **2. W にあるべきマクロフェーズ/テーマを導出**
 
-残り週数とユーザー重点（`athlete_profile.current_focus` / `focus_notes`）から、W のあるべきフェーズを判断します:
+残り週数とユーザー重点（`athlete_profile.current_focus` / `focus_notes`）から、W のあるべきフェーズを判断します。`focus_notes` が時期ごとの局面や質練の本数を定めているときはそれを「あるべきフェーズ」とし、下の目安は定めが無いときの既定として使います:
 
 - **レースまで長い（十数週〜、概ね 12 週超）** → **有酸素ベース/筋持久力構築期**。ロング走を漸増し、低〜中強度（Z2 中心）でボリュームを積む。質練（テンポ/閾値）は週 1 を上限。
 - **中盤（概ね 6〜12 週）** → **筋持久力 ＋ マラソンペース耐性期**。ロング走を維持しつつマラソンペース走/長めの閾値走を組み込む。
@@ -161,7 +140,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
 
 **Garmin プランの扱い**: `garmin_conflicts` が空でなければ、**衝突項目だけ**を「Garmin カレンダー側にブロックと矛盾する予定がある」として1〜2文で指摘し、削除・置換の具体案（日付・セッション種別）を添えます。空なら Garmin には言及しません。Garmin の構成傾向をフェーズ判定の根拠に使わないでください。
 
-**4. カットバック周期サブ分析（必須）— トレンドで increase/deload を判定**
+**4. カットバック周期サブ分析 — トレンドで increase/deload を判定**
 
 バンドルの `load_trend`（`long_run` ブロック含む）/ `acwr`（Step 2）を使い、対象週 W が **積み上げを続ける番か、カットバック（deload）の番か**を判定します。ロング・週量の伸長可否は **2つのゲート両方** で決めます:
 
@@ -186,7 +165,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
 
 この結果は Step 6 の表示と Step 7 の `periodization.load_trend` に反映します。
 
-**5. 回復サブ分析（必須）— 負荷×回復の複合講評**
+**5. 回復サブ分析 — 負荷×回復の複合講評**
 
 バンドルの `recovery.trend` / `recovery.status`（Step 2）を使い、**先週の回復の質**を要約し、負荷（ACWR）と回復（HRV/RHR）の **両面で複合講評** します。負荷だけ・回復だけで判断せず、必ず掛け合わせて読みます:
 
@@ -196,13 +175,13 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
   - **ACWR 高（caution/high_risk, ≥1.3）× HRV `under_recovery=true`（または RHR `fatigued`）** → 「**積み過ぎ・回復不足**」。`cutback_due` 判定を補強し、deload を強く推す。
   - **ACWR 適正（optimal）× RHR `improving`（または HRV 正常）** → 「**順調に吸収できている**」。進行ゲート GREEN なら小刻みな漸進を許可する根拠にする。
   - **ACWR 適正 × HRV `under_recovery=true` / RHR `fatigued`** → 負荷は妥当でも回復が追いついていない。睡眠・生活要因を疑い、質練の前倒しを避ける。
-- **症状ログの扱い（必須）**: バンドルの `symptoms` を読み、**W-1 の申告と `status.flag` を必ず講評に入れる**。
+- **症状ログの扱い**: バンドルの `symptoms` を読み、**W-1 の申告と `status.flag` を必ず講評に入れる**。
   - `status.flag=true` → **処方を修正する**: 該当部位に負荷が乗るセッション種別を落とす（ロングは**直近のクリーンな距離**＝フラグが立つ前に問題なく走れた最長距離で頭打ちにし、質練はゼロにする）。根拠は `status.reason_ja` を引用する。進行ゲートが GREEN でも回復指標が全て緑でも、この修正が優先する（`cutback_due` と同格の主ゲート）。
   - `status.flag=false` かつ W-1 に行あり → 「申告あり・基準未満」または「申告なし（確認済み）」として一文で触れる。
   - W-1 に行が 1 つも無い（`prev_week` が空、または `status.days_since_last_report` が null） → 「**症状記録なし**（記録が無いため症状面は判定不能）」と明示し、次週は `/daily-checkin` で毎朝 1 問記録するよう `recommendations` に入れる。
 - **睡眠スコアの扱い**: `recovery.status.sleep_score` が低い週（おおむね <60）は **回復不足の主因候補** として言及し、`recommendation`（rest/easy 等）と整合させる。
 - **データ欠損週**: `recommendation = unknown`、または RHR/HRV 中央値が軒並み null の場合は、「**回復データ不足のため負荷ベースで講評**」と明示し、ACWR/週量だけで講評を成立させる（回復を黙って無視しない）。
-- **個人ベースライン逸脱の early-warning ノート（必須）**: バンドルの `recovery.baseline_deviation`（#555）の個人ベースライン逸脱（HRV / readiness / RHR の個人比 z 逸脱）と、`hrv.under_recovery` / `hrv.hrv_below_baseline_days`（HRV ベースライン割れ日数）を取り込み、**逸脱の帰結（consequence）＋予防アクション**を1〜2文の early-warning ノートとして出す。逸脱が無ければ「ベースライン内」と明示し、ノートは出さない。例:
+- **個人ベースライン逸脱の early-warning ノート**: バンドルの `recovery.baseline_deviation` の個人ベースライン逸脱（HRV / readiness / RHR の個人比 z 逸脱）と、`hrv.under_recovery` / `hrv.hrv_below_baseline_days`（HRV ベースライン割れ日数）を取り込み、**逸脱の帰結（consequence）＋予防アクション**を1〜2文の early-warning ノートとして出す。逸脱が無ければ「ベースライン内」と明示し、ノートは出さない。例:
   - **HRV ベースライン割れ2日連続**（`under_recovery=true`）→ 「質練を −1〜2週見送り検討、easy を HR 下限で踏む」
   - **RHR `fatigued` × ACWR caution（≥1.3）** → 「翌週は deload を強く推奨（5-A-4 の deload 処方）」
   - **readiness の個人比 z が連日マイナス逸脱** → 「睡眠・生活ストレスを疑い、高強度を前倒ししない」
@@ -217,15 +196,15 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
   - ✅ = ブロック・目標に沿った処方
   - 🟡 = 条件付き（やり方次第で可。注意点を添える）
   - 🔴 = ブロック・目標と矛盾するため避ける／置き換えた（`garmin_conflicts` に挙がった Garmin 予定はここで置換案として扱う）
-- **具体的処方を必須化**: 各セッションの評価コメントと `recommendations` には、**時間(分)・距離(km目安)・心拍ゾーン(bpm) または ペース** の具体値を必ず含める。「もっと走りましょう」「ベースを増やす」等の **曖昧な表現は禁止**（既存 analysis-standards の方針を本コマンドで強化）。
+- **具体的処方を必須化**: 各セッションの評価コメントと `recommendations` には、**時間(分)・距離(km目安)・心拍ゾーン(bpm) または ペース** の具体値を入れる（「もっと走りましょう」「ベースを増やす」では日次チェックインや Garmin 登録が読めないため）。
   - **HR ゾーンの出典**: バンドルの `fitness_summary` の `hr_zones`（Garmin native）から bpm 範囲を引用する。計算式（220−年齢 等）でゾーンを作らない。zone が取れない場合のみ努力度（RPE）で代替し、その旨を明記する。
   - **処方の具体例**（W の各セッション種別に応じて、実際の bpm はその時の `hr_zones` から差し込む）:
-    - 「ロング走: Z2(例 141-152bpm)で 60-75 分(≈9-11km)、暑熱なら時間優先でペースは見ない」
+    - 「ロング走: Z2(例 136-150bpm)で 60-75 分(≈9-11km)、暑熱なら時間優先でペースは見ない」
     - 「Base: 40-50 分 Z2」
     - 「Easy 35 分＋流し 4 本（20 秒 / つなぎ 90 秒 jog）」— 流しは**単独のセッションではなく easy 行の `strides` 付属**として処方する（保存形式は Step 7 の `strides` の項）。流しは神経筋への刺激であってインターバルではないので、20 秒前後の軽快な加速にとどめ、心拍目標は付けない
     - 「テンポ: 閾値心拍域で 15-20 分（暑熱時はペース固定せず心拍上限で）」
 - **ロング走を最重要チェック**: ロング走はマラソン筋持久力の核。**`ladder_step.current` の目標（km または分）を W の処方に必ず1本入れる**（カットバック週なら短縮した形で）。ラダー段が未定義の週は、直近ロングと進行ゲートから具体値（時間/距離/HR 上限）を決めて処方し、その旨を `overall` で触れる。
-- **伸長可否はトレンドで判定（W-1 単独で決めない）**: ロング・週量を「来週も伸ばすか」は、進行ゲート（脚崩れ）だけでなく **Step 5-A-4 のカットバック周期** も必ず照合する。`cutback_due = true`（**ロング連続伸長3週以上**／**レース後の保護期間中に上限超過**／週総量3週連続 build／ACWR caution+・新ピーク直後）なら、進行ゲートが GREEN でも、回復指標が全て緑でも **deload を優先**して処方する。
+- **伸長可否は Step 5-A-4 の `cutback_due` に従う**（W-1 単独で決めない）: `true` なら進行ゲートが GREEN でも回復指標が全て緑でも deload を処方する。
 - **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
 - **回復の質を負荷と複合で講評**: Step 5-A-5 の回復サブ分析を踏まえ、**負荷（ACWR）と回復（RHR/HRV/睡眠）を掛け合わせて** 講評する。RHR `fatigued` や HRV `under_recovery` が ACWR caution+ と重なれば「積み過ぎ・回復不足」として deload を優先。ACWR optimal × RHR `improving` なら「順調に吸収」として漸進を許可する根拠にする。睡眠スコアが低い週は回復不足の主因候補として言及する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
@@ -259,10 +238,10 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
 
   | 日付 | セッション | 判定 | コメント |
   |------|-----------|------|---------|
-  | 2026-09-13 | ロング 25km | ✅ | ラダー3段目。HR 150 を超えないように、暑ければ時間優先で 150 分目安 |
+  | 2026-09-08 | イージー 35 分 | ✅ | Z2ジョグ。HR 150 を超えないように。35 分は当日の総量（分割して書かない） |
   | 2026-09-10 | 閾値 15 分 | 🟡 | 週の質練枠は1本（15 分は本体。前後は自動で付く）。ロング前々日なので脚が重ければ Base 40 分へ差し替え |
-  | 2026-09-08 | イージー 35 分 | ✅ | Z2ジョグ。HR 141 を超えないように。35 分は当日の総量（分割して書かない） |
   | ... | ... | ... | ... |
+  | 2026-09-13 | ロング 25km | ✅ | ラダー3段目。HR 150 を超えないように、暑ければ時間優先で 150 分目安 |
 
   判定は処方の性格を表す（✅ = ブロック通り、🟡 = 条件付き、🔴 = ブロックと矛盾するので置き換えた／避けた）。この表の各行が Step 7 で保存する **1件の処方**になります。**判定＝`prescriptions[].rating`、コメント＝`prescriptions[].rationale`** として Step 7 の `save_weekly_prescriptions` で保存します（レビュー JSON 側には保存しません。日別プランの正本は処方行1つだけです）。
 
@@ -316,6 +295,8 @@ mcp__garmin-db__save_weekly_review(review)   # -> {status, user_id, week_start_d
       "weeks_to_block_end": 2,
       "gap": "...",
       "load_trend": {
+        "long_run_build_weeks": 3,
+        "cutback_due_long_run": true,
         "consecutive_build_weeks": 3,
         "last_cutback_weeks_ago": null,
         "acwr": 1.43,
@@ -323,9 +304,9 @@ mcp__garmin-db__save_weekly_review(review)   # -> {status, user_id, week_start_d
         "cutback_due": true,
         "cutback_due_event_window": false,
         "weekly_ramp": [
-          {"week": "2026-06-01", "load_km": 19.9},
-          {"week": "2026-06-08", "load_km": 28.8},
-          {"week": "2026-06-15", "load_km": 31.0}
+          {"week": "2026-06-01", "load_km": 19.9, "longest_run_sec": 4200},
+          {"week": "2026-06-08", "load_km": 28.8, "longest_run_sec": 5100},
+          {"week": "2026-06-15", "load_km": 31.0, "longest_run_sec": 6000}
         ]
       }
     },
@@ -371,7 +352,7 @@ mcp__garmin-db__save_weekly_review(review)   # -> {status, user_id, week_start_d
   - `weeks_to_a_race` / `weeks_to_b_race` は **整数 or null**（null = race_date 未確定で算出不能）。`a_race` / `b_race` はレース名。
   - `expected_phase` は W にあるべきマクロフェーズ/テーマ（日本語短文）。`block_phase` / `ladder_step_km` / `weeks_to_block_end` は `training_block` の値をそのまま転記する（ラダーが分ベースなら `ladder_step_km` を null にして `expected_phase` 側に分で書く）。`gap` は **あるべきフェーズと登録ブロックのギャップ**（日本語短文、A / B 両レースの観点を含める。Garmin プランとのギャップではない）。
   - `load_trend` は Step 5-A-4 のカットバック周期サブ分析の結果。`long_run_build_weeks`（整数、主ゲート）/ `cutback_due_long_run`（bool、主ゲート）/ `consecutive_build_weeks`（整数）/ `last_cutback_weeks_ago`（整数 or null）/ `acwr`（数値 or null）/ `acwr_status`（文字列）/ `cutback_due_event_window`（bool、主ゲート）/ `cutback_due`（bool、主ゲート OR 副ゲート）/ `weekly_ramp`（直近数週の `{week, load_km, longest_run_sec}` 配列）。`long_run_build_weeks` / `cutback_due_long_run` / `cutback_due_event_window` はバンドルの `load_trend.long_run` の値をそのまま転記する（再計算しない）。`cutback_due_event_window=true` のときは `gap` か `expected_phase` に保護期間（レース名・経過日数・`ceiling_km`）への言及を入れ、処方行のロングを上限以下に収める。`cutback_due=true` のときは `expected_phase` を deload として記述し、`recommendations` と Step 7 の処方行（`prescriptions[]`）も deload 処方（ロング直近ピーク比 −30〜40%・週量 −20〜30%・質ゼロ）に揃える。
-- `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`recovery.status.recommendation` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。`hrv_under_recovery=true` かつ ACWR caution+ のときは `load_recovery_verdict` を「積み過ぎ・回復不足」とし、`recommendations` と Step 7 の処方行（`prescriptions[]`）を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`recovery.baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。さらに **`symptom_flag`（bool）/ `symptom_note`（str or null）** を入れる: バンドルの `symptoms.status.flag` をそのまま `symptom_flag` に転記し（再判定しない）、`symptom_note` には部位・ルール・処方への反映を 1 文で書く（`true` の例:「右ふくらはぎが2回連続で3以上のため、ロングは直近クリーンの 18km で頭打ち・質練ゼロ」）。`flag=false` で申告がある週は `symptom_note` に「申告あり・基準未満」等を、W-1 に記録が無い週は `symptom_flag=false` ＋ `symptom_note="症状記録なし"` を入れる（null にして黙らせない）。加えて **`long_run_recovery_cost`（object or null）** に、バンドルの `recovery.long_run_recovery_cost` から `{activity_id, criteria_fired, cost_flag, insufficient_data}` を転記する（再判定しない。W-1 にロングが無ければ null）。`cost_flag=true` の週は `recommendations` と処方行のロングを同距離の反復に揃える。
+- `recovery` は Step 5-A-5 の回復サブ分析の結果。`rhr_trend`（`improving`/`stable`/`fatigued`）/ `rhr_median_7d` / `rhr_median_30d`（bpm、null 可）/ `hrv_below_baseline_days`（整数、null 可）/ `hrv_under_recovery`（bool）/ `sleep_score`（null 可）/ `recommendation`（`recovery.status.recommendation` の go/no-go）/ `load_recovery_verdict`（負荷×回復の複合講評の短文）/ `data_available`（bool）/ `early_warning_flag`（bool）/ `early_warning_note`（str or null）。回復データ欠損週は `data_available=false` とし、`load_recovery_verdict` を「回復データ不足のため負荷ベースで講評」とする。Step 5-A-5 の複合判定が「積み過ぎ・回復不足」のときは `load_recovery_verdict` をそう書き、`recommendations` と Step 7 の処方行（`prescriptions[]`）を deload 処方に揃える。`early_warning_flag` は Step 5-A-5 の個人ベースライン逸脱の early-warning ノート（`recovery.baseline_deviation` の逸脱や HRV ベースライン割れ）が出た場合に `true`、`early_warning_note` にその帰結＋予防アクションの短文を入れる。逸脱が無ければ `early_warning_flag=false`・`early_warning_note=null`。さらに **`symptom_flag`（bool）/ `symptom_note`（str or null）** を入れる: バンドルの `symptoms.status.flag` をそのまま `symptom_flag` に転記し（再判定しない）、`symptom_note` には部位・ルール・処方への反映を 1 文で書く（`true` の例:「右ふくらはぎが2回連続で3以上のため、ロングは直近クリーンの 18km で頭打ち・質練ゼロ」）。`flag=false` で申告がある週は `symptom_note` に「申告あり・基準未満」等を、W-1 に記録が無い週は `symptom_flag=false` ＋ `symptom_note="症状記録なし"` を入れる（null にして黙らせない）。加えて **`long_run_recovery_cost`（object or null）** に、バンドルの `recovery.long_run_recovery_cost` から `{activity_id, criteria_fired, cost_flag, insufficient_data}` を転記する（再判定しない。W-1 にロングが無ければ null）。`cost_flag=true` の週は `recommendations` と処方行のロングを同距離の反復に揃える。
 
 **次に、Step 6 の処方表と同じ内容を構造化して保存します**（`save_weekly_review` が返した `review_id` を必ず渡す。散文だけだと日次チェックインや Garmin 登録から機械的に読めないため）:
 
@@ -391,10 +372,10 @@ mcp__garmin-db__save_weekly_prescriptions(
  "target_minutes":null,"hr_high":150,"hr_low":null,"rating":"✅","rationale":"ラダー3段目。進行ゲート緑。補給の歩きは可。"}
 {"date":"2026-09-20","session_type":"long","purpose":"long_goal_pace","title":"ロング20km うち後半10kmをレースペース",
  "target_km":20.0,"target_minutes":null,"hr_high":null,"hr_low":null,"rating":"✅","rationale":"本番ペースのリハーサル。"}
-{"date":"2026-09-08","session_type":"easy","purpose":"recovery","title":"Z2ジョグ 35分","target_km":null,
- "target_minutes":35,"hr_high":141,"hr_low":null,"rating":"✅","rationale":"ロング翌日の回復促進。35分は当日の総量。"}
+{"date":"2026-09-08","session_type":"easy","purpose":"recovery","title":"回復ジョグ 30分","target_km":null,
+ "target_minutes":30,"hr_high":135,"hr_low":null,"rating":"✅","rationale":"ロング後の回復促進。30分は当日の総量。"}
 {"date":"2026-09-10","session_type":"easy","purpose":"easy","title":"Z2ジョグ 35分＋流し4本","target_km":null,
- "target_minutes":35,"hr_high":141,"hr_low":null,"strides":{"reps":4,"run_seconds":20,"recovery_seconds":90},
+ "target_minutes":35,"hr_high":150,"hr_low":null,"strides":{"reps":4,"run_seconds":20,"recovery_seconds":90},
  "rating":"✅","rationale":"脚の回転を保つ神経筋刺激。35分は流しを含む当日の総量。"}
 ```
 
@@ -405,7 +386,7 @@ mcp__garmin-db__save_weekly_prescriptions(
   - `long_easy` / `long_goal_pace` / `long_fast_finish`（後半上げ）→ long 行
   - `progression` → easy・long・tempo 行、`tempo` → tempo・threshold 行、`intervals` → threshold・tempo 行、`fartlek` → easy・tempo・threshold 行、`race` → long・tempo・threshold 行
   - 合わない組み合わせ（例: easy 行に `long_goal_pace`）や語彙外の値は保存時に拒否される。省略すると `session_type` の既定（long → `long_easy`、threshold → `intervals` など）で扱われる。
-  - **登録済みレース（`athlete_goals` の `race_date`）の当日は、その行に必ず `purpose="race"` を入れる**（long／tempo／threshold 行。給水の歩きを許すなら `allowances {"walk": true}` も）。処方がある日の目的は処方だけで決まり、レース日でも推定では補わない（#1352）。書き忘れると、その日は `session_type` の既定（long → `long_easy`）で評価される。
+  - **登録済みレース（`athlete_goals` の `race_date`）の当日は、その行に必ず `purpose="race"` を入れる**（long／tempo／threshold 行。給水の歩きを許すなら `allowances {"walk": true}` も）。処方がある日の目的は処方だけで決まり、レース日でも推定では補わない。書き忘れると、その日は `session_type` の既定（long → `long_easy`）で評価される。
   - purpose はこの選手固有の分類ではなく**一般的なコーチングのカテゴリ**。選手ごとの事情（ラダー段・レース名）は `title` / `rationale` に書き、purpose 自体は増やさない。
 - **`allowances`（許容事項）**: 歩きを許すランには `{"walk": true}` を入れる（補給の歩き・レースの給水など）。キーは `walk` だけで、ほかのキーは保存時に拒否される。許容しないなら省略（null）。
 - `date` は **W 内の日付**（週外の日付は保存時に拒否される）。`session_type` は `long|easy|recovery|threshold|tempo|rest|strength|cross` のいずれか（`strides` は session_type ではない。下の `strides` 付属を使う）。
@@ -413,7 +394,7 @@ mcp__garmin-db__save_weekly_prescriptions(
 - `target_km` / `target_minutes` は **時間優先のロングなら分、距離指定なら km**（両方あれば両方入れてよい。無ければ null）。
 - **`target_minutes` の定義（規約・必ず守る）**:
   - `long` / `easy` / `recovery` は **その日走る全体（総量）**を入れる。Garmin にはこの値が**1ステップ**として登録され、`reconcile_prescriptions` も**この値と実績の総量**を突き合わせる（前後の追加分を足し引きしない）。したがって「W/U ＋ 本体 ＋ C/D」に分けた**本体だけの分数を入れてはいけない**。入りをイージーにする等の走り方は `rationale` の散文にだけ書く。
-  - `threshold` / `tempo` は **本体のみの分数**（ツールが前後にウォームアップ 10 分・クールダウン 5 分を足し、判定でもその 15 分を許容する）。ここに総量を書くと `reconcile_prescriptions` が 15 分多い期待値で判定して、処方どおり走っても `replaced` に落ちる。**保存時に検出して拒否する**（`target_minutes + 15 分` を `target_km` で割った全体平均ペースが 3:00-8:00/km を外れる行は `save_weekly_prescriptions` が `ValueError`。総量を書くとイージージョグより遅い値になるため引っかかる。#1084）。
+  - `threshold` / `tempo` は **本体のみの分数**（ツールが前後にウォームアップ 10 分・クールダウン 5 分を足し、判定でもその 15 分を許容する）。ここに総量を書くと `reconcile_prescriptions` が 15 分多い期待値で判定して、処方どおり走っても `replaced` に落ちる。**保存時に検出して拒否する**（`target_minutes + 15 分` を `target_km` で割った全体平均ペースが 3:00-8:00/km を外れる行は `save_weekly_prescriptions` が `ValueError`。総量を書くとイージージョグより遅い値になるため引っかかる）。
   - `target_km` は**どのセッションでも全体の距離**（本体だけの距離を入れない）。
 - **流し（`strides`）は easy 行の付属オブジェクト**: `{"reps": 2-8, "run_seconds": 10-30（省略時 20）, "recovery_seconds": 60-180（省略時 90）}`。**`session_type="easy"` の行にだけ**付けられる（long や質練に付けると保存時に拒否）。流しは神経筋への刺激でありインターバルではないので、本数・秒数を増やして負荷を稼ぐ使い方はしない。
   - **配置規則**: 時計のワークアウトは「冒頭 easy（5 分以上）→ 流し `reps` ×（`run_seconds` 疾走 / `recovery_seconds` jog）→ 最後の easy 5 分」になり、3 つの合計が `target_minutes` と一致する。`target_minutes` は流しを含む**総量**のまま（流しの分を足さない）。
@@ -430,7 +411,7 @@ mcp__garmin-db__save_weekly_prescriptions(
 
 1. **新しいレビュー版を保存**: 改訂後の方針を反映した `recommendations` / `overall`（必要なら `periodization` / `recovery` も）で `save_weekly_review(review)` を呼び、`review_data.revision_note` に改訂理由を1文入れる（例: `"9/6 皮膚トラブルで木曜を練習会ビルドアップに差し替え"`）。同じ W なので**新しい版として追記**され、返却された新しい `review_id` を控える。
 2. **改訂後の処方を全行保存**: `save_weekly_prescriptions(week_start_date=<W の開始日>, prescriptions=[...改訂後の全日分...], review_id=<新しい review_id>)`。差分だけでなく**その週の全行**を入れる（最新バッチがそのまま週のプランになるため）。`review_id` を省略したり古い版の id を渡すと拒否されます。
-3. **Garmin に登録済みなら再登録**: 既に `schedule_weekly_prescriptions` でカレンダーに載せている週なら、新バッチは `status="prescribed"` に戻り Garmin の id も引き継がれないので、`schedule_weekly_prescriptions(week_start_date=<W>, dry_run=False)`（旧 `[MCP]` 項目を削除してから作り直す）を実行してカレンダーを新バッチに揃える。
+3. **Garmin に登録済みなら再登録**: 既に `schedule_weekly_prescriptions` でカレンダーに載せている週なら、新バッチは `status="prescribed"` に戻り Garmin の id も引き継がれないので、`schedule_weekly_prescriptions(week_start_date=<W>, dry_run=False)` を実行してカレンダーを新バッチに揃える。置き換わるのは同じタイトルの `[MCP]` 項目だけで、タイトルを変えた行の旧項目は予定に残る。先に `dry_run` の結果でそうした日を挙げ、Garmin Connect での削除をユーザーに頼む（またはタイトルを変えない）。
 
 改訂後は「どの行をどう変えたか」と改訂理由をユーザーに一言で報告してください。
 

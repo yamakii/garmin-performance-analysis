@@ -45,13 +45,13 @@ section, not in the plan.
 
 ## Step 3 — Apply in a worktree
 
-`git worktree add -q -b chore/deps-update-<YYYY-MM> .claude/worktrees/deps-update-<YYYY-MM> origin/main` (path and naming per `git.md` §2), then:
+`git worktree add -q -b chore/<issue>-deps-update-<YYYY-MM> .claude/worktrees/deps-update-<YYYY-MM> origin/main` (path and naming per `git.md` §2), then:
 
 1. **Security first.** If a fix requires crossing a major, still apply it and flag it explicitly.
 2. Python: `uv lock --upgrade` (respects pyproject bounds). If the dry-run showed an unwanted major
    under a `>=`-only constraint, add an upper bound **with a reason comment** and re-lock.
    Upper bounds are exceptions, not defaults — re-evaluate each existing one (`grep -n '<[0-9]' packages/*/pyproject.toml`).
-3. npm: `npm --prefix packages/garmin-web/frontend ci --no-audit` then `npm audit fix` and `npm update`
+3. npm: `npm --prefix packages/garmin-web/frontend ci --no-audit` then `npm --prefix packages/garmin-web/frontend audit fix` and `npm --prefix packages/garmin-web/frontend update`
    (both stay inside `package.json` ranges; majors are never applied here).
 4. pre-commit: set `ruff-pre-commit` rev = locked ruff version, `black` rev = locked black version,
    `pre-commit-hooks` rev = latest release.
@@ -62,9 +62,7 @@ section, not in the plan.
 ```bash
 uv run --directory <worktree> bash scripts/ci-check.sh
 ```
-Exit 0 is the completion gate. With `UV_PROJECT_ENVIRONMENT` set (Docker sandbox), every worktree and
-package shares ONE venv: never run server and web `uv sync` concurrently (the web sync removes the
-server dev extras → mypy/pytest-xdist break). Re-run pip-audit / npm audit on the worktree to confirm 0 findings.
+Exit 0 is the completion gate. Re-run pip-audit / npm audit on the worktree to confirm 0 findings.
 
 If `ruff`/`black`/`mypy` bumps introduce new violations, fix them in a **separate commit** (`style:`/`fix:`),
 keeping the lockfile commit single-purpose.
@@ -78,7 +76,7 @@ Push with the canonical form in `git.md` §2 (inline `GITHUB_TOKEN` credential h
 origin/main), `create_pull_request` with `Closes #<issue>` and a `## Verification` section
 (ci-check exit 0, pip-audit 0, npm audit 0). Wait for `ci-guard` with `bash scripts/wait-for-ci.sh <PR> --timeout 900`
 (exit 3 only → poll `pull_request_read(method="get_check_runs")`, as in `ship/SKILL.md`). Merge via `merge_pull_request(merge_method="merge")` when ci-guard = success and
-mergeable (permanent approval #886 — L2 PASS + ci-guard green). Any other state → report, do not merge.
+mergeable (permanent approval #886 — L2 PASS + ci-guard green). Any other state → report, do not merge. After merge: sync local main (`git.md` §2) → `bash scripts/cleanup-merged-worktrees.sh`.
 
 ## Step 6 — Report
 

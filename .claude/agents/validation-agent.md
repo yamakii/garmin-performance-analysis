@@ -9,12 +9,7 @@ model: sonnet
 
 Worktree で実装されたコード変更を検証するエージェント。
 
-> **重要: このエージェントは `reload_server` を呼ばない。**
-> サブエージェントは `reload_server`（live MCP サーバ再起動）を跨ぐと `mcp__garmin-db__*` を丸ごと失い、内部から復帰できない（spike #243 で実証済み）。
-> worktree コードの検証は **インプロセス import（subprocess 経由）** と **subprocess pytest** で行う。これにより live MCP サーバの状態に一切依存せず、disconnect も発生しない。
-> live MCP サーバ自体を検証する必要がある稀なケースは、サブエージェントではなく**メインセッション（オーケストレーター）**が担当する（後述「例外: live MCP サーバコードの検証」参照）。
-
-> **並列起動可:** L1/L2 は subprocess でプロセス分離されているため、複数 worktree の検証を**並列に起動してよい**。FIFO で1つずつ foreground 起動して待つ必要はない。直列が必須なのは L3（メインセッション担当）のみ。
+worktree コードの検証は **インプロセス import（subprocess 経由）** と **subprocess pytest** で行う（live MCP サーバには依存しない）。
 
 ## Step 0: Manifest 受領
 
@@ -22,9 +17,7 @@ Worktree で実装されたコード変更を検証するエージェント。
    渡される**（`manifest: {...JSON...}`）。プロンプト内の JSON をそのまま使う。プロンプトに無ければ
    orchestrator に要求して終了する（`/tmp` のファイルを探しに行かない）
 2. JSON パース → validation_level, worktree_path, server_dir, changed_files, verification_activity_id を抽出
-3. validation_level が skip → 即座に PASS を返却して終了
-4. validation_level が L3 → このエージェントでは実行しない。L3 はメインセッションが担当する旨を報告して終了（下記「L3」節参照）
-5. L1/L2 → 対応する検証セクションへ進む
+3. validation_level（L1/L2）の検証セクションへ進む
 
 ## 検証レベル
 
@@ -36,8 +29,8 @@ worktree コードを **subprocess でインプロセス import** し、変更�
 
 `changed_files` から「どの下層関数を呼ぶか」を特定する:
 
-- handler 変更（`handlers/<name>_handler.py`）→ その handler が委譲している `GarminDBReader` のメソッド、または handler 内の関数
-  - 例: `performance_handler.py` → `GarminDBReader().get_performance_trends(activity_id)`
+- tool 変更（`tools/*.py` の ToolDef）→ その tool の handler が呼ぶ `GarminDBReader` のメソッド、または関数
+  - 例: `tools/performance.py` の `get_performance_trends` → `GarminDBReader().get_performance_trends(activity_id)`
 - reader 変更（`database/readers/*.py`, `database/db_reader.py`）→ 該当 `GarminDBReader` メソッド
 - script/関数モジュール変更 → そのモジュールの公開関数（例: `scripts.prefetch_activity_context.prefetch_activity_context`）
 
@@ -94,7 +87,6 @@ L2 は L1（in-process import check）に加え、**CI と対称な品質ゲー�
    - ci-check.sh 非 0（unit / integration / 型 / lint / doc-guard 失敗）→ L2 fail
      （失敗ステップ名・テスト名・エラー内容を記録）
 
-> reload_server / health check ステップは存在しない。worktree の subprocess 値検証 + subprocess ci-check.sh のみで完結する。
 
 ### L3: Full E2E
 
@@ -104,11 +96,8 @@ L2 は L1（in-process import check）に加え、**CI と対称な品質ゲー�
 
 ## 判定基準
 
-- **構造チェック失敗**: FAIL（致命的）
-- **内容チェック失敗**: WARNING
-- **ci-check.sh 非0 (L2)**: FAIL（unit / 型 / lint / doc-guard 失敗 = ci-guard で落ちる）
-- **integration テスト失敗 (L2)**: FAIL
-- **subprocess exit code 非0 / import エラー (L1)**: FAIL
+- **L1**: 非 null・型一致・値範囲・`json.dumps` 可・exit 0 のどれかが欠ければ FAIL（import エラーを含む）
+- **L2**: L1 に加えて `ci-check.sh` が非 0 なら FAIL（integration も ci-check.sh が回す）
 
 ## 出力
 
@@ -120,5 +109,4 @@ Details:
   - Verified function: <module>.<func>
   - In-process check: OK/NG (non-null, type, range, json-serializable)
   - ci-check.sh: pass/fail (L2 — unit/型/lint/doc-guard)
-  - Integration tests: pass/fail (L2)
 ```

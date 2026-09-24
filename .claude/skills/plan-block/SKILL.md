@@ -13,7 +13,7 @@ description: Interactively register or update the mid-term training plan (mesocy
 
 - **日本語で対話・出力**する
 - **洗い替え方式**: `training_blocks` は user_id 単位で**全件まるごと置き換え**られる。1 ブロックだけ直す場合も「変更しないブロックを含めた全件」を渡すこと（取りこぼすと消える）
-- **日付は `YYYY-MM-DD`**。`start_date <= end_date` が必須（違反すると保存が ValueError で失敗する）
+- **日付は `YYYY-MM-DD`**。`start_date <= end_date` が必須（違反すると保存は `{"error": ...}` を返し、何も書き込まれない。次の Step の前に `error` を確認する）
 - **phase** は `base` / `build` / `peak` / `taper` / `race` / `recovery` / `cutback` のいずれか
 - **ロング階段（long_run_ladder）は週 1 エントリ**。各ステップは `week_start`（週の開始日）と、`target_km` / `target_minutes` の**どちらか一方だけ**を持つ（両方 or どちらも無しは保存エラー）
 - **このスキルは日々のワークアウトを作らない**。曜日ごとの処方は週次レビュー（`save_weekly_prescriptions`）の担当。ここはあくまで「どの週にロングを何 km まで伸ばすか」までの粒度

@@ -28,7 +28,7 @@ Issue / Plan / Worktree / PR を省く許可ではない。
 | `packages/garmin-web/` | L2 |
 | `.claude/rules/`, `.claude/skills/`, `docs/`, `CLAUDE.md` | skip |
 
-迷ったら L2。L3 は analyst agent 定義変更時のみ。`implement-tier.js` の `levelForFile` はこの表の写しなので、表を変えたら同じ PR で更新する。
+表に無いファイルは L2（`levelForFile` の既定と同じ）。L3 は analyst agent 定義変更時のみ。`implement-tier.js` の `levelForFile` はこの表の写しなので、表を変えたら同じ PR で更新する。
 
 | Level | 内容 | 完了条件 |
 |-------|------|---------|
@@ -42,7 +42,7 @@ Issue / Plan / Worktree / PR を省く許可ではない。
 - **`reload_server` に依存しない**。サブエージェントは reload を跨ぐと `mcp__garmin-db__*` を失い復帰できない（spike #243）。worktree コードは `uv run --directory <worktree> ...` の subprocess で検証する。
 - **L1/L2 は並列起動してよい**（subprocess 分離）。直列が必要なのは L3 だけ。
 - **リソースは別問題**（#1009）。`scripts/ci-check.sh` 1 本が約 2 GB、live セッション 1 つが約 0.6 GB。ci-check.sh は重い工程の前に cgroup の余裕を待ち、コンテナが 16 GiB 未満なら flock で直列化する。この待ちを外さない。判断は `bash scripts/ci-check.sh --resources-only` で確認できる。
-- **サブエージェントの報告を信じない**。テスト結果とマージ状態はオーケストレーターが自分のターンで確認する（GitHub の `pull_request_read` が ground truth）。
+- テスト結果とマージ状態の根拠は報告文ではなく、オーケストレーターが自分で取った `pull_request_read` の結果。
 - **`can't start new thread` は環境フレーク**。サンドボックスは cgroup `pids.max` でプロセス＋スレッド総数を上限管理しており（`cat /sys/fs/cgroup/pids.current` で現在値）、xdist のワーカー数が多いと上限に当たって**差分と無関係なファイル**のテストが落ちる。コード欠陥として扱わず、`ci-guard`（GitHub runner に同じ上限は無い）の結果を正とする。ローカルで再現を切り分けるなら該当テストだけ `-n 0` で再実行する。`-n auto` より上限付きの固定ワーカー数のほうが安定する。
 
 ## 3. L1 / L2 の手順
@@ -123,7 +123,7 @@ L3 検証基準:
 1. push は `git.md` §2 の正典形（`GITHUB_TOKEN` の inline credential helper）。**origin/main の事前取り込みはしない**（遅れているだけの PR はそのままマージできる）。
 2. PR が `mergeable=false`（コンフリクト）のときだけ `git.md` §2 の手順で merge 取り込み → push し直す。
 3. `mcp__github__create_pull_request`（body に `Closes #{issue}` と `## Verification`）。
-4. `bash scripts/wait-for-ci.sh <PR> --timeout 900` を**フォアグラウンドで 1 回**（Bash timeout 960000 ms 以上）。`run_in_background` / Monitor / `pgrep` / `kill` / `sleep` ループは使わない（ask ルールで止まる, #993）。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で数回ポーリング。
+4. `bash scripts/wait-for-ci.sh <PR> --timeout 900` を**フォアグラウンドで 1 回**（Bash timeout 960000 ms 以上）。サブエージェント / Workflow 内では `run_in_background` / Monitor / `pgrep` / `kill` / `sleep` ループを使わない（`kill` 系は ask ルールで止まる）。メインセッションは `run_in_background` 可。exit 3 のときだけ `pull_request_read(method="get_check_runs")` で数回ポーリング。
 5. **auto-merge ゲート**: 検証 PASS（L1/L2、または skip のレビュー、または L3 の diff レビュー）+ `ci-guard` success + mergeable。満たせば `mcp__github__merge_pull_request(merge_method="merge")`。
    **恒久承認（2026-08-09, #886）**: このゲートを満たす PR は PR ごとの確認なしにマージしてよい。背景ジョブ・非対話セッションにも適用。承認は PR のマージのみで、main への直接 push・force push・下記例外は対象外。
 6. **例外は人間ゲート**: 検証 FAIL / 内容チェック WARNING / CI 失敗 / コンフリクト。auto-merge せず PR URL と理由を報告する。`.claude/workflows` `.claude/hooks` は `meta-checks` がゲートするので green なら auto-merge。

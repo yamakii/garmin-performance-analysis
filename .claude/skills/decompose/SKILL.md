@@ -113,6 +113,8 @@ mcp__github__issue_write(
   body="""## Summary
 {何をするか}
 
+Validation Level: {L1|L2|L3|skip}
+
 ## Parent
 Part of #{Epic番号}: {Epic タイトル}
 
@@ -209,8 +211,13 @@ mcp__github__issue_write(
   body="""## Summary
 {何をするか}
 
+Validation Level: {L1|L2|L3|skip}
+
 ## Design
 {簡潔な設計}
+
+### Files to Create/Modify
+- `path/to/file.py` -- new | modify
 
 ## Test Plan
 
