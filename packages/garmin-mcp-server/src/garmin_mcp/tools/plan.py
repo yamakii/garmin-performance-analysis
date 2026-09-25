@@ -17,17 +17,102 @@ emits no ``default`` key; runtime defaults are applied in the handlers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from garmin_mcp.analysis.workout_catalog import TEMPLATES, expand
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_USER_ID = "default"
+
+#: Keys a row's ``workout`` object may carry.
+_WORKOUT_KEYS = frozenset({"template", "params"})
+
+
+def _template_catalog_text() -> str:
+    """One line per catalog template: id, session types and example params."""
+    return "; ".join(
+        f"{t.id} ({'|'.join(sorted(t.session_types))}: {', '.join(t.example)})"
+        for t in TEMPLATES.values()
+    )
+
+
+def _expand_workout_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expand every row's ``workout`` template into ``structure`` (Issue #1405).
+
+    A row may name a catalog template (:mod:`garmin_mcp.analysis.workout_catalog`)
+    as ``workout: {"template": str, "params": {...}}`` instead of hand-writing
+    its steps. The template builds the structure and the title from the same
+    parameters, so the row gets the structure, the title when it carries none,
+    and the template's default purpose when it declares none. The ``workout``
+    key itself is dropped before the insert.
+
+    Args:
+        rows: Prescription rows as passed to ``save_weekly_prescriptions``.
+
+    Returns:
+        New list of rows; rows without ``workout`` are returned unchanged.
+
+    Raises:
+        ValueError: Naming the row date, when ``workout`` is combined with
+            ``structure`` or ``strides``, is malformed, names an unknown
+            template, a template that does not fit the row's session_type, or
+            parameters the template rejects.
+    """
+    expanded: list[dict[str, Any]] = []
+    for row in rows:
+        workout = row.get("workout")
+        if workout is None:
+            expanded.append(row)
+            continue
+        where = f"prescription {row.get('date')}"
+        if row.get("structure") is not None or row.get("strides") is not None:
+            raise ValueError(
+                f"{where}: set either workout or structure / strides, not both "
+                "(the template builds the structure)"
+            )
+        if not isinstance(workout, Mapping):
+            raise ValueError(
+                f"{where}: workout must be an object "
+                '{"template": str, "params": {...}}'
+            )
+        unknown = sorted(set(workout) - _WORKOUT_KEYS)
+        if unknown:
+            raise ValueError(
+                f"{where}: unknown workout keys {unknown} "
+                f"(allowed: {sorted(_WORKOUT_KEYS)})"
+            )
+        template_id = workout.get("template")
+        if not isinstance(template_id, str):
+            raise ValueError(
+                f"{where}: workout.template must be a string, got {template_id!r}"
+            )
+        params = workout.get("params") or {}
+        try:
+            structure, title = expand(template_id, params)
+        except ValueError as e:
+            raise ValueError(f"{where}: {e}") from e
+        template = TEMPLATES[template_id]
+        session_type = row.get("session_type")
+        if session_type not in template.session_types:
+            raise ValueError(
+                f"{where}: template {template_id!r} fits session_type "
+                f"{sorted(template.session_types)}, got {session_type!r}"
+            )
+        new_row = {k: v for k, v in row.items() if k != "workout"}
+        new_row["structure"] = structure
+        if not new_row.get("title"):
+            new_row["title"] = title
+        if new_row.get("purpose") is None:
+            new_row["purpose"] = template.default_purpose
+        expanded.append(new_row)
+    return expanded
 
 
 # ----------------------------------------------------------------------------
@@ -111,6 +196,11 @@ class SaveWeeklyPrescriptionsParams(BaseModel):
             "derived from the structure (the body only — steps other than "
             "warmup/cooldown — for threshold/tempo, the total otherwise); "
             "hr_low / hr_high are never derived. "
+            'Instead of hand-writing steps, a run row may set workout {"template": '
+            '<catalog id>, "params": {...}} (never together with structure or '
+            "strides): the template expands into the structure, the title when "
+            "the row has none and the template's purpose when it declares none "
+            "(templates are listed in the tool description). "
             "Revising a week means saving a new "
             "review version first and passing its review_id: a second batch "
             "for the same review is rejected."
@@ -245,7 +335,7 @@ def _save_weekly_prescriptions(
     try:
         result = insert_weekly_prescriptions(
             week_start_date=p.week_start_date,
-            prescriptions=p.prescriptions,
+            prescriptions=_expand_workout_rows(p.prescriptions),
             review_id=p.review_id,
             user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
             db_path=str(reader.db_path),
@@ -371,7 +461,12 @@ PLAN_TOOLS: list[ToolDef] = [
             "the session_type and rating are known, and hr_low <= hr_high. Once "
             "the week has a review, review_id must be that week's latest review "
             "version and may own only one batch — revise by saving a new review "
-            "version first. Returns {status, week_start_date, batch_id, count, "
+            "version first. A row may author its steps from a catalog template "
+            'with workout {"template", "params"}; heart rate params are integer '
+            "bpm (convert zones first), pace params s/km, and bookended "
+            "templates also take warmup_minutes / cooldown_minutes. Templates "
+            "(session types: example params): " + _template_catalog_text() + ". "
+            "Returns {status, week_start_date, batch_id, count, "
             "prescription_ids}."
         ),
         params=SaveWeeklyPrescriptionsParams,

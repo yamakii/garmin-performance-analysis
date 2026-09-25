@@ -31,7 +31,7 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 
 | ツール | 引数 | 読むもの |
 |---|---|---|
-| `get_weekly_prescriptions` | `date=<対象日>` | その日の処方行（`prescription_id`, `title`, `target_minutes`/`target_km`, `hr_low`/`hr_high`, `status`） |
+| `get_weekly_prescriptions` | `date=<対象日>` | その日の処方行（`prescription_id`, `title`, `target_minutes`/`target_km`, `hr_low`/`hr_high`, `structure`, `status`） |
 | `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日>` | 同日に既にある予定（Garmin Coach / 手動 / 既存 [MCP]） |
 | `get_recovery_status` | `date=<対象日>` | recommendation（rest/easy なら登録前に確認） |
 | `get_wellness_baseline_deviation` | `date=<対象日>` | 週次レビューの回復ゲート（RHR/HRV の条件）を満たすか |
@@ -49,9 +49,11 @@ ToolSearch(query="select:mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db
 - **`hr_low` を置くのは質練だけ**（マラソンペース走・テンポ・閾値）。下限を維持すること自体が目的のときのみ
 - HR 上限値は処方の `hr_high` or Garmin native zone の上限（計算式禁止）。処方に数値が無ければ `get_heart_rate_zones_detail` の Zone 2 上限を使う
 
-> 週モードではこの変換をツール側がコードで行います（同じ規約: ロング/イージー/リカバリーは本体 1 ステップ、`strides` 付きイージーは冒頭 easy → 流し → 最後の easy 5 分で合計が総量、質練のみ 10 分 warmup → 本体 → 5 分 cooldown、`hr_high` は上限のみ）。記録する `registered_bookend_minutes` もツールが決めます（流し付きイージーは 0）。手で steps を書き直さないでください。
+> **処方行に `structure` があれば、それが時計に届くステップを決めます**（`/weekly-review` がカタログのテンプレート `workout: {template, params}` で書いた質練・流しは、保存時に `structure` へ展開済み）。インターバルは繰り返しグループ（`repeat_count`）のまま登録され、`optional` のステップと判定専用のキー（ペース帯・`label`）は時計に送られません。単日モードでも `structure` のある行は上の変換規約で組み直さず、その構造をそのまま `steps` にします。
 >
-> 処方行の `purpose`（`long_easy` / `long_goal_pace` などランの目的）と `allowances`（`{"walk": true}` 等）は**ワークアウトの構成を変えません**。同じ `session_type` なら時計に届くステップは同一で、purpose はランの評価（処方どおりだったか）のためだけに使われます。
+> `structure` の無い行だけ、週モードのツールが上の規約で steps を合成します（ロング/イージー/リカバリーは本体 1 ステップ、`strides` 付きイージーは冒頭 easy → 流し → 最後の easy 5 分で合計が総量、質練のみ 10 分 warmup → 本体 → 5 分 cooldown、`hr_high` は上限のみ）。記録する `registered_bookend_minutes` もツールが決めます（流し付きイージーは 0）。手で steps を書き直さないでください。
+>
+> 処方行の `purpose`（`long_easy` / `long_goal_pace` などランの目的）と `allowances`（`{"walk": true}` 等）はランの評価（処方どおりだったか）に使われます。ステップの中身を決めるのは `structure`（無ければ `session_type` と上の規約）で、purpose を変えるだけではステップは変わりません。
 
 ## Step 3: ゲート確認と登録（単日モード）
 
