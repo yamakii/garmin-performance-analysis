@@ -247,7 +247,9 @@ def test_registry_has_version_32() -> None:
     """Purpose + allowances are registered as migration 32 (#1312)."""
     from garmin_mcp.database.migrations.registry import MIGRATIONS
 
-    assert [(version, name) for version, name, _ in MIGRATIONS if version >= 31] == [
+    assert [
+        (version, name) for version, name, _ in MIGRATIONS if 31 <= version <= 32
+    ] == [
         (31, "add_splits_workout_step_index"),
         (32, "add_prescription_purpose"),
     ]

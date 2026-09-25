@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 32 when prescriptions gained purpose/allowances (#1312).
-    assert max(version for version, _, _ in MIGRATIONS) == 32
+    # Head moved to 33 when prescriptions gained the step structure (#1401).
+    assert max(version for version, _, _ in MIGRATIONS) == 33

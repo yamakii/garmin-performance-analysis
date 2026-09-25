@@ -6,7 +6,8 @@ and the structured weekly prescriptions (``weekly_prescriptions``).
 Two conventions apply throughout:
 
 - JSON columns (``quality_types``, ``long_run_ladder``, ``cutback_rule`` and the
-  prescriptions' ``strides`` / ``allowances``) are decoded back into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
+  prescriptions' ``strides`` / ``allowances`` / ``structure``) are decoded back
+  into lists/dicts, and every ``date`` / ``TIMESTAMP`` value is
   converted to ``str`` so results are directly ``json.dumps``-able by MCP tools.
 - ``weekly_prescriptions`` is append-only per ``batch_id``: the highest
   ``batch_id`` for a week is canonical and superseded batches are never
@@ -62,12 +63,13 @@ _PRESCRIPTION_COLUMN_NAMES = (
     "strides",
     "purpose",
     "allowances",
+    "structure",
     "created_at",
     "updated_at",
 )
 
-#: JSON-encoded prescription columns, decoded back into dicts on read.
-_PRESCRIPTION_JSON_COLUMNS = ("strides", "allowances")
+#: JSON-encoded prescription columns, decoded back into dicts / lists on read.
+_PRESCRIPTION_JSON_COLUMNS = ("strides", "allowances", "structure")
 
 _PRESCRIPTION_COLUMNS = ", ".join(_PRESCRIPTION_COLUMN_NAMES)
 
