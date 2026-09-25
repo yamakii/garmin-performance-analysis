@@ -498,6 +498,37 @@ describe("structure-derived axes (#1407)", () => {
     expect(items[4].children[1].className).toContain("md:border-b");
   });
 
+  it("a row with steps has one hairline, under its last step", () => {
+    // The row's own cells drop their hairline so no line separates the row
+    // from 第1段 (#1421); the last step's cells close the row instead.
+    render(<PlanCheck plan={{ ...PLAN, checks: [STAGES_ROW] }} />);
+
+    const row = screen.getByRole("group", { name: "段階的ビルドアップ" });
+    const list = within(row).getByRole("list", {
+      name: "段階的ビルドアップの内訳",
+    });
+    const rowCells = Array.from(row.children).filter((el) => el !== list);
+    expect(rowCells).toHaveLength(4);
+    for (const cell of rowCells) {
+      expect(cell.className).not.toContain("md:border-b");
+    }
+    const items = within(list).getAllByRole("listitem");
+    for (const cell of Array.from(items[items.length - 1].children)) {
+      expect(cell.className).toContain("md:border-b");
+    }
+  });
+
+  it("a row without steps keeps its hairline", () => {
+    render(<PlanCheck plan={PLAN} />);
+
+    const row = screen.getByRole("group", { name: "強度" });
+    const cells = Array.from(row.children);
+    expect(cells).toHaveLength(4);
+    for (const cell of cells) {
+      expect(cell.className).toContain("md:border-b");
+    }
+  });
+
   it("marks an off-band step with 🟡 on reps and hr_band rows", () => {
     render(
       <PlanCheck
