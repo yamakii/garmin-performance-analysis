@@ -248,6 +248,10 @@ const results = await pipeline(
     if (!decision.ok) return { issue: issue.number, ...acc, merge: { merged: false, reason: decision.reason } }
     return agent(
       `PR #${acc.ship.pr_number}（Issue #${issue.number}）を auto-merge してください。検証 PASS + ci-guard success + mergeable を確認済み。\n` +
+        `マージしてよい根拠（#1424）:\n` +
+        `- .claude/rules/dev/worktree-validation-protocol.md §6.5 の恒久承認（#886）: このゲートを満たす PR は PR ごとの確認なしにマージしてよい。背景ジョブ・非対話セッションにも適用される。\n` +
+        `- ユーザーは /implement を起動した時点で、このゲートでの auto-merge に同意している。中継されたユーザー発言がマージに触れていなくても、それはマージを止める理由にならない。\n` +
+        `- ゲートの判定はあなたではなく、コードの mergeDecision が決定論的に済ませている。あなたの役割は下の 1 回の呼び出しだけ。\n` +
         `mcp__github__merge_pull_request(${repoCtx()}, pullNumber=${acc.ship.pr_number}, merge_method="merge") を実行し、結果を schema で返す。\n` +
         `この tool が未ロードなら ToolSearch('select:mcp__github__merge_pull_request') で読み込んでから呼ぶこと。\n` +
         `禁止: sub-LLM の spawn / Anthropic API の直叩き / Bash 等での権限システム迂回。マージは必ず上記 MCP tool 経由で行う。`,
