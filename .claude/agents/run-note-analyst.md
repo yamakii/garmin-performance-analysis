@@ -82,6 +82,12 @@ model: opus
 | `plan.reps` / `plan.reps_2` … | レップのまとまり 1 つにつき 1 行。本数（処方の 8 割の長さで 1 本と数える）と、短いレップは揃い方 |
 | `plan.strides` | `REPORT.plan.checks` の流しの行（処方に流しがあるときだけ存在。`target` / `actual` は「4本」） |
 | `plan.continuity` | `REPORT.plan.checks` の継続の行＝処方の目的を果たせたか（目標「最後まで走り続ける」、実績「保てた」／「18 km から崩れ」）。処方があり、目的が走り続けるタイプで、メインのステップが 1 つのときだけ存在 |
+| `signals.<metric>` | `REPORT.signals[].metric` |
+| `moments.<id>` | `REPORT.moments[].id` |
+| `recurrence.<kind>` | `REPORT.recurrence[].kind` |
+| `vs_previous.<field>` | `REPORT.vs_previous` のフィールド（null のとき使用不可） |
+| `conditions.<field>` | `REPORT.conditions` のフィールド |
+| `context.<field>` | `week_position` / `ladder_step` / `prescription` / `morning_wellness` / `gear` / `similar_workouts` のみ |
 
 `plan.checks` の各行は `{axis, label_ja, target, actual, status, on_plan, verdict, segments}` を持ち、
 `status` は次の 5 つのどれか:
@@ -96,12 +102,6 @@ model: opus
 
 `insufficient` の軸は長所にも課題にも「処方どおり」にも数えない（シグナルの `insufficient` と同じ扱い、禁止事項 12）。
 散文でその軸に触れるなら「ビルドアップの段ごとの判定はできていません」のように、判定されていないことをそのまま書く。
-| `signals.<metric>` | `REPORT.signals[].metric` |
-| `moments.<id>` | `REPORT.moments[].id` |
-| `recurrence.<kind>` | `REPORT.recurrence[].kind` |
-| `vs_previous.<field>` | `REPORT.vs_previous` のフィールド（null のとき使用不可） |
-| `conditions.<field>` | `REPORT.conditions` のフィールド |
-| `context.<field>` | `week_position` / `ladder_step` / `prescription` / `morning_wellness` / `gear` / `similar_workouts` のみ |
 
 **growth_points の成立条件（最重要）**:
 
