@@ -1748,6 +1748,7 @@ _CREATE_WEEKLY_PRESCRIPTIONS = """
         strides VARCHAR,
         purpose VARCHAR,
         allowances VARCHAR,
+        structure VARCHAR,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP
     )

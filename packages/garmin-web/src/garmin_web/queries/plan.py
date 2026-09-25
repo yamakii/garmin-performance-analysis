@@ -67,6 +67,7 @@ _PRESCRIPTION_KEYS = (
     "strides",
     "purpose",
     "allowances",
+    "structure",
     "rating",
     "rationale",
     "status",
@@ -90,7 +91,7 @@ _SELECT_PRESCRIPTIONS = """
     )
     SELECT p.prescription_id, p.date, p.session_type, p.title, p.target_km,
            p.target_minutes, p.hr_high, p.strides, p.purpose, p.allowances,
-           p.rating, p.rationale, p.status
+           p.structure, p.rating, p.rationale, p.status
     FROM weekly_prescriptions p
     JOIN latest l ON p.week_start_date = l.week_start_date
                  AND p.batch_id = l.batch_id
@@ -159,9 +160,10 @@ def _rows(
 def _decode_prescription(record: dict[str, Any]) -> dict[str, Any]:
     """JSON-decode a weekly_prescriptions row's JSON columns in place.
 
-    ``strides`` (the easy row's add-on) and ``allowances`` (``{"walk": bool}``).
+    ``strides`` (the easy row's add-on), ``allowances`` (``{"walk": bool}``) and
+    ``structure`` (the step list, Issue #1401).
     """
-    for col in ("strides", "allowances"):
+    for col in ("strides", "allowances", "structure"):
         raw = record.get(col)
         record[col] = json.loads(raw) if isinstance(raw, str) else None
     return record

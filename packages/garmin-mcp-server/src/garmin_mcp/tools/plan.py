@@ -99,6 +99,18 @@ class SaveWeeklyPrescriptionsParams(BaseModel):
             "without one falls back to the session_type default (long -> "
             'long_easy). Optional allowances {"walk": true|false} states '
             "what the run permits (walk breaks); other keys are rejected. "
+            "Optional structure (run rows only, never together with strides) "
+            "is the workout's ordered step list: each step has step_type "
+            "(warmup|run|recovery|rest|cooldown), exactly one of "
+            "duration_minutes / duration_seconds / distance_m, and optionally "
+            "hr_low / hr_high in integer bpm (zone labels like 'Z4' are "
+            "rejected), pace_low_s_per_km / pace_high_s_per_km, label and "
+            "optional (top-level run steps only); a repeat group is "
+            '{"repeat_count": 1-30, "steps": [...]}, nested at most two deep. '
+            "When target_minutes is omitted and every step is timed it is "
+            "derived from the structure (the body only — steps other than "
+            "warmup/cooldown — for threshold/tempo, the total otherwise); "
+            "hr_low / hr_high are never derived. "
             "Revising a week means saving a new "
             "review version first and passing its review_id: a second batch "
             "for the same review is rejected."
@@ -159,6 +171,15 @@ class UpdatePrescriptionStatusParams(BaseModel):
             "reconcile_prescriptions judges against the real bookends instead "
             "of the standard 15min. schedule_weekly_prescriptions records it "
             "on its own."
+        ),
+    )
+    structure: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "The steps of a hand-built registered workout (optional), in the "
+            "same format as a prescription row's structure (hr in integer bpm, "
+            "never a zone label). Pass it with status registered so the run is "
+            "judged against what the watch was asked to do."
         ),
     )
 
@@ -273,6 +294,7 @@ def _update_prescription_status(
             garmin_schedule_id=p.garmin_schedule_id,
             actual_activity_id=p.actual_activity_id,
             registered_bookend_minutes=p.registered_bookend_minutes,
+            structure=p.structure,
             db_path=str(reader.db_path),
         )
         return {
@@ -364,7 +386,8 @@ PLAN_TOOLS: list[ToolDef] = [
             "a single day. Give exactly one of week_start_date / date — date "
             "resolves its week with the athlete's week_start_day. Rows are "
             "ordered by date and carry targets (target_km / target_minutes), HR "
-            "and pace bounds, purpose and allowances (null when not set), "
+            "and pace bounds, purpose, allowances and the step structure (null "
+            "when not set), "
             "status (prescribed|registered|done|replaced|"
             "skipped), the Garmin workout/schedule ids and actual_activity_id. "
             "Returns an empty list when nothing is prescribed."
@@ -378,8 +401,8 @@ PLAN_TOOLS: list[ToolDef] = [
         name="update_prescription_status",
         description=(
             "Update one prescription's status and optionally its Garmin workout "
-            "/ schedule ids, linked activity id and registered bookend minutes, "
-            "refreshing updated_at. Only the values you pass are written, so "
+            "/ schedule ids, linked activity id, registered bookend minutes and "
+            "the registered workout's step structure, refreshing updated_at. Only the values you pass are written, so "
             "registering a Garmin workout and later linking the actual activity "
             "are independent updates. Returns {updated: false} when the "
             "prescription_id does not exist."

@@ -328,6 +328,89 @@ def _validate_allowances(row: Mapping[str, Any]) -> dict[str, bool] | None:
     return {str(key): bool(value) for key, value in allowances.items()}
 
 
+#: Step types that bookend a quality session rather than belong to its body.
+_BOOKEND_STEP_TYPES = frozenset({"warmup", "cooldown"})
+
+
+def _validate_structure(row: dict[str, Any]) -> dict[str, Any]:
+    """Validate a row's step ``structure`` and derive ``target_minutes`` from it.
+
+    The structure is the workout the watch is asked to run (Issue #1401, see
+    :mod:`garmin_mcp.analysis.workout_structure`). It is validated with
+    :func:`~garmin_mcp.analysis.workout_structure.validate_structure` (bpm
+    only, never a zone label), may only sit on a session type that runs, and
+    cannot be combined with the ``strides`` add-on: strides are one way of
+    describing an easy run's steps, the structure is the other, and carrying
+    both would leave two sources for the same workout.
+
+    When the row has no ``target_minutes`` and every registered step is timed,
+    it is derived from the structure following the column's convention: the
+    **body** only (every step but warmup / cooldown) for ``threshold`` /
+    ``tempo`` rows, the **total** otherwise. ``hr_low`` / ``hr_high`` are
+    never derived: a structure with several HR bands (a build-up) has no single
+    band that stands for the whole run.
+
+    Args:
+        row: A prescription row; ``structure``, ``strides``, ``session_type``,
+            ``target_minutes`` and ``title`` are read.
+
+    Returns:
+        ``row`` itself when it carries no structure or nothing is derived,
+        otherwise a copy with ``target_minutes`` filled in.
+
+    Raises:
+        ValueError: On an invalid structure, a structure on a session type that
+            does not run, or a row carrying both ``strides`` and ``structure``.
+    """
+    from garmin_mcp.analysis.prescription_shape import BOOKENDED_TYPES
+    from garmin_mcp.analysis.workout_structure import (
+        RUN_SESSION_TYPES,
+        fit_step_indices,
+        structure_totals,
+        validate_structure,
+    )
+
+    structure = row.get("structure")
+    if structure is None:
+        return row
+    title = str(row.get("title") or "")
+    session_type = row.get("session_type")
+    if session_type not in RUN_SESSION_TYPES:
+        raise ValueError(
+            f"prescription {title!r}: a structure can only be set on a run "
+            f"session ({sorted(RUN_SESSION_TYPES)}), got session_type "
+            f"{session_type!r}"
+        )
+    if row.get("strides") is not None:
+        raise ValueError(
+            f"prescription {title!r}: set either strides or structure, not both "
+            "(write the strides as a repeat group inside the structure)"
+        )
+    validated = validate_structure(structure, title=title)
+
+    if row.get("target_minutes") is not None:
+        return row
+    total_seconds, _ = structure_totals(validated)
+    if total_seconds is None:
+        return row
+    if session_type in BOOKENDED_TYPES:
+        seconds = 0.0
+        for flat in fit_step_indices(validated):
+            step = flat.step
+            if step.get("step_type") in _BOOKEND_STEP_TYPES:
+                continue
+            if "duration_minutes" in step:
+                seconds += float(step["duration_minutes"]) * 60 * flat.repeat_count
+            else:
+                seconds += float(step["duration_seconds"]) * flat.repeat_count
+    else:
+        seconds = total_seconds
+    minutes = round(seconds / 60)
+    if minutes <= 0:
+        return row
+    return {**row, "target_minutes": minutes}
+
+
 def _validate_ladder(ladder: Any, block_title: str) -> list[dict[str, Any]]:
     """Validate the long-run ladder of a block and return it as a list.
 
@@ -569,8 +652,10 @@ def insert_weekly_prescriptions(
             / ``🔴``), ``status`` and — on ``easy`` rows only — ``strides``
             (``{reps, run_seconds=20, recovery_seconds=90}``, see
             :func:`_validate_strides`), stored as JSON with the defaults filled,
-            plus optional ``purpose`` (see :func:`_validate_purpose`) and
-            ``allowances`` (``{"walk": bool}``, stored as JSON).
+            plus optional ``purpose`` (see :func:`_validate_purpose`),
+            ``allowances`` (``{"walk": bool}``, stored as JSON) and
+            ``structure`` (the step list, see :func:`_validate_structure`;
+            stored as JSON, fills ``target_minutes`` when it is absent).
         review_id: ``weekly_reviews.review_id`` when saved by a weekly review.
         user_id: Ledger owner identifier (defaults to ``"default"``).
         db_path: Path to DuckDB database. If None, uses the default path.
@@ -584,7 +669,8 @@ def insert_weekly_prescriptions(
             ``threshold`` / ``tempo`` row whose ``target_minutes`` reads as the
             session total rather than the body (:func:`
             _validate_bookended_targets`), an invalid ``strides`` add-on, an
-            unknown or incompatible ``purpose``, invalid ``allowances``, or a
+            unknown or incompatible ``purpose``, invalid ``allowances``, an
+            invalid ``structure`` (or one combined with ``strides``), or a
             revision that skips the review (see the revision guard above).
     """
     if db_path is None:
@@ -638,6 +724,7 @@ def insert_weekly_prescriptions(
                 f"prescription {title!r}: rating must be one of "
                 f"{sorted(ALLOWED_RATINGS)} or null, got {rating!r}"
             )
+        row = _validate_structure(row)
         _validate_bookended_targets(
             title, str(session_type), row.get("target_minutes"), row.get("target_km")
         )
@@ -667,9 +754,9 @@ def insert_weekly_prescriptions(
                     week_start_date, date, session_type, title, target_minutes,
                     target_km, hr_low, hr_high, pace_low_s_per_km,
                     pace_high_s_per_km, rationale, rating, status, strides,
-                    purpose, allowances
+                    purpose, allowances, structure
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 [
@@ -693,6 +780,7 @@ def insert_weekly_prescriptions(
                     _json_or_none(strides),
                     purpose,
                     _json_or_none(allowances),
+                    _json_or_none(row.get("structure")),
                 ],
             )
             prescription_ids.append(prescription_id)
@@ -720,6 +808,7 @@ def update_prescription_status(
     garmin_schedule_id: int | None = None,
     actual_activity_id: int | None = None,
     registered_bookend_minutes: int | None = None,
+    structure: list[dict[str, Any]] | None = None,
     db_path: str | None = None,
 ) -> bool:
     """Set a prescription's status (and optional ids), refreshing ``updated_at``.
@@ -741,18 +830,26 @@ def update_prescription_status(
             bookend_minutes_from_steps`. Recorded at registration time so
             ``reconcile_prescriptions`` judges a hand-built quality session
             against its real bookends instead of the constant (Issue #1087).
+        structure: The steps of a hand-built registered workout (Issue
+            #1401), validated like a saved row's ``structure`` and stored as
+            JSON so the run is judged against what the watch was asked to do.
         db_path: Path to DuckDB database. If None, uses the default path.
 
     Returns:
         ``True`` when a row was updated, ``False`` when the id does not exist.
 
     Raises:
-        ValueError: When ``status`` is not a known lifecycle state.
+        ValueError: When ``status`` is not a known lifecycle state or
+            ``structure`` is invalid.
     """
     if status not in ALLOWED_STATUSES:
         raise ValueError(
             f"status must be one of {sorted(ALLOWED_STATUSES)}, got {status!r}"
         )
+    if structure is not None:
+        from garmin_mcp.analysis.workout_structure import validate_structure
+
+        validate_structure(structure, title="registered workout")
 
     if db_path is None:
         db_path = _default_db_path()
@@ -773,6 +870,9 @@ def update_prescription_status(
     if registered_bookend_minutes is not None:
         assignments.append("registered_bookend_minutes = ?")
         params.append(registered_bookend_minutes)
+    if structure is not None:
+        assignments.append("structure = ?")
+        params.append(_json_or_none(structure))
     params.append(prescription_id)
 
     with get_write_connection(db_path) as conn:
