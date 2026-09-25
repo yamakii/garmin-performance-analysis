@@ -44,13 +44,12 @@ from pydantic import BaseModel, Field
 
 from garmin_mcp.analysis.prescription_shape import (
     BOOKENDED_TYPES,
-    COOLDOWN_MINUTES,
-    FINAL_EASY_MINUTES,
-    STRIDES_DEFAULT_RECOVERY_SECONDS,
-    STRIDES_DEFAULT_RUN_SECONDS,
-    WARMUP_MINUTES,
     bookend_minutes_from_steps,
-    strides_block_seconds,
+)
+from garmin_mcp.analysis.workout_structure import (
+    RUN_SESSION_TYPES,
+    registrable_steps,
+    synthesize_structure,
 )
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.tools.registry import ToolDef
@@ -89,11 +88,6 @@ _DEFAULT_USER_ID = "default"
 # Statuses the reconciler sets once a row has been matched against the day's
 # run: the day is over, so the row is never registered again by default.
 _RECONCILED_STATUSES = frozenset({"done", "replaced", "skipped"})
-
-# Prescription session types that map onto a Garmin running workout. rest /
-# strength / cross are prescribed but never registered as a run. Strides are
-# not a session type: they ride on an easy row as its ``strides`` add-on.
-_REGISTRABLE_TYPES = frozenset({"long", "easy", "recovery", "threshold", "tempo"})
 
 # Running sport type (the only sport this tool schedules).
 _RUNNING_SPORT_TYPE: dict[str, Any] = {
@@ -313,129 +307,41 @@ def build_workout_json(title: str, steps: list[dict[str, Any]]) -> dict[str, Any
 def build_steps_from_prescription(p: dict[str, Any]) -> list[dict[str, Any]]:
     """Derive the generic ``steps`` array from one ``weekly_prescriptions`` row.
 
-    Pure function, so the whole prescription -> workout mapping is unit-tested
-    without touching Garmin. Only quality sessions get warmup/cooldown bookends
-    (:data:`~garmin_mcp.analysis.prescription_shape.BOOKENDED_TYPES`); easy-effort
-    runs are registered as exactly what was prescribed, so the watch never asks
-    for more than the ledger says (#1039):
-
-    - ``long`` / ``easy`` / ``recovery``: a **single** body step ending on
-      ``target_minutes`` (preferred, time-managed runs) or ``target_km``
-      converted to meters, with ``hr_high`` as a ceiling. The whole run is
-      warmup intensity, so a separate warmup step would only inflate the
-      session. ``hr_low`` is written only when the row actually prescribes a
-      floor, so ceiling-only easy/long runs never get a low-HR alert (#979).
-    - ``easy`` with a ``strides`` add-on: an opening easy step, a repeat group
-      of ``reps`` x (``run_seconds`` stride / ``recovery_seconds`` jog) and a
-      final 5-minute easy ``cooldown``, summing to exactly ``target_minutes``
-      (still the total of the run). Only the two easy segments carry the HR
-      target; strides and their jogs are too short for HR to settle.
-    - ``threshold`` / ``tempo``: a 10-minute warmup and a 5-minute cooldown
-      around the body step; these rows carry both bounds, so the body step
-      becomes a real HR range.
+    Registration reads the same structure the judge does:
+    :func:`~garmin_mcp.analysis.workout_structure.synthesize_structure` builds
+    it (a stored ``structure`` wins; legacy rows are synthesized from their
+    columns — single body step for easy-effort runs, strides block on an easy
+    row, warmup/cooldown bookends on threshold / tempo) and
+    :func:`~garmin_mcp.analysis.workout_structure.registrable_steps` drops the
+    optional steps and judge-only keys the watch never sees.
 
     Args:
         p: A prescription row (``session_type``, ``target_minutes`` /
-            ``target_km``, ``hr_low`` / ``hr_high``, optional ``strides``).
+            ``target_km``, ``hr_low`` / ``hr_high``, optional ``strides`` /
+            ``structure``).
 
     Returns:
         Steps ready for ``build_workout_json`` / ``schedule_custom_workout``.
 
     Raises:
         ValueError: When ``session_type`` is not registrable as a run, when a
-            session prescribes neither ``target_minutes`` nor ``target_km``, or
-            when an easy row's strides do not fit inside ``target_minutes``.
+            session prescribes neither ``target_minutes`` nor ``target_km``,
+            when an easy row's strides do not fit inside ``target_minutes``, or
+            when a stored structure is invalid.
     """
     session_type = str(p.get("session_type") or "")
-    if session_type not in _REGISTRABLE_TYPES:
+    if session_type not in RUN_SESSION_TYPES:
         raise ValueError(
             f"session_type {session_type!r} is not registrable as a run "
-            f"(registrable: {sorted(_REGISTRABLE_TYPES)})"
+            f"(registrable: {sorted(RUN_SESSION_TYPES)})"
         )
-
-    hr_target: dict[str, Any] = {}
-    if p.get("hr_low") is not None:
-        hr_target["hr_low"] = p["hr_low"]
-    if p.get("hr_high") is not None:
-        hr_target["hr_high"] = p["hr_high"]
-
-    strides = p.get("strides")
-    if session_type == "easy" and strides:
-        return _easy_with_strides_steps(p, strides, hr_target)
-
-    warmup = {"step_type": "warmup", "duration_minutes": WARMUP_MINUTES}
-    cooldown = {"step_type": "cooldown", "duration_minutes": COOLDOWN_MINUTES}
-
-    body: dict[str, Any] = {"step_type": "run"}
-    target_minutes = p.get("target_minutes")
-    target_km = p.get("target_km")
-    if target_minutes is not None:
-        body["duration_minutes"] = target_minutes
-    elif target_km is not None:
-        body["distance_m"] = round(float(target_km) * 1000)
-    else:
+    structure = synthesize_structure(p)
+    if structure is None:
         raise ValueError(
             f"session_type {session_type!r} needs target_minutes or target_km "
             "to build a workout"
         )
-
-    body.update(hr_target)
-
-    if session_type in BOOKENDED_TYPES:
-        return [warmup, body, cooldown]
-    return [body]
-
-
-def _easy_with_strides_steps(
-    p: dict[str, Any], strides: dict[str, Any], hr_target: dict[str, Any]
-) -> list[dict[str, Any]]:
-    """Build an easy run with strides: opening easy, strides, final easy.
-
-    ``target_minutes`` stays the total of the run, so the opening segment is
-    whatever the strides block and the final :data:`~garmin_mcp.analysis.
-    prescription_shape.FINAL_EASY_MINUTES` leave over.
-
-    Args:
-        p: The easy prescription row.
-        strides: Its ``strides`` add-on (``reps`` plus optional
-            ``run_seconds`` / ``recovery_seconds``).
-        hr_target: ``hr_low`` / ``hr_high`` of the row, applied to the two easy
-            segments only.
-
-    Raises:
-        ValueError: When the row has no ``target_minutes`` or the strides leave
-            no room for an opening easy segment.
-    """
-    target_minutes = p.get("target_minutes")
-    if target_minutes is None:
-        raise ValueError(
-            "an easy session with strides needs target_minutes (the run total) "
-            "to build a workout"
-        )
-    block = strides_block_seconds(strides)
-    final_seconds = FINAL_EASY_MINUTES * 60
-    opening_seconds = round(float(target_minutes) * 60) - block - final_seconds
-    if opening_seconds <= 0:
-        raise ValueError(
-            f"strides take {block}s and the final easy segment "
-            f"{FINAL_EASY_MINUTES}min, leaving no opening easy running inside "
-            f"target_minutes {target_minutes}"
-        )
-    run_seconds = strides.get("run_seconds") or STRIDES_DEFAULT_RUN_SECONDS
-    recovery_seconds = (
-        strides.get("recovery_seconds") or STRIDES_DEFAULT_RECOVERY_SECONDS
-    )
-    return [
-        {"step_type": "run", "duration_seconds": opening_seconds, **hr_target},
-        {
-            "repeat_count": int(strides["reps"]),
-            "steps": [
-                {"step_type": "run", "duration_seconds": int(run_seconds)},
-                {"step_type": "recovery", "duration_seconds": int(recovery_seconds)},
-            ],
-        },
-        {"step_type": "cooldown", "duration_minutes": FINAL_EASY_MINUTES, **hr_target},
-    ]
+    return registrable_steps(structure)
 
 
 def _registered_bookend_minutes(
