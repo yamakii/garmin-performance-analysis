@@ -3,6 +3,7 @@ import SectionBlock from "../SectionBlock";
 import type {
   HrCeiling,
   PlanCheckRow,
+  PlanCheckSegment,
   RunJudgedShare,
   RunPlan,
   RunPurpose,
@@ -63,7 +64,11 @@ export function judgedShareText(
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/** Japanese name per plan axis; an unknown axis keeps its own key. */
+/**
+ * Japanese name per fixed plan axis, for rows older than #1404 that carry no
+ * `label_ja`. Structure-derived axes (`hr_band_2`, `reps_2`, ...) name
+ * themselves, so they need no entry here; an unknown axis keeps its own key.
+ */
 const AXIS_LABELS: Record<string, string> = {
   intensity: "強度",
   volume: "量",
@@ -109,15 +114,76 @@ export function formatOverTime(seconds: number): string {
     : `${minutes}:${secs}`;
 }
 
-function StatusTag({ onPlan }: { onPlan: boolean }) {
+/** The row's name: the report's own label, else the fixed table, else the id. */
+export function axisLabel(check: PlanCheckRow): string {
+  return check.label_ja || AXIS_LABELS[check.axis] || check.axis;
+}
+
+/**
+ * Axes whose steps are listed under the row (#1407): a build-up is read stage
+ * by stage, a rep set rep by rep, a band step iteration by iteration.
+ */
+const STEP_AXIS = /^(stages|reps|hr_band)(_\d+)?$/;
+
+/** Off-plan wording per status; `on_plan` and `insufficient` are neutral. */
+const OFF_PLAN_TEXT: Record<string, string> = {
+  off_plan: "ずれ",
+  short: "不足",
+  missing: "未実施",
+};
+
+function StatusTag({ check }: { check: PlanCheckRow }) {
+  if (check.status === "insufficient") {
+    // Not judged is not the same as fine: a neutral tag, no badge colour.
+    return (
+      <span className="font-mono text-xs whitespace-nowrap text-ink-muted">
+        判定不能
+      </span>
+    );
+  }
+  const onPlan = check.on_plan;
   return (
     <span
       className={`font-mono text-xs whitespace-nowrap ${
         onPlan ? "text-ink-muted" : "font-bold text-status-warn"
       }`}
     >
-      {onPlan ? "計画どおり" : "ずれ"}
+      {onPlan ? "計画どおり" : (OFF_PLAN_TEXT[check.status] ?? "ずれ")}
     </span>
+  );
+}
+
+/**
+ * One line per prescribed step under a stages / reps / hr_band row: the
+ * step's name, its target band, what was run and a ✅ / 🟡 badge. A missed
+ * step is 🟡, never 🔴 -- the axis verdict already carries the severity.
+ */
+function StepList({
+  label,
+  segments,
+}: {
+  label: string;
+  segments: PlanCheckSegment[];
+}): JSX.Element {
+  return (
+    <ul
+      aria-label={`${label}の内訳`}
+      className="order-5 col-span-2 flex flex-col gap-0.5 pb-1 font-mono text-xs md:order-none md:col-span-4 md:border-b md:border-hairline md:pb-3 md:pl-[96px]"
+    >
+      {segments.map((segment, index) => (
+        <li
+          key={`${segment.segment_id}-${index}`}
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-baseline gap-x-2"
+        >
+          <span className="truncate text-ink-muted">{segment.label}</span>
+          <span className="text-ink-soft">{segment.target}</span>
+          <span className="text-ink">{segment.actual}</span>
+          <span aria-label={segment.on_plan ? "計画どおり" : "ずれ"}>
+            {segment.on_plan ? "✅" : "🟡"}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -167,7 +233,11 @@ function CheckRow({
   check: PlanCheckRow;
   ceiling: HrCeiling | null;
 }): JSX.Element {
-  const label = AXIS_LABELS[check.axis] ?? check.axis;
+  const label = axisLabel(check);
+  const steps =
+    STEP_AXIS.test(check.axis) && check.segments != null
+      ? check.segments
+      : [];
   return (
     <div
       role="group"
@@ -188,7 +258,9 @@ function CheckRow({
       >
         <StackedLabel>実績</StackedLabel>
         <span>{check.actual}</span>
-        {ceiling != null && <OverCeilingBar ceiling={ceiling} />}
+        {ceiling != null && check.status !== "insufficient" && (
+          <OverCeilingBar ceiling={ceiling} />
+        )}
       </div>
       {/* Stacked, the tag sits on the name's line at the right edge, which is
           what keeps it on screen at 400px — a table pushed it off the side
@@ -197,8 +269,11 @@ function CheckRow({
       <div
         className={`order-2 justify-self-end md:order-none md:justify-self-stretch ${CELL}`}
       >
-        <StatusTag onPlan={check.on_plan} />
+        <StatusTag check={check} />
       </div>
+      {/* The step list spans the whole row at `md`+ (a fifth cell of the
+          shared grid set to every track) and sits last when stacked. */}
+      {steps.length > 0 && <StepList label={label} segments={steps} />}
     </div>
   );
 }

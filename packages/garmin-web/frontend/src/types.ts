@@ -491,14 +491,45 @@ export interface SectionVersion {
 
 // --- Deterministic run report (`GET /api/activities/{id}/report`, #1250) ---
 
-/** One axis of the plan card: what was asked, what happened, on plan or not. */
-export interface PlanCheckRow {
-  /** "intensity" | "volume" | "hr_ceiling" | "rest". */
-  axis: string;
+/**
+ * One step of a structure-derived axis (#1404): a stage, a rep, a band step.
+ * `in_band_pct` is present on hr_band steps judged on a time series.
+ */
+export interface PlanCheckSegment {
+  segment_id: string;
+  label: string;
   target: string;
   actual: string;
-  status: "on_plan" | "off_plan";
+  in_band_pct?: number | null;
   on_plan: boolean;
+}
+
+/** How a plan axis came out (#1404 adds short / missing / insufficient). */
+export type PlanCheckStatus =
+  | "on_plan"
+  | "off_plan"
+  | "short"
+  | "missing"
+  | "insufficient";
+
+/** One axis of the plan card: what was asked, what happened, on plan or not. */
+export interface PlanCheckRow {
+  /**
+   * "intensity" | "volume" | "hr_ceiling" | "rest" | "strides" | "continuity"
+   * and, derived from the prescription's structure (#1404), "hr_band",
+   * "hr_band_2", "stages", "pace_band", "reps", "reps_2", ...
+   */
+  axis: string;
+  /** Japanese name of the axis; absent on rows older than #1404. */
+  label_ja?: string;
+  target: string;
+  actual: string;
+  status: PlanCheckStatus;
+  on_plan: boolean;
+  /** ✅ / 🟡 / 🔴 for this axis, when the report states one. */
+  verdict?: string;
+  /** Per-step detail of a structure-derived axis (#1404). */
+  segments?: PlanCheckSegment[];
 }
 
 /** The prescribed HR cap and the time actually spent above it. */
@@ -921,6 +952,29 @@ export interface PrescriptionStrides {
   recovery_seconds?: number | null;
 }
 
+/** One prescribed step of a structured session (#1401). */
+export interface PrescriptionStep {
+  step_type: "warmup" | "run" | "recovery" | "rest" | "cooldown";
+  duration_minutes?: number;
+  duration_seconds?: number;
+  distance_m?: number;
+  hr_low?: number;
+  hr_high?: number;
+  pace_low_s_per_km?: number;
+  pace_high_s_per_km?: number;
+  label?: string;
+  optional?: boolean;
+}
+
+/** A repeated block of steps inside a structured session (#1401). */
+export interface PrescriptionRepeatGroup {
+  repeat_count: number;
+  steps: (PrescriptionStep | PrescriptionRepeatGroup)[];
+}
+
+/** What the session asks for, step by step (#1401). */
+export type PrescriptionStructure = (PrescriptionStep | PrescriptionRepeatGroup)[];
+
 export interface Prescription {
   prescription_id: number;
   session_type: string;
@@ -934,6 +988,8 @@ export interface Prescription {
   purpose?: string | null;
   /** What the run permits, e.g. walk breaks (#1312); null when not set. */
   allowances?: { walk?: boolean } | null;
+  /** The session's step structure (#1401); null / absent on unstructured rows. */
+  structure?: PrescriptionStructure | null;
   /** Coach verdict of the prescribed session (✅ / 🟡 / 🔴), the canonical one. */
   rating?: string | null;
   /** The coach's one-line comment on the session. */

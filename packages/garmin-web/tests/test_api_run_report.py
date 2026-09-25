@@ -64,6 +64,75 @@ def test_api_run_report_ok(detail_db_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_api_run_report_passes_axis_segments(
+    detail_db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Structure-derived plan axes reach the page unchanged (#1407).
+
+    The row shape is frozen in #1404 (``{axis, label_ja, target, actual,
+    status, on_plan, verdict, segments[]}``); the endpoint must forward every
+    key, including the per-step ``segments`` the card lists under the row.
+    """
+    stages = {
+        "axis": "stages",
+        "label_ja": "段階的ビルドアップ",
+        "target": "130-140 → 140-150 bpm",
+        "actual": "135 → 146 bpm",
+        "status": "on_plan",
+        "on_plan": True,
+        "verdict": "✅",
+        "segments": [
+            {
+                "segment_id": "1",
+                "label": "第1段",
+                "target": "130-140 bpm",
+                "actual": "135 bpm",
+                "on_plan": True,
+            },
+            {
+                "segment_id": "2",
+                "label": "第2段",
+                "target": "140-150 bpm",
+                "actual": "146 bpm",
+                "on_plan": True,
+            },
+        ],
+    }
+    insufficient = {
+        "axis": "hr_band_2",
+        "label_ja": "心拍帯",
+        "target": "150-160 bpm",
+        "actual": "-",
+        "status": "insufficient",
+        "on_plan": False,
+        "verdict": "✅",
+        "segments": [],
+    }
+    seeded = {
+        "activity_id": FULL_ACTIVITY_ID,
+        "plan": {
+            "verdict": "✅",
+            "title": "ビルドアップ",
+            "checks": [stages, insufficient],
+            "hr_ceiling": None,
+        },
+    }
+    monkeypatch.setattr(
+        "garmin_web.api.activity_detail.get_run_report",
+        lambda _conn, activity_id: seeded if activity_id == FULL_ACTIVITY_ID else None,
+    )
+    client = TestClient(create_app(db_path=detail_db_path))
+
+    response = client.get(f"/api/activities/{FULL_ACTIVITY_ID}/report")
+
+    assert response.status_code == 200
+    checks = response.json()["plan"]["checks"]
+    assert checks == [stages, insufficient]
+    assert [len(check["segments"]) for check in checks] == [2, 0]
+    assert checks[0]["segments"][1]["label"] == "第2段"
+
+
+@pytest.mark.integration
 def test_api_run_report_404(detail_db_path: Path) -> None:
     """An activity the database has never seen is a 404, not an empty report."""
     client = TestClient(create_app(db_path=detail_db_path))
