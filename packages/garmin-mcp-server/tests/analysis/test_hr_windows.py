@@ -17,7 +17,9 @@ from garmin_mcp.analysis.hr_windows import (
     judged_share,
     masked_split_hr,
     recovery_end,
+    seconds_in_band,
     seconds_over,
+    seconds_over_varying,
     steady_mask,
 )
 
@@ -257,3 +259,31 @@ def test_seconds_over_ignores_masked() -> None:
     assert over["seconds_over"] == 0
     assert over["pct_over"] == 0
     assert judged_share(samples, mask) == pytest.approx(0.8)
+
+
+@pytest.mark.unit
+def test_seconds_in_band_counts_above_and_below() -> None:
+    """60 s in 162-169, 30 s above, 10 s below -> 60% in, 30% above."""
+    samples = _trace(100, lambda t: 165.0 if t < 60 else 172.0 if t < 90 else 158.0)
+
+    band = seconds_in_band(samples, [True] * 100, 162, 169)
+
+    assert band is not None
+    assert band["seconds_in"] == 60
+    assert band["seconds_above"] == 30
+    assert band["seconds_below"] == 10
+    assert band["pct_in"] == 60
+    assert band["pct_above"] == 30
+
+
+@pytest.mark.unit
+def test_seconds_over_varying_uses_each_ceiling() -> None:
+    """HR 155 throughout: over the 150 ceiling, under the 158 one -> 60 s."""
+    samples = _trace(120, lambda _t: 155.0)
+    ceilings = [150] * 60 + [158] * 60
+
+    over = seconds_over_varying(samples, [True] * 120, ceilings)
+
+    assert over is not None
+    assert over["seconds_over"] == 60
+    assert over["pct_over"] == 50

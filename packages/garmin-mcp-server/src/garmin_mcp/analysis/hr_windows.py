@@ -475,6 +475,77 @@ def seconds_over(
     }
 
 
+def seconds_in_band(
+    samples: Sequence[Mapping[str, Any]], mask: Sequence[bool], low: int, high: int
+) -> dict[str, float] | None:
+    """Seconds (and shares) with HR inside, above and below ``[low, high]``.
+
+    Only samples the mask keeps are counted, each weighted like
+    :func:`seconds_over`. Both bounds are inclusive.
+
+    Returns:
+        ``{"seconds_in", "seconds_above", "seconds_below", "pct_in",
+        "pct_above"}`` (shares in percent of the judged time), or ``None``
+        when no judged sample carries a heart rate.
+    """
+    inside = above = below = 0.0
+    for sample, weight, keep in zip(samples, _weights(samples), mask, strict=False):
+        hr = _num(sample.get("heart_rate"))
+        if not keep or hr is None:
+            continue
+        if hr > high:
+            above += weight
+        elif hr < low:
+            below += weight
+        else:
+            inside += weight
+    total = inside + above + below
+    if total <= 0:
+        return None
+    return {
+        "seconds_in": round(inside, 1),
+        "seconds_above": round(above, 1),
+        "seconds_below": round(below, 1),
+        "pct_in": round(inside / total * 100.0, 1),
+        "pct_above": round(above / total * 100.0, 1),
+    }
+
+
+def seconds_over_varying(
+    samples: Sequence[Mapping[str, Any]],
+    mask: Sequence[bool],
+    ceilings: Sequence[int | None],
+) -> dict[str, float] | None:
+    """Like :func:`seconds_over`, with each sample judged on its own ceiling.
+
+    A prescription whose steps carry different ceilings (a long run with a
+    marathon-pace block allowed higher) judges every second against the
+    ceiling of the step it was run in. A sample whose ceiling is ``None`` is
+    not judged.
+
+    Returns:
+        ``{"seconds_over", "pct_over"}``, or ``None`` when no judged sample
+        with a ceiling carries a heart rate.
+    """
+    total = 0.0
+    over = 0.0
+    for sample, weight, keep, ceiling in zip(
+        samples, _weights(samples), mask, ceilings, strict=False
+    ):
+        hr = _num(sample.get("heart_rate"))
+        if not keep or hr is None or ceiling is None:
+            continue
+        total += weight
+        if hr > ceiling:
+            over += weight
+    if total <= 0:
+        return None
+    return {
+        "seconds_over": round(over, 1),
+        "pct_over": round(over / total * 100.0, 1),
+    }
+
+
 def judged_share(
     samples: Sequence[Mapping[str, Any]], mask: Sequence[bool]
 ) -> float | None:
