@@ -83,6 +83,42 @@ def bookend_minutes(session_type: str | None) -> int:
     return 0
 
 
+def expected_minutes(row: Mapping[str, Any]) -> float | None:
+    """Return the minutes a prescription row asks for, bookends included.
+
+    ``target_minutes`` counts the body of a quality session only, while the
+    workout on the watch — and so the run it produces — carries its
+    warmup/cooldown on top. Everything that compares a run's duration with a
+    prescription (the reconciler, the plan verdict, the plan card) must add
+    the same bookends, or a 20-minute threshold run done exactly as registered
+    reads 175% (Issue #1399).
+
+    Prefers ``registered_bookend_minutes`` — what the workout actually put on
+    the calendar carries (Issue #1087) — over the constant
+    :func:`bookend_minutes` for the session type. Rows registered before that
+    column existed, and rows never registered, hold ``None`` and fall back to
+    the constant.
+
+    Args:
+        row: A ``weekly_prescriptions`` row (``target_minutes``,
+            ``session_type``, optional ``registered_bookend_minutes``).
+
+    Returns:
+        ``target_minutes`` plus the bookend minutes, or ``None`` when the row
+        names no ``target_minutes``.
+    """
+    target = row.get("target_minutes")
+    if target is None:
+        return None
+    recorded = row.get("registered_bookend_minutes")
+    bookends = (
+        float(recorded)
+        if recorded is not None
+        else float(bookend_minutes(row.get("session_type")))
+    )
+    return float(target) + bookends
+
+
 #: Step types that bookend a session rather than being part of its body.
 _BOOKEND_STEP_TYPES: frozenset[str] = frozenset({"warmup", "cooldown"})
 

@@ -7,12 +7,12 @@ table (runs) — except for ``strength`` rows, which are matched against
 
 - an activity on the prescribed date within tolerance (±15% short / +30% long of
   ``target_km`` and ``target_minutes``) marks the row ``done``. Quality sessions
-  are registered with warmup/cooldown bookends around the prescribed body
-  (``prescription_shape.bookend_minutes``, or the row's
-  ``registered_bookend_minutes`` when a hand-built registration recorded what it
-  really carries — Issue #1087), so their minutes band is widened by
-  exactly those bookends — an easy run, registered as a single body step, gets
-  no such allowance (#1039);
+  are registered with warmup/cooldown bookends around the prescribed body, so
+  their minutes band is centred on ``prescription_shape.expected_minutes`` —
+  the body plus the row's ``registered_bookend_minutes`` when a hand-built
+  registration recorded what it really carries (Issue #1087), else the standard
+  bookends — while an easy run, registered as a single body step, gets no such
+  allowance (#1039);
 - an activity outside tolerance — or any activity on a ``rest`` day — marks it
   ``replaced`` (the session happened, just not as prescribed);
 - a past date with no activity marks it ``skipped``, except ``rest`` days, where
@@ -42,7 +42,7 @@ import logging
 from datetime import date, datetime
 from typing import Any
 
-from garmin_mcp.analysis.prescription_shape import bookend_minutes
+from garmin_mcp.analysis.prescription_shape import expected_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -63,70 +63,40 @@ def _default_db_path() -> str:
     return str(get_database_dir() / "garmin_performance.duckdb")
 
 
-def _within_tolerance(
-    target: float | None, actual: float | None, *, extra: float = 0.0
-) -> bool:
+def _within_tolerance(target: float | None, actual: float | None) -> bool:
     """Return whether ``actual`` sits inside the tolerance band around ``target``.
 
     A missing target imposes no constraint (``True``); a present target with a
     missing actual value cannot be verified (``False``).
 
     Args:
-        target: Prescribed amount (km or minutes).
+        target: Expected amount (km, or minutes with bookends already added by
+            :func:`~garmin_mcp.analysis.prescription_shape.expected_minutes`).
         actual: What the activity actually recorded.
-        extra: Amount added to the target before the band is applied — the
-            warmup/cooldown minutes a registered quality workout carries on top
-            of the prescribed body.
     """
     if target is None:
         return True
     if actual is None:
         return False
-    expected = target + extra
-    return TOLERANCE_LOW * expected <= actual <= TOLERANCE_HIGH * expected
-
-
-def _extra_minutes_for(row: dict[str, Any]) -> float:
-    """Return the warmup/cooldown minutes to allow on top of ``target_minutes``.
-
-    Prefers ``registered_bookend_minutes`` — what the workout that was actually
-    put on the calendar carries — over the constant
-    :func:`~garmin_mcp.analysis.prescription_shape.bookend_minutes`, which only
-    describes the shape the standard builder produces. A hand-built quality
-    session can differ (the 2026-09-09 tempo carried a 10-minute cooldown, so
-    20 minutes rather than 15), and judging it against the constant leaves the
-    band centred short of what was asked for (Issue #1087).
-
-    Rows registered before the column existed, and rows that were never
-    registered, hold ``None`` and fall back to the constant.
-
-    Args:
-        row: A ``weekly_prescriptions`` row.
-
-    Returns:
-        Minutes to add to the prescribed body before the tolerance band.
-    """
-    recorded = row.get("registered_bookend_minutes")
-    if recorded is not None:
-        return float(recorded)
-    return float(bookend_minutes(row.get("session_type")))
+    return TOLERANCE_LOW * target <= actual <= TOLERANCE_HIGH * target
 
 
 def _pick_activity(
     candidates: list[dict[str, Any]],
     target_km: float | None,
     target_minutes: float | None,
-    *,
-    extra_minutes: float = 0.0,
 ) -> dict[str, Any]:
     """Pick the activity that best matches a prescription on a multi-run day.
+
+    ``target_minutes`` is the expected duration with bookends already added
+    (:func:`~garmin_mcp.analysis.prescription_shape.expected_minutes`).
 
     Prefers a candidate inside tolerance; otherwise falls back to the longest
     run of the day, which is the one a prescription most plausibly refers to.
     """
     for candidate in candidates:
         if _within_tolerance(target_km, candidate["distance_km"]) and _within_tolerance(
-            target_minutes, candidate["duration_min"], extra=extra_minutes
+            target_minutes, candidate["duration_min"]
         ):
             return candidate
     return candidates[0]
@@ -236,22 +206,15 @@ def reconcile_prescriptions(
                     new_status = "replaced"
                     actual_activity_id = candidates[0]["activity_id"]
                 else:
-                    extra_minutes = _extra_minutes_for(row)
+                    target_minutes = expected_minutes(row)
                     match = _pick_activity(
-                        candidates,
-                        row.get("target_km"),
-                        row.get("target_minutes"),
-                        extra_minutes=extra_minutes,
+                        candidates, row.get("target_km"), target_minutes
                     )
                     actual_activity_id = match["activity_id"]
                     new_status = (
                         "done"
                         if _within_tolerance(row.get("target_km"), match["distance_km"])
-                        and _within_tolerance(
-                            row.get("target_minutes"),
-                            match["duration_min"],
-                            extra=extra_minutes,
-                        )
+                        and _within_tolerance(target_minutes, match["duration_min"])
                         else "replaced"
                     )
             else:

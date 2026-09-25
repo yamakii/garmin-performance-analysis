@@ -122,3 +122,40 @@ def test_plan_check_easy_run_has_no_suffix(reader_db_path: Path) -> None:
     assert report is not None
     intensity = next(c for c in report["plan"]["checks"] if c["axis"] == "intensity")
     assert intensity["target"] == "イージー"
+
+
+@pytest.mark.integration
+def test_plan_card_volume_pct_matches_verdict(reader_db_path: Path) -> None:
+    """A 20-min threshold body plus its 15-min bookends is 100% of plan (#1399).
+
+    The card used to divide the whole 35-min run by the body alone (175%)
+    while reconciliation counted the bookends.
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        avg_hr=160,
+        distance_km=6.5,
+        duration_s=35 * 60,
+        training_type="lactate_threshold",
+    )
+    _seed_prescription(
+        reader_db_path,
+        on_date=TODAY,
+        session_type="threshold",
+        title="閾値 20分",
+        target_km=None,
+        target_minutes=20,
+        hr_low=None,
+        hr_high=None,
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    volume = next(c for c in report["plan"]["checks"] if c["axis"] == "volume")
+    assert volume["target"] == "35分"
+    assert volume["actual"] == "35分（100%）"
+    assert volume["on_plan"] is True
