@@ -452,6 +452,10 @@ class TestBuildRunNoteContext:
             "hr_low": 130,
             "hr_high": 150,
             "rationale": "週末のロングに向けて脚を回復させる",
+            # What the steps asked for (#1406); absent on this legacy row.
+            "structure": None,
+            "purpose": None,
+            "strides": None,
         }
         # Top 3 similar workouts only -- context for one sentence, not a table.
         assert [s["activity_id"] for s in out["similar_workouts"]] == [1, 2, 3]

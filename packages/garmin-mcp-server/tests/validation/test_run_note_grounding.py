@@ -588,3 +588,61 @@ def test_next_challenge_evidence_without_points_must_resolve():
     assert ok is False
     assert reason is not None
     assert "next_challenge_evidence" in reason
+
+
+# --- structure-derived plan axes (#1406) ------------------------------------
+
+
+def _structured_report() -> dict[str, Any]:
+    """Two band steps judged separately, plus one axis that was not judged."""
+    return _report(
+        plan={
+            "checks": [
+                {"axis": "intensity", "status": "on_plan", "on_plan": True},
+                {"axis": "hr_band", "status": "on_plan", "on_plan": True},
+                {"axis": "hr_band_2", "status": "off_plan", "on_plan": False},
+                {"axis": "pace_band", "status": "insufficient", "on_plan": False},
+            ]
+        }
+    )
+
+
+@pytest.mark.unit
+def test_evidence_resolves_plan_hr_band_2():
+    """Every axis id in plan.checks is an evidence key, numbered ones included."""
+    data = _note_data(
+        good_points=[
+            {"text": "一本目の心拍帯は狙いどおりでした。", "evidence": "plan.hr_band"}
+        ],
+        growth_points=[
+            {
+                "text": "二本目は心拍帯を外れる時間が長めでした。",
+                "evidence": "plan.hr_band_2",
+            }
+        ],
+        next_challenge_evidence="plan.hr_band_2",
+    )
+
+    assert check_run_note_grounding(data, _structured_report()) == (True, None)
+
+
+@pytest.mark.unit
+def test_growth_point_rejected_on_insufficient_axis():
+    """An axis that was not judged is not a weakness."""
+    data = _note_data(
+        good_points=[],
+        growth_points=[
+            {
+                "text": "ペース帯に収まっていませんでした。",
+                "evidence": "plan.pace_band",
+            }
+        ],
+        next_challenge_evidence="plan.pace_band",
+    )
+
+    ok, reason = check_run_note_grounding(data, _structured_report())
+
+    assert ok is False
+    assert reason is not None
+    assert "plan.pace_band" in reason
+    assert "insufficient" in reason

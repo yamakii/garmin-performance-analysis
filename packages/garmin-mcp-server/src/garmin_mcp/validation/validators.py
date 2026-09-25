@@ -56,11 +56,17 @@ _MOMENT_CONCERN = "concern"
 # scene is allowed, not good, and a ``concern`` is the opposite of good.
 _GOOD_POINT_REJECTED_VERDICTS: frozenset[str] = frozenset({"acceptable", "concern"})
 
-# The HR-ceiling plan axis (judged on the average HR), and the largest share of
-# the judged time above the ceiling at which keeping it can still be a good
-# point (#1332): a few seconds of pickup yes, half an hour no.
+# The HR-ceiling plan axis (judged on the steady time above the ceiling since
+# #1357: off plan past 5% AND 5 minutes of it), and the largest share of the
+# judged time above the ceiling at which keeping it can still be a good point
+# (#1332): a few seconds of pickup yes, half an hour no.
 _HR_CEILING_AXIS = "hr_ceiling"
 HR_CEILING_GOOD_POINT_MAX_PCT = 5.0
+
+# Plan-axis statuses a growth point may rest on (#1406): a real deviation. An
+# ``insufficient`` axis was not judged at all (its laps could not be matched to
+# the steps), so it is neither a strength nor a weakness.
+_PLAN_DEVIATION_STATUSES: frozenset[str] = frozenset({"off_plan", "short", "missing"})
 
 # The prescription's purpose as a plan axis (#1353) and the scene that tells
 # the same collapse: one breakdown is one growth point, not two.
@@ -198,10 +204,19 @@ def _growth_point_error(
                 "be a growth point"
             )
     elif prefix == "plan" and checks is not None:
-        if checks[key].get("on_plan") is True:
+        check = checks[key]
+        if check.get("on_plan") is True:
             return (
                 f"growth point evidence '{evidence}' names a plan axis that came "
                 "out on plan; an on-plan axis is never an improvement area"
+            )
+        status = check.get("status")
+        if status is not None and status not in _PLAN_DEVIATION_STATUSES:
+            return (
+                f"growth point evidence '{evidence}' names a plan axis with "
+                f"status={status!r}; only an axis that came out off_plan / short "
+                "/ missing can be a growth point -- an insufficient axis was not "
+                "judged"
             )
     return None
 
@@ -316,9 +331,10 @@ def _good_point_error(
                 f"good point evidence '{evidence}' names a plan axis that came "
                 "out off plan; an off-plan axis is not a strength"
             )
-        # The ceiling axis is on plan on the *average* HR, so a run can pass it
-        # with half an hour above the ceiling (#1332). Past a small share of
-        # the judged time, keeping the ceiling is not something to praise.
+        # The ceiling axis stays on plan up to 5% AND 5 minutes above it
+        # (#1357), so a run can pass it with minutes over the ceiling (#1332).
+        # Past a small share of the judged time, keeping the ceiling is not
+        # something to praise.
         if (
             key == _HR_CEILING_AXIS
             and ceiling_pct_over is not None

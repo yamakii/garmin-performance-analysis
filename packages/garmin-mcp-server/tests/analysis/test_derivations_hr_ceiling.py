@@ -8,7 +8,11 @@ minutes above the ceiling; an average more than 10 bpm over stays 🔴.
 
 import pytest
 
-from garmin_mcp.analysis.derivations import compute_prescription_verdict
+from garmin_mcp.analysis.derivations import (
+    compute_prescription_verdict,
+    judge_hr_ceiling,
+)
+from garmin_mcp.analysis.plan_axes import AxisResult
 
 LONG = {
     "session_type": "long",
@@ -82,3 +86,63 @@ def test_verdict_hr_ceiling_red_on_average_kept() -> None:
     assert result is not None
     assert result["verdict"] == "🔴"
     assert "hr_ceiling" not in result["on_plan"]
+
+
+# --- verdict from judged axes (#1406) -------------------------------------------
+
+
+def _axis(axis: str, status: str, severity: int) -> AxisResult:
+    return AxisResult(axis, axis, "-", "-", status, severity, ())  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_verdict_from_axes_is_worst_axis() -> None:
+    """With axes, the verdict is the worst row; insufficient rows count for nothing."""
+    axes = [
+        _axis("stages", "on_plan", 0),
+        _axis("hr_band", "insufficient", 0),
+        _axis("strides", "short", 1),
+    ]
+
+    result = compute_prescription_verdict(LONG, ACTUAL_AVG_146, axes=axes)
+
+    assert result is not None
+    assert result["verdict"] == "🟡"
+    assert result["on_plan"] == ["intensity_class", "volume", "stages"]
+    assert result["axis_severity"] == {
+        "intensity_class": 0,
+        "volume": 0,
+        "stages": 0,
+        "hr_band": 0,
+        "strides": 1,
+    }
+    # The ceiling is not judged here: it is one of the axes, or absent.
+    assert "hr_ceiling" not in result["axis_severity"]
+
+
+@pytest.mark.unit
+def test_verdict_from_axes_all_on_plan() -> None:
+    result = compute_prescription_verdict(
+        LONG, ACTUAL_AVG_146, axes=[_axis("hr_ceiling", "on_plan", 0)]
+    )
+
+    assert result is not None
+    assert result["verdict"] == "✅"
+    assert "hr_ceiling" in result["on_plan"]
+
+
+@pytest.mark.unit
+def test_judge_hr_ceiling_matches_verdict_rule() -> None:
+    """The shared ceiling rule: time over decides, 10 bpm over the average is 🔴."""
+    assert judge_hr_ceiling(150, 146, {"seconds_over": 60, "pct_over": 1.0}) == (
+        True,
+        0,
+        None,
+    )
+    kept, severity, reason = judge_hr_ceiling(
+        150, 146, {"seconds_over": 1822.0, "pct_over": 14.9}
+    )
+    assert (kept, severity) == (False, 1)
+    assert reason is not None
+    assert judge_hr_ceiling(150, 161, None)[:2] == (False, 2)
+    assert judge_hr_ceiling(150, None, None) == (None, 0, None)

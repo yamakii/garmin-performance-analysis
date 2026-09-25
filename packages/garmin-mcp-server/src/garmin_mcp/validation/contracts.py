@@ -159,6 +159,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         "evidence_keys": {
             "plan.<axis>": (
                 "an axis of report.plan.checks (rejected when plan is null). "
+                "The axes are derived from what the prescription's steps asked "
+                "for, so any id present in plan.checks resolves: intensity, "
+                "volume, hr_ceiling, stages, hr_band / hr_band_2 ..., "
+                "pace_band, reps / reps_2 ..., strides, continuity (or rest). "
+                "Each row carries status on_plan / off_plan / short / missing "
+                "/ insufficient; insufficient means the laps could not be "
+                "matched to the steps and the axis was not judged -- neither "
+                "a strength nor a growth point. "
                 "hr_ceiling is judged on the steady time above the ceiling "
                 "(plan.hr_ceiling.seconds_over / pct_over), not the average: "
                 "off plan when more than 5% of it AND at least 5 minutes sat "
@@ -196,8 +204,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "growth_points": (
                 "A growth point may only rest on a signal that is BOTH outside "
-                "its normal range AND adverse, on a plan axis that came out "
-                "off plan, or on a moment whose policy.verdict == 'concern' "
+                "its normal range AND adverse, on a plan axis whose status is "
+                "off_plan / short / missing (never insufficient), or on a "
+                "moment whose policy.verdict == 'concern' "
                 "(a deviation from what the run was for, see "
                 "evaluation_policy.purpose). A within-range or favourable "
                 "signal is never a weakness, an on_plan axis is never an "

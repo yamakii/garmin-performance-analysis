@@ -66,6 +66,11 @@ def test_plan_check_hr_ceiling_wording(reader_db_path: Path) -> None:
     ceiling = next(c for c in report["plan"]["checks"] if c["axis"] == "hr_ceiling")
     assert ceiling["target"] == "150 bpm 以下"
     assert ceiling["actual"] == "144 bpm"
+    # A legacy easy row keeps its whole-run ceiling row, now in the AxisResult
+    # shape (#1406).
+    assert ceiling["label_ja"] == "心拍上限"
+    assert ceiling["verdict"] == "✅"
+    assert ceiling["segments"] == []
 
 
 @pytest.mark.integration

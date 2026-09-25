@@ -518,6 +518,11 @@ _RUN_NOTE_PRESCRIPTION_FIELDS = (
     "hr_low",
     "hr_high",
     "rationale",
+    # What each step asked for (#1406): the plan.checks axes are derived from
+    # it, so the note can say which step an axis is about.
+    "structure",
+    "purpose",
+    "strides",
 )
 
 # Similar workouts are context for one sentence, not a table.
