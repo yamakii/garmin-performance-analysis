@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import PlanCheck, { formatOverTime, outcomeText } from "./PlanCheck";
-import type { RunPlan, RunPurpose } from "../../types";
+import type { PlanCheckRow, RunPlan, RunPurpose } from "../../types";
 
 const PLAN: RunPlan = {
   verdict: "🟡",
@@ -176,6 +176,35 @@ describe("PlanCheck", () => {
     // Only the ceiling row carries the over-ceiling bar: stride HR peaks are
     // not an excursion.
     expect(within(row).queryByText(/超過/)).toBeNull();
+  });
+
+  it("keeps the ceiling bar for hr_ceiling", () => {
+    // Structure-derived rows (#1404) still get the bar on the ceiling row.
+    render(
+      <PlanCheck
+        plan={{
+          ...PLAN,
+          checks: [
+            {
+              axis: "hr_ceiling",
+              label_ja: "心拍上限",
+              target: "150 bpm 以下",
+              actual: "超過 5:21（12.4%）",
+              status: "off_plan",
+              on_plan: false,
+              segments: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("group", { name: "心拍上限" });
+    expect(within(row).getByText(/超過 5:21\s*（\s*12.4%）/, {
+      selector: "span.text-status-warn",
+    })).toBeInTheDocument();
+    // hr_ceiling carries no step list.
+    expect(within(row).queryByRole("list")).toBeNull();
   });
 
   it("test_format_over_time_reads_as_a_length", () => {
@@ -370,5 +399,147 @@ describe("purpose display by prescribed / unprescribed (#1354)", () => {
     const row = screen.getByRole("group", { name: "継続" });
     expect(within(row).getByText("継続")).toBeInTheDocument();
     expect(within(row).getByText("最後まで走り続ける")).toBeInTheDocument();
+  });
+});
+
+/** A five-stage build-up, every stage in its band (#1404). */
+const STAGES_ROW: PlanCheckRow = {
+  axis: "stages",
+  label_ja: "段階的ビルドアップ",
+  target: "130-140 → 140-150 → 150-160 → 160-170 → 170-180 bpm",
+  actual: "135 → 146 → 155 → 165 → 174 bpm",
+  status: "on_plan",
+  on_plan: true,
+  verdict: "✅",
+  segments: [
+    ["第1段", "130-140 bpm", "135 bpm"],
+    ["第2段", "140-150 bpm", "146 bpm"],
+    ["第3段", "150-160 bpm", "155 bpm"],
+    ["第4段", "160-170 bpm", "165 bpm"],
+    ["第5段", "170-180 bpm", "174 bpm"],
+  ].map(([label, target, actual], index) => ({
+    segment_id: String(index + 1),
+    label,
+    target,
+    actual,
+    on_plan: true,
+  })),
+};
+
+describe("structure-derived axes (#1407)", () => {
+  it("renders label_ja for a dynamic axis", () => {
+    // No AXIS_LABELS entry exists for hr_band_2: the row names itself.
+    render(
+      <PlanCheck
+        plan={{
+          ...PLAN,
+          checks: [
+            {
+              axis: "hr_band_2",
+              label_ja: "心拍の帯（2本目）",
+              target: "150-160 bpm",
+              actual: "帯内 72%（上 8%）",
+              status: "on_plan",
+              on_plan: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("group", { name: "心拍の帯（2本目）" });
+    expect(within(row).getByText("心拍の帯（2本目）")).toBeInTheDocument();
+    expect(screen.queryByText("hr_band_2")).toBeNull();
+  });
+
+  it("renders stage rows", () => {
+    render(<PlanCheck plan={{ ...PLAN, checks: [STAGES_ROW] }} />);
+
+    const row = screen.getByRole("group", { name: "段階的ビルドアップ" });
+    const list = within(row).getByRole("list", {
+      name: "段階的ビルドアップの内訳",
+    });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(5);
+    expect(items[0]).toHaveTextContent("第1段");
+    expect(items[0]).toHaveTextContent("130-140 bpm");
+    expect(items[0]).toHaveTextContent("135 bpm");
+    expect(items[4]).toHaveTextContent("170-180 bpm");
+    expect(items[4]).toHaveTextContent("174 bpm");
+    for (const item of items) {
+      expect(item).toHaveTextContent("✅");
+      expect(item).not.toHaveTextContent("🟡");
+    }
+  });
+
+  it("marks an off-band step with 🟡 on reps and hr_band rows", () => {
+    render(
+      <PlanCheck
+        plan={{
+          ...PLAN,
+          checks: [
+            {
+              axis: "reps",
+              label_ja: "本数",
+              target: "2本 × 1000m",
+              actual: "1/2本",
+              status: "short",
+              on_plan: false,
+              segments: [
+                {
+                  segment_id: "2#1",
+                  label: "メイン 1本目",
+                  target: "1000m",
+                  actual: "3:50（3:50/km）",
+                  on_plan: true,
+                },
+                {
+                  segment_id: "2#2",
+                  label: "メイン 2本目",
+                  target: "1000m",
+                  actual: "2:10（4:20/km）",
+                  on_plan: false,
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("group", { name: "本数" });
+    const items = within(row).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("✅");
+    expect(items[1]).toHaveTextContent("🟡");
+    expect(within(row).getByText("不足")).toHaveClass("text-status-warn");
+  });
+
+  it("renders insufficient as neutral", () => {
+    render(
+      <PlanCheck
+        plan={{
+          ...PLAN,
+          checks: [
+            {
+              axis: "hr_band",
+              label_ja: "心拍帯",
+              target: "150-160 bpm",
+              actual: "-",
+              status: "insufficient",
+              on_plan: false,
+              segments: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByRole("group", { name: "心拍帯" });
+    const tag = within(row).getByText("判定不能");
+    expect(tag).toHaveClass("text-ink-muted");
+    expect(tag).not.toHaveClass("text-status-warn");
+    expect(within(row).queryByText("ずれ")).toBeNull();
+    expect(row).not.toHaveTextContent("✅");
+    expect(row).not.toHaveTextContent("🟡");
   });
 });
