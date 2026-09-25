@@ -646,3 +646,48 @@ def test_growth_point_rejected_on_insufficient_axis():
     assert reason is not None
     assert "plan.pace_band" in reason
     assert "insufficient" in reason
+
+
+@pytest.mark.unit
+def test_run_note_grounding_accepts_stage_axes():
+    """A build-up note citing plan.stages (and a short reps axis) resolves (#1408).
+
+    The run-note agent is taught to read a stepped session per stage: an
+    on-plan ``stages`` axis is a strength, and a ``short`` axis (reps not all
+    run) is a legitimate growth point.
+    """
+    report = _report(
+        plan={
+            "checks": [
+                {"axis": "intensity", "status": "on_plan", "on_plan": True},
+                {"axis": "volume", "status": "on_plan", "on_plan": True},
+                {
+                    "axis": "stages",
+                    "status": "on_plan",
+                    "on_plan": True,
+                    "segments": [
+                        {"label": "第1段", "target": "130-140 bpm", "on_plan": True},
+                        {"label": "第2段", "target": "140-150 bpm", "on_plan": True},
+                    ],
+                },
+                {"axis": "reps", "status": "short", "on_plan": False},
+            ]
+        }
+    )
+    data = _note_data(
+        good_points=[
+            {
+                "text": "どの段も自分の帯の中で走り、段ごとに心拍が上がっています。",
+                "evidence": "plan.stages",
+            }
+        ],
+        growth_points=[
+            {
+                "text": "レップは処方の本数に少し届きませんでした。",
+                "evidence": "plan.reps",
+            }
+        ],
+        next_challenge_evidence="plan.stages",
+    )
+
+    assert check_run_note_grounding(data, report) == (True, None)

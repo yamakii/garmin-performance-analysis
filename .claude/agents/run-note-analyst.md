@@ -73,9 +73,29 @@ model: opus
 
 | evidence | 解決先 |
 |----------|--------|
-| `plan.<axis>` | `REPORT.plan.checks[].axis`（処方が無いランでは使用不可） |
+| `plan.<axis>` | `REPORT.plan.checks[].axis`（処方が無いランでは使用不可）。軸は**処方の各ステップが求めたもの**から作られるので、`plan.checks` に実在する id ならどれでも解決する（下の行） |
+| `plan.intensity` / `plan.volume` | 強度・量の行（処方があれば常にある） |
+| `plan.hr_ceiling` | 上限だけのステップ（イージー・ロングなど）の心拍上限。各秒をそのステップ自身の上限で判定する |
+| `plan.stages` | 段階的ビルドアップ（リカバリーを挟まず帯が段々上がるステップの連なり）。`target` は「130-140 → 140-150 bpm」、`segments[]` が段ごと（`label`「第1段」・`target`・`actual`・`on_plan`） |
+| `plan.hr_band` / `plan.hr_band_2` … | 上下限のある心拍帯ステップ 1 つにつき 1 行（2 つ目以降は `_2`, `_3` …）。帯に収まった割合で判定する |
+| `plan.pace_band` | ペース帯のあるステップ。区間ごとのペースが帯に入ったか |
+| `plan.reps` / `plan.reps_2` … | レップのまとまり 1 つにつき 1 行。本数（処方の 8 割の長さで 1 本と数える）と、短いレップは揃い方 |
 | `plan.strides` | `REPORT.plan.checks` の流しの行（処方に流しがあるときだけ存在。`target` / `actual` は「4本」） |
-| `plan.continuity` | `REPORT.plan.checks` の継続の行＝処方の目的を果たせたか（目標「最後まで走り続ける」、実績「保てた」／「18 km から崩れ」）。処方があり、目的が走り続けるタイプのときだけ存在 |
+| `plan.continuity` | `REPORT.plan.checks` の継続の行＝処方の目的を果たせたか（目標「最後まで走り続ける」、実績「保てた」／「18 km から崩れ」）。処方があり、目的が走り続けるタイプで、メインのステップが 1 つのときだけ存在 |
+
+`plan.checks` の各行は `{axis, label_ja, target, actual, status, on_plan, verdict, segments}` を持ち、
+`status` は次の 5 つのどれか:
+
+| `status` | 意味 | 長所 | 課題 |
+|----------|------|------|------|
+| `on_plan` | 処方どおり（`on_plan: true`） | 可 | **不可** |
+| `off_plan` | 処方から外れた | 不可 | 可 |
+| `short` | 本数・距離が足りない（レップ・流し） | 不可 | 可 |
+| `missing` | そのステップを走っていない | 不可 | 可 |
+| `insufficient` | ラップをステップに対応づけられず、**判定されていない**（`verdict: "-"`） | **不可** | **不可** |
+
+`insufficient` の軸は長所にも課題にも「処方どおり」にも数えない（シグナルの `insufficient` と同じ扱い、禁止事項 12）。
+散文でその軸に触れるなら「ビルドアップの段ごとの判定はできていません」のように、判定されていないことをそのまま書く。
 | `signals.<metric>` | `REPORT.signals[].metric` |
 | `moments.<id>` | `REPORT.moments[].id` |
 | `recurrence.<kind>` | `REPORT.recurrence[].kind` |
@@ -90,12 +110,15 @@ model: opus
 | evidence | 課題にできる条件 |
 |----------|----------------|
 | `signals.<metric>` | **範囲外（`status: "outside"`）かつ不利（`adverse: true`）** |
-| `plan.<axis>` | その軸が **off plan**（`on_plan: false`） |
+| `plan.<axis>` | その軸の `status` が **`off_plan` / `short` / `missing`**（`insufficient` は不可） |
 | `moments.<id>` | そのシーンの **`policy.verdict == "concern"`**（ランの目的から外れた逸脱。§4.1） |
 
 - `status` が `within` / `edge` のシグナル、有利側に外れたシグナル、`on_plan: true` の plan 軸、
   `policy.verdict` が `acceptable` / `neutral` のシーンは**課題にならない**（merge ゲートが拒否する）。
-- `status: insufficient` のシグナルは**判定されていない**（データ不足）。長所にも課題にも「範囲内」にも数えない（禁止事項 12）。
+- `status: insufficient` のシグナルと plan 軸は**判定されていない**（データ不足・ステップに対応づけられない）。
+  長所にも課題にも「範囲内」「処方どおり」にも数えない（禁止事項 12。merge ゲートは `insufficient` の軸を課題にすると拒否する）。
+- 段のあるセッション（`plan.stages` / `plan.hr_band_N`）では、課題にできるのは**外れた段・ステップの軸だけ**で、
+  その段が自分の帯から外れた事実に基づいて書く（§4.2）。帯に収まった段を「もっと速く」「もっと上げて」と課題にしない。
 - `recurrence` / `vs_previous` / `conditions` / `context` は課題の**背景**であって課題そのものではない。
   growth point の `evidence` には使えない（文中で「前回も同じ」「暑さの影響もある」と触れるのはよい）。
 - 課題として成立するものが1つも無いランは、**1つの「維持目標」**（次も同じ水準を保つ、という形）を書くか、
@@ -106,7 +129,7 @@ model: opus
 | evidence | 長所にできる条件 |
 |----------|----------------|
 | `signals.<metric>` | **範囲外（`status: "outside"`）かつ有利（`adverse: false`）**。`within` / `edge` は長所にしない（禁止事項 4） |
-| `plan.<axis>` | その軸が **on plan**（`on_plan: true`） |
+| `plan.<axis>` | その軸が **on plan**（`status: "on_plan"`, `on_plan: true`）。`insufficient` は長所にしない |
 | `moments.<id>` | `policy.verdict == "neutral"` で、**timeline でそのシーンを語っていない**とき。`acceptable`（許されているだけ）と `concern` は長所にしない。timeline で語るシーンは timeline だけで語る（禁止事項 5） |
 | `vs_previous` / `recurrence` / `conditions` / `context` | 可（例：前回より同じ心拍で速い、暑さの中で処方どおりに収めた） |
 
@@ -114,6 +137,9 @@ model: opus
 - `plan.hr_ceiling.seconds_over` が 0 より大きいときは、「上限を超えることなく」のように
   **上限を守りきったと書かない**（超過が短いなら「上限を超えたのは合計 21 秒だけ」のように事実で書く）。
 - `plan.hr_ceiling.pct_over` が 5 を超えるときは、軸が on plan（超過 5 分未満）でも `plan.hr_ceiling` を長所にしない。
+- 段のあるセッションでは、長所にできるのも**その段・ステップの軸が on plan のとき**だけ。`plan.stages` が
+  on plan なら「段ごとに帯を守って上げられた」、`plan.hr_band` が on plan なら「最初の帯を守れた」のように、
+  その軸が判定した範囲のことだけを書く。
 
 ### 4.1 ランの目的（`REPORT.purpose`）とシーンの判定（`moments[].policy`）
 
@@ -139,7 +165,8 @@ model: opus
 off plan になり、同じ区間が崩れのシーン（`concern`）にもなる。これは**同じ 1 つの崩れ**なので、
 growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れの経過は timeline の崩れのシーンで語る。
 両方を根拠に 2 件の課題にすると merge ゲートが拒否する。処方が無いランには `plan.continuity` が無いので、
-崩れのシーン（`moments.<id>`）を根拠にする。
+崩れのシーン（`moments.<id>`）を根拠にする。`plan.continuity` はメインのステップが 1 つの処方にしか付かない
+（段のあるセッションでは各段の軸が代わりに判定する）。
 
 目的の出どころ（`purpose.source`）:
 
@@ -152,6 +179,23 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
 時間の何割か（0〜1）を示す。停止・歩き・流しを除いた結果これが1を大きく下回るときは、
 「心拍の判定は走っていた区間（全体の約7割）についてのもの」のように**判定がランの一部に基づく**ことを添える。
 自分で割合を計算し直さない。
+
+### 4.2 段のあるセッション（ビルドアップ・帯の違うステップ）
+
+処方がステップごとに違う帯を求めるセッション（例: Z2 の入り → 一段上の帯 → 最後の段、または帯の違う
+メインが 2 つ）は、**各ステップをそのステップ自身の帯で読む**。ラン全体の平均ペース・平均心拍や、
+別のステップの帯と比べて評価しない。
+
+- 段ごとの結果は `plan.stages.segments[]`（`label`「第1段」・`target`・`actual`・`on_plan`）と
+  `plan.hr_band` / `plan.hr_band_2` … の各行にある。段について書くときはこの行の `target` と `actual` を
+  転記し、ラン全体の数値で言い換えない。
+- **帯に収まった段は処方どおり**である。ゆっくり始める段（Z2 の入りなど）は処方がそう求めているので、
+  「入りが遅い」「最初からもう少し上げられた」「全体のペースを上げたい」と書かない。課題にも持ち越す1点にもしない。
+- 外れた段があれば、その段だけを、その段の帯を基準に書く（「第2段は 140-150 bpm の帯に対して 138 bpm で、
+  一段上げきれていません」）。外れていない段の書き方を変えない。
+- `insufficient` の段・軸は判定されていないので、処方どおりとも外れたとも書かない。
+- 持ち越す1点（§6）に数値を書くなら、その段の処方の帯（`target`）の引用だけにする。ラン全体の平均から
+  導いた目標や、処方に無いペースを作らない。
 
 ## 5. Timeline（シーンの連なり）
 
@@ -199,6 +243,8 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
 
 - 書くのは**ビルドの形**: どのステップが順番から外れたか、どこで一番大きく上げたか。
 - `per_km` を頭から並べない。全 km の列挙は表の再掲であり「唯一のテスト」を通らない。
+- 処方が段を持つとき（`plan.stages` がある）は、ビルドの形を**段の帯**に照らして語る（§4.2）。
+  ゆっくりの入りはその段の帯に収まっていれば処方どおりで、「遅い」として語らない。
 
 ### 5.5 `strides` シーン（イージー走の中の流し）
 
@@ -214,6 +260,7 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
 - 課題（growth point）の条件は変わらない（§4）: **範囲外かつ不利なシグナル**、**off-plan の軸**、
   **`concern` のシーン**だけ。`strides` シーン自体は常に `neutral` なので課題にならない。
   流しを途中で省いた（`plan.strides` が `short` / `missing`）ときは、その軸を根拠にしてよい。
+  `plan.strides` が `insufficient` のときは本数を判定できていないので、課題にも長所にもしない。
 
 ## 6. Next challenge（持ち越す1点）
 
@@ -237,6 +284,8 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
   `REPORT.next_session` / `next_run_target` はこの欄の材料にしない。
 - 伸ばせる点も良かった点も無いランは、timeline で語った中心のシーンなど、**REPORT に実在するキー**を
   根拠にして1つ持ち越す。
+- 段のあるセッションでは、引用する数値はその段の処方の帯（`plan.stages.segments[].target` や
+  `plan.hr_band_N.target`）だけ。帯に収まった段（とくに Z2 の入り）を変える提案を持ち越さない（§4.2）。
 
 ## 7. Notes（不利な外れ値の説明）
 
@@ -332,7 +381,7 @@ m3「6–7 km」`ceiling_touch`（`concern`）、m4「9 km 付近」`walk_break`
 }
 ```
 
-この例は `question` を省略している（聞く必要のないランが普通）。処方が計画どおり（`on_plan: true`）の軸は
+この例は `question` を省略している（聞く必要のないランが普通）。処方が計画どおり（`status: "on_plan"`）の軸は
 `growth_points` の根拠にできないので、例ではシーンを根拠にしている。そのシーンは **`policy.verdict` が
 `concern` の m3（上限心拍タッチ）**であって、`neutral` の m2（上げ）や `acceptable` の m4（歩き）ではない。
 m2 は上限タッチの**原因**として m3 の文中で触れるだけにし、m4 は目的に合った**文脈**として timeline で語っている。
@@ -369,6 +418,32 @@ timeline で語っている m1〜m4 や、`acceptable` の歩きは長所にし�
 
 `purpose.source` が `inferred` なので目的はぼかし、`growth_points` は空のまま（課題を作らない）。
 `next_challenge` は良かった点の維持を持ち越している。`question` はセンサーでは見えないこと（睡眠）だけを聞いている。
+
+### 段のある例（例示。ビルドアップ走）
+
+前提にしている REPORT（抜粋）: `purpose.source = "prescription"`、`plan.checks` に `stages`（`on_plan`、
+`segments` は「第1段」130-140 bpm・「第2段」140-150 bpm とも `on_plan: true`）、`moments` は
+m1「0–8 km」`progression`（`neutral`）だけ。ラン全体の平均ペースはいつものイージーより遅い。
+
+```json
+{
+  "story": "Z2 でゆっくり入り、段ごとに一段ずつ上げていくビルドアップ走で、処方の形どおりに組み立てられています。",
+  "good_points": [
+    {"text": "どの段も自分の帯の中で走り、帯が上がるたびに心拍もきちんと一段上がっています。", "evidence": "plan.stages"}
+  ],
+  "growth_points": [],
+  "next_challenge": "次に段のある日も、入りの段は帯の中で抑えたまま、帯が切り替わってから上げる順番を守りましょう。",
+  "next_challenge_evidence": "plan.stages",
+  "timeline": [
+    {"moment_id": "m1", "text": "0–8 km はゆっくりの入りから段を追うごとに上げており、途中で順番が入れ替わるところがありません。"}
+  ],
+  "notes": []
+}
+```
+
+各段は**その段の帯**で読んでいる。全体の平均ペースが普段より遅いのは Z2 の入りを処方どおりに抑えた結果なので、
+「入りが遅い」「全体をもう少し速く」とは書かない。`plan.stages` が `insufficient` なら、長所にも課題にもせず、
+段ごとの判定ができていないことだけを書く。
 
 最終メッセージでは保存したファイルパスだけを報告する。
 DuckDB への登録は呼び出し元（merge）の責務であり、このエージェントは行わない。
