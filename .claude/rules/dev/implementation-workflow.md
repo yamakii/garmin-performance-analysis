@@ -121,6 +121,9 @@ PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行�
   opus で、Issue ごとに developer / validation / ship / merge の 4 エージェントがコールドスタートでルールとコードを
   読み直し、escalate された PR はメインが処理する。コンテキスト保護だけが目的なら上の developer 委譲で足りる
 - **条件を満たすために Issue を細かく割らない・偽の `Blocked by` を作らない**。PR 数とコールドスタートが増えるだけ
+- **マージ前に必ず満たす条件（実データでの spike 確認など）は、Issue 本文の `## Merge gate` 節に書くか、前のティアの
+  別 Issue に分ける**。`implement-tier` は `## Merge gate` 節のある Issue を auto-merge せず escalate する。本文の
+  それ以外の場所に書いた条件は読まれない（#1402 が spike 前に auto-merge された、#1425）
 - **同じティアのファイル重複はコンフリクトの主因**（兄弟マージ後に必ず conflict で escalate する）。(a) でも同じ
   ティアに重なりがあれば、後の Issue に `Blocked by` を付けて次ティアへ送る。`/decompose` の段階でファイル所有で
   切っておくと両条件を満たしやすい

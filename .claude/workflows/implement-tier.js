@@ -13,7 +13,8 @@ export const meta = {
 // ── args ──────────────────────────────────────────────────────────────
 // {
 //   owner: string, repo: string,
-//   issues: [{ number: int, title: string }],   // one tier; deps already resolved by caller
+//   issues: [{ number: int, title: string, body?: string }],   // one tier; deps already resolved by caller.
+//                                                               // body: the issue body, read for a `## Merge gate` (#1425)
 //   tierName?: string,
 // }
 // ── pure logic (side-effect-free; extracted & unit-tested in CI) ─────────
@@ -78,8 +79,25 @@ function withComputedLevel(manifest) {
   return { ...manifest, validation_level: levelFromChangedFiles(manifest?.changed_files) }
 }
 
+// The text under an issue body's `## Merge gate…` heading, up to the next `## `
+// heading, trimmed — or null when there is no such heading or it is empty
+// (#1425). A merge gate is a condition that must hold before merge (e.g. a spike
+// on real data); an issue that carries one is never auto-merged.
+function extractMergeGate(body) {
+  if (typeof body !== 'string') return null
+  const lines = body.split('\n')
+  const start = lines.findIndex((line) => /^##\s+Merge gate\b/i.test(line))
+  if (start === -1) return null
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex((line) => /^##\s/.test(line))
+  const text = (end === -1 ? rest : rest.slice(0, end)).join('\n').trim()
+  return text === '' ? null : text
+}
+
 // Decide auto-merge purely (deterministic). Returns { ok, reason }.
-function mergeDecision(acc) {
+// `mergeGate` is the issue's `## Merge gate` text (extractMergeGate); failures
+// are reported first, then a gate escalates an otherwise green PR (#1425).
+function mergeDecision(acc, mergeGate = null) {
   const v = acc.validation ?? {}
   const s = acc.ship ?? {}
   // L3 is auto-mergeable in principle (#888), but its required pre-merge gate is
@@ -93,6 +111,7 @@ function mergeDecision(acc) {
   if (s.ci_conclusion !== 'success') return { ok: false, reason: `ci-guard が ${s.ci_conclusion}` }
   if (!s.mergeable) return { ok: false, reason: 'コンフリクト / mergeable=false' }
   if (!s.pr_number) return { ok: false, reason: 'PR 未作成' }
+  if (mergeGate) return { ok: false, reason: `merge gate: ${mergeGate.split('\n')[0].trim()}` }
   return { ok: true, reason: '検証 PASS + ci-guard success + mergeable' }
 }
 
@@ -244,7 +263,7 @@ const results = await pipeline(
   // Stage 4 — Auto-merge on green; otherwise escalate (no merge).
   (acc, issue) => {
     if (!acc) return null
-    const decision = mergeDecision(acc)
+    const decision = mergeDecision(acc, extractMergeGate(issue.body))
     if (!decision.ok) return { issue: issue.number, ...acc, merge: { merged: false, reason: decision.reason } }
     return agent(
       `PR #${acc.ship.pr_number}（Issue #${issue.number}）を auto-merge してください。検証 PASS + ci-guard success + mergeable を確認済み。\n` +

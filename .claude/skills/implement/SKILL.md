@@ -107,12 +107,15 @@ Workflow(
     "repo": "garmin-performance-analysis",
     "tierName": "Tier 0",
     "issues": [
-      {"number": 51, "title": "Extract ApiClient singleton"},
-      {"number": 52, "title": "Extract RawDataFetcher"}
+      {"number": 51, "title": "Extract ApiClient singleton", "body": "<Step 1 の issue_read で得た本文そのまま>"},
+      {"number": 52, "title": "Extract RawDataFetcher", "body": "<同上>"}
     ]
   }
 )
 ```
+
+`body` には Step 1 の `issue_read(method="get")` で取得した本文を**加工せずそのまま**渡す。Workflow は本文の
+`## Merge gate` 節をコードで読み、節がある Issue は検証・CI が通っても auto-merge せず escalate する（#1425）。
 
 > Workflow は明示的なオプトイン機能。`/implement` の呼び出し自体がオプトインに該当する
 > （ユーザーがティア自動実装を要求している）ため、このコマンド内での Workflow 起動は許可される。
