@@ -99,6 +99,13 @@ const GRID_COLUMNS =
 const CELL = "md:border-b md:border-hairline md:py-3 md:pr-3";
 
 /**
+ * The same cells on a row that lists its steps underneath: no hairline and a
+ * short bottom, so the steps read as part of the row and the one hairline that
+ * closes it sits under the last step (#1421).
+ */
+const CELL_OVER_STEPS = "md:pt-3 md:pb-1 md:pr-3";
+
+/**
  * "5:21" / "1:04:09" — how long the run spent above the cap.
  *
  * Minutes are unpadded: this is a length of time in prose, not a clock
@@ -256,23 +263,24 @@ function CheckRow({
     STEP_AXIS.test(check.axis) && check.segments != null
       ? check.segments
       : [];
+  const cell = steps.length > 0 ? CELL_OVER_STEPS : CELL;
   return (
     <div
       role="group"
       aria-label={label}
       className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 border-b border-hairline py-3 md:contents"
     >
-      <div className={`order-1 font-bold text-ink md:order-none ${CELL}`}>
+      <div className={`order-1 font-bold text-ink md:order-none ${cell}`}>
         {label}
       </div>
       <div
-        className={`order-3 col-span-2 font-mono text-[13px] text-ink-soft md:order-none md:col-span-1 ${CELL}`}
+        className={`order-3 col-span-2 font-mono text-[13px] text-ink-soft md:order-none md:col-span-1 ${cell}`}
       >
         <StackedLabel>目標</StackedLabel>
         <span>{check.target}</span>
       </div>
       <div
-        className={`order-4 col-span-2 font-mono text-[13px] text-ink md:order-none md:col-span-1 ${CELL}`}
+        className={`order-4 col-span-2 font-mono text-[13px] text-ink md:order-none md:col-span-1 ${cell}`}
       >
         <StackedLabel>実績</StackedLabel>
         <span>{check.actual}</span>
@@ -285,7 +293,7 @@ function CheckRow({
           entirely. `order` does that without moving it out of the 状態 column
           at `md`, where the shared grid places cells in DOM order. */}
       <div
-        className={`order-2 justify-self-end md:order-none md:justify-self-stretch ${CELL}`}
+        className={`order-2 justify-self-end md:order-none md:justify-self-stretch ${cell}`}
       >
         <StatusTag check={check} />
       </div>
