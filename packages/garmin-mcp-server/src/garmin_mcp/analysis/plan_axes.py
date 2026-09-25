@@ -18,6 +18,7 @@ calibrated on one run):
   of the judged time AND
   :data:`~garmin_mcp.analysis.derivations.HR_CEILING_OFF_SECONDS`.
 - **Band steps** (both bounds) with at least :data:`BAND_MIN_WORK_S` of work
+  (a distance step of unknown time counts from :data:`BAND_MIN_DISTANCE_M`)
   -> ``hr_band`` (``hr_band_2``, ... for further steps). A ramp-in of
   ``min(RAMP_IN_S, RAMP_IN_SHARE x step)`` is dropped from every iteration;
   the axis is on plan when at least :data:`BAND_IN_MIN` of the rest sat in
@@ -73,6 +74,9 @@ AxisStatus = Literal["on_plan", "off_plan", "short", "missing", "insufficient"]
 # --- Heart-rate bands ----------------------------------------------------------
 #: Work shorter than this is never judged on HR: the heart has not caught up.
 BAND_MIN_WORK_S = 180
+#: A distance step at least this long lasts BAND_MIN_WORK_S at any pace
+#: (1 km in 3:00 is already elite), so it is a band step without a pace too.
+BAND_MIN_DISTANCE_M = 1000
 #: The first seconds of a band step are the heart rising into it.
 RAMP_IN_S = 90
 RAMP_IN_SHARE = 0.3
@@ -210,7 +214,7 @@ def evaluate_structure_axes(
         if _is_band(e.step)
         and e.path not in stage_paths
         and e.step_type not in _UNJUDGED_HR_TYPES
-        and (_work_seconds(e) or 0.0) >= BAND_MIN_WORK_S
+        and _long_enough_for_band(e)
     ]
     for number, entry in enumerate(band_entries, start=1):
         axis_id = "hr_band" if number == 1 else f"hr_band_{number}"
@@ -487,6 +491,22 @@ def _band_axis(axis_id: str, entry: _Entry, ctx: _Context) -> AxisResult:
         actual = "、".join(d["actual"] for d in details if d["actual"] != "-")
         return _result(axis_id, "心拍帯", target, actual, fallback_off, details)
     return _insufficient(axis_id, "心拍帯", target)
+
+
+def _long_enough_for_band(entry: _Entry) -> bool:
+    """Whether a band step lasts :data:`BAND_MIN_WORK_S` or more.
+
+    A distance step without a pace has no prescribed time; when it was not
+    run as a segment either (the laps could not be aligned) its length is read
+    off the distance: :data:`BAND_MIN_DISTANCE_M` cannot be covered inside
+    :data:`BAND_MIN_WORK_S`, so the band is listed -- as not judged -- rather
+    than silently dropped from the card (#1406).
+    """
+    seconds = _work_seconds(entry)
+    if seconds is not None:
+        return seconds >= BAND_MIN_WORK_S
+    distance = _num(entry.step.get("distance_m"))
+    return distance is not None and distance >= BAND_MIN_DISTANCE_M
 
 
 def _band_on_plan(pct_in: float, pct_above: float) -> bool:

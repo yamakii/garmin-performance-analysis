@@ -385,6 +385,35 @@ def test_alignment_none_is_insufficient() -> None:
         assert axis.severity == 0
 
 
+@pytest.mark.unit
+def test_distance_band_step_listed_when_misaligned() -> None:
+    """A legacy 8.5 km band body with no pace stays on the card, not judged."""
+    structure = _structure(
+        [
+            WU10,
+            {"step_type": "run", "distance_m": 8500, "hr_low": 136, "hr_high": 169},
+            CD5,
+        ]
+    )
+    none = Alignment(
+        method="none",
+        segments=(),
+        missing=(),
+        skipped_optional=(),
+        reason="lap 4 carries step index 3",
+    )
+
+    axes = _axes(
+        structure,
+        _stages_splits([142, 150, 157, 164, 168]),
+        alignment=none,
+        purpose="progression",
+    )
+
+    assert axes["hr_band"].status == "insufficient"
+    assert axes["hr_band"].target == "136-169 bpm"
+
+
 # --- strides ----------------------------------------------------------------------
 
 

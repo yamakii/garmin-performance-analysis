@@ -16,6 +16,9 @@ normal range per metric    ``analysis.run_signals`` / ``analysis.normal_range``
 turning points, recurrence ``analysis.run_moments``
 steps, flow series, axis   ``analysis.run_moments`` (``build_flow``)
 plan verdict               ``analysis.derivations.compute_prescription_verdict``
+plan axes per step         ``analysis.plan_axes`` (``evaluate_structure_axes``)
+step structure, laps       ``analysis.workout_structure`` /
+per step                   ``analysis.workout_alignment``
 steady seconds, ceiling    ``analysis.hr_windows``
 time, judged share
 run purpose                ``analysis.run_purpose`` (``resolve_purpose``)
@@ -46,6 +49,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -56,8 +60,10 @@ from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     detect_progression_session,
     intensity_class,
+    judge_hr_ceiling,
     prescription_marks_progression,
     select_prescription_for_run,
+    verdict_symbol,
 )
 from garmin_mcp.analysis.hr_windows import (
     event_mask,
@@ -68,7 +74,14 @@ from garmin_mcp.analysis.hr_windows import (
     steady_mask,
 )
 from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
-from garmin_mcp.analysis.prescription_shape import expected_minutes
+from garmin_mcp.analysis.plan_axes import (
+    EASY_PURPOSES,
+    STRIDES_MAX_WORK_S,
+    AxisResult,
+    AxisStatus,
+    evaluate_structure_axes,
+)
+from garmin_mcp.analysis.prescription_shape import BOOKENDED_TYPES, expected_minutes
 from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.purpose_outcome import evaluate as evaluate_outcome
 from garmin_mcp.analysis.run_moments import (
@@ -76,9 +89,16 @@ from garmin_mcp.analysis.run_moments import (
     build_flow,
     detect_moments,
     detect_recurrence,
+    relabel_aligned_splits,
 )
 from garmin_mcp.analysis.run_policy import apply_policy
 from garmin_mcp.analysis.run_purpose import resolve_purpose
+from garmin_mcp.analysis.workout_alignment import Alignment, align_segments
+from garmin_mcp.analysis.workout_structure import (
+    Structure,
+    fit_step_indices,
+    synthesize_structure,
+)
 from garmin_mcp.database.inserters.hr_efficiency import resolve_intensity_category
 from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.form_baseline.scorer import extrapolation_factor
@@ -284,6 +304,24 @@ class RunReportReader(BaseDBReader):
         prescription = self._load_prescription(activity_date)
         hr_ceiling_bpm = _as_int(prescription.get("hr_high")) if prescription else None
 
+        # What each step asked for (#1406): the stored structure, or the one
+        # the scheduler has always registered for a legacy row, aligned to the
+        # laps through their workout step index.
+        structure = _plan_structure(prescription)
+        alignment = (
+            align_segments(structure, today_splits) if structure is not None else None
+        )
+        aligned = alignment is not None and alignment.method != "none"
+        # The laps told as the steps they were run as: roles and per-step
+        # ceilings for the scenes and the chart, never written back.
+        told_splits = (
+            relabel_aligned_splits(
+                today_splits, _aligned_steps(structure, alignment, prescription)
+            )
+            if structure is not None and alignment is not None and aligned
+            else today_splits
+        )
+
         # Which seconds are steady running (#1313): the ceiling is judged on
         # them, and the form signals are not judged when too few are left.
         steady = steady_mask(hr_samples, today_splits) if hr_samples else []
@@ -301,7 +339,7 @@ class RunReportReader(BaseDBReader):
         signals = self._signals(today, history)
         # Scenes read each kilometre's HR over its steady seconds only (#1320):
         # a stride and its recovery inside a kilometre are not a ceiling touch.
-        steady_splits = _steady_splits(today_splits, hr_samples, steady)
+        steady_splits = _steady_splits(told_splits, hr_samples, steady)
         moments = detect_moments(
             steady_splits,
             hr_ceiling=hr_ceiling_bpm,
@@ -314,8 +352,11 @@ class RunReportReader(BaseDBReader):
         # Did the run deliver what its purpose asked for (#1340)? The scenes
         # above are purpose-blind, so the outcome is read once the purpose is
         # known, and a run that came apart is told again with that stretch as
-        # one breakdown scene.
-        outcome = evaluate_outcome(purpose.id, steady_splits)
+        # one breakdown scene. A stored structure with one steady step is
+        # judged on that step's own laps (#1406): a warmup does not set the
+        # pace the run is held to.
+        outcome_scope = _continuity_scope(prescription, structure, alignment)
+        outcome = _evaluate_outcome(purpose.id, steady_splits, outcome_scope)
         told_moments = moments
         if outcome is not None and outcome.breakdown_from_km is not None:
             told_moments = detect_moments(
@@ -333,12 +374,33 @@ class RunReportReader(BaseDBReader):
             if prescription is not None
             else None
         )
+        # The axes the prescription asked for (#1406), and the verdict as the
+        # worst of them together with intensity and volume.
+        axes = (
+            _plan_axes(
+                prescription,
+                structure,
+                alignment,
+                today,
+                splits=today_splits,
+                samples=hr_samples,
+                steady=steady,
+                purpose=purpose.id,
+                outcome=outcome,
+                outcome_scoped=outcome_scope is not None,
+                hr_ceiling=hr_ceiling,
+                ceiling_avg_hr=jog_avg_hr,
+            )
+            if prescription is not None and not _is_rest(prescription)
+            else None
+        )
         verdict = compute_prescription_verdict(
             prescription,
             _actual(today),
             jog_avg_hr=jog_avg_hr,
             outcome=outcome,
             ceiling_over=hr_ceiling,
+            axes=axes,
         )
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
@@ -384,16 +446,14 @@ class RunReportReader(BaseDBReader):
                 prescription,
                 verdict,
                 today,
-                splits=today_splits,
+                axes=axes,
                 hr_ceiling=hr_ceiling,
-                ceiling_avg_hr=jog_avg_hr,
-                outcome=outcome,
             ),
             "judged_share": shares,
             "signals": signals,
             "zones": _zones(zone_rows),
             "moments": judged_moments,
-            "flow": build_flow(today_splits),
+            "flow": build_flow(told_splits),
             "recurrence": recurrence,
             "phases": _phases(today),
             "conditions": _conditions(today, elevation),
@@ -1243,34 +1303,32 @@ def _plan_block(
     verdict: dict[str, Any] | None,
     today: dict[str, Any],
     *,
-    splits: list[dict[str, Any]] | None = None,
+    axes: Sequence[AxisResult] | None = None,
     hr_ceiling: dict[str, Any] | None = None,
-    ceiling_avg_hr: float | None = None,
-    outcome: Outcome | None = None,
 ) -> dict[str, Any] | None:
     """The plan card: the verdict, its per-axis checks and the HR ceiling.
 
-    The checks do not re-judge anything -- each axis reports on / off plan
-    exactly as ``compute_prescription_verdict`` decided it, so a tolerance band
-    can never drift between the verdict and the card that explains it. The one
-    axis that verdict does not know is ``strides`` (#1297): a count of the
-    stride laps against the prescribed reps, added when the prescription
-    carries strides.
+    The checks do not re-judge anything. ``intensity`` and ``volume`` report
+    on / off plan exactly as ``compute_prescription_verdict`` decided them;
+    every other row is one of ``axes`` -- what each step of the prescription
+    asked for (:func:`_plan_axes`, #1406) -- and the verdict is the worst of
+    all of them, so a tolerance band can never drift between the verdict and
+    the card that explains it.
 
-    ``continuity`` (#1353) is the prescription's purpose as an axis: present
-    when the purpose is one of holding an effort (``outcome`` is not
-    ``None``), on plan when the run held it to the end.
+    Every row has the same shape: ``{axis, label_ja, target, actual, status,
+    on_plan, verdict, segments}``. ``status`` is ``on_plan`` / ``off_plan`` /
+    ``short`` / ``missing`` / ``insufficient`` (not judged: the laps could not
+    be matched to the steps), ``verdict`` the row's own ✅ / 🟡 / 🔴 (``-``
+    when not judged) and ``segments`` the per-step detail of a structure axis.
 
-    The ceiling row reads ``ceiling_avg_hr`` -- the steady-running average HR
-    (#1313) -- and the activity's own average HR when there is none; its
-    status and the bar come from ``hr_ceiling``, the steady time above the
-    ceiling the verdict judged it on (#1357).
+    ``hr_ceiling`` is the whole run's steady time above the prescription's
+    ceiling (#1357), the bar the card draws under its ceiling row.
     """
     if prescription is None or verdict is None:
         return None
-    splits = splits or []
 
     on_plan = set(verdict.get("on_plan") or [])
+    severity = dict(verdict.get("axis_severity") or {})
     checks: list[dict[str, Any]] = []
 
     if "rest" in on_plan or _is_rest(prescription):
@@ -1278,54 +1336,38 @@ def _plan_block(
             _check(
                 "rest",
                 "休養",
+                "休養",
                 "休養" if not _ran(today) else _volume_text(today),
                 "rest" in on_plan,
+                severity=0 if "rest" in on_plan else 2,
             )
         )
     else:
         checks.append(
             _check(
                 "intensity",
+                "強度",
                 _target_intensity_label(prescription.get("session_type")),
                 _intensity_label(
                     today.get("training_type") or today.get("intensity_category")
                 ),
                 "intensity_class" in on_plan,
+                severity=severity.get("intensity_class"),
             )
         )
         target, actual = _volume_texts(prescription, today)
         if target is not None:
-            checks.append(_check("volume", target, actual, "volume" in on_plan))
-        hr_high = _as_float(prescription.get("hr_high"))
-        avg_hr = (
-            ceiling_avg_hr
-            if ceiling_avg_hr is not None
-            else _as_float(today.get("avg_hr"))
-        )
-        if hr_high is not None:
             checks.append(
                 _check(
-                    "hr_ceiling",
-                    f"{hr_high:.0f} bpm 以下",
-                    "-" if avg_hr is None else f"{avg_hr:.0f} bpm",
-                    "hr_ceiling" in on_plan,
+                    "volume",
+                    "量",
+                    target,
+                    actual,
+                    "volume" in on_plan,
+                    severity=severity.get("volume"),
                 )
             )
-        if outcome is not None:
-            checks.append(
-                _check(
-                    "continuity",
-                    "最後まで走り続ける",
-                    (
-                        "保てた"
-                        if outcome.met
-                        else f"{outcome.breakdown_from_km:g} km から崩れ"
-                    ),
-                    "continuity" in on_plan,
-                )
-            )
-        if _prescribed_strides(prescription) is not None:
-            checks.append(_strides_check(prescription, splits))
+        checks.extend(_axis_row(axis) for axis in axes or ())
 
     return {
         "verdict": str(verdict.get("verdict")),
@@ -1335,12 +1377,317 @@ def _plan_block(
     }
 
 
-# The strides row's status -> the verdict symbol the card draws for it.
-_STRIDES_VERDICTS: dict[str, str] = {
-    "on_plan": "✅",
-    "short": "🟡",
-    "missing": "🔴",
-}
+def _axis_row(axis: AxisResult) -> dict[str, Any]:
+    """One structure-derived axis as a plan-card row."""
+    return {
+        "axis": axis.axis,
+        "label_ja": axis.label_ja,
+        "target": axis.target,
+        "actual": axis.actual,
+        "status": axis.status,
+        "on_plan": axis.status == "on_plan",
+        "verdict": (
+            "-" if axis.status == "insufficient" else verdict_symbol(axis.severity)
+        ),
+        "segments": [dict(segment) for segment in axis.segments],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Plan axes (#1406)
+# --------------------------------------------------------------------------- #
+
+
+def _plan_structure(
+    prescription: Mapping[str, Any] | None,
+) -> Structure | None:
+    """The prescription's step structure: stored, or synthesized for a legacy row.
+
+    ``None`` for no prescription, a session that is not a run, or a row whose
+    structure cannot be built (a stored one that no longer validates, strides
+    that do not fit) -- the report then degrades to the axes it can judge.
+    """
+    if prescription is None:
+        return None
+    try:
+        return synthesize_structure(prescription)
+    except (ValueError, TypeError) as exc:
+        logger.debug("no structure for prescription: %s", exc)
+        return None
+
+
+def _has_stored_structure(prescription: Mapping[str, Any]) -> bool:
+    """Whether the row was written with its own step structure."""
+    raw = prescription.get("structure")
+    if isinstance(raw, str):
+        return bool(raw.strip())
+    return bool(raw)
+
+
+def _is_legacy_steady(prescription: Mapping[str, Any]) -> bool:
+    """A legacy row of the steady family (easy / long / recovery).
+
+    Its synthesized structure is the one the report has always judged: one
+    body step (plus a strides block), read as a whole-run ceiling, the purpose
+    held to the end and a count of the stride laps. Those rows keep exactly
+    that card; only rows with a stored structure, and legacy quality rows
+    whose bookends make the whole-run reading wrong, are judged per step.
+    """
+    session_type = str(prescription.get("session_type") or "").strip().lower()
+    return not _has_stored_structure(prescription) and (
+        session_type not in BOOKENDED_TYPES
+    )
+
+
+def _is_stride_group(
+    item: Mapping[str, Any], prescription: Mapping[str, Any] | None
+) -> bool:
+    """Whether a repeat group is an easy run's strides block (plan_axes rule)."""
+    if prescription is None or "repeat_count" not in item:
+        return False
+    purpose = str(prescription.get("purpose") or "").strip().lower()
+    session_type = str(prescription.get("session_type") or "").strip().lower()
+    if purpose not in EASY_PURPOSES and not (
+        not purpose and session_type in {"easy", "recovery"}
+    ):
+        return False
+    runs = [
+        step
+        for step in item.get("steps") or []
+        if isinstance(step, Mapping) and step.get("step_type") == "run"
+    ]
+    return bool(runs) and all(
+        (seconds := _step_seconds(step)) is not None and seconds <= STRIDES_MAX_WORK_S
+        for step in runs
+    )
+
+
+def _step_seconds(step: Mapping[str, Any]) -> float | None:
+    """A timed step's length in seconds, ``None`` for a distance step."""
+    if "duration_seconds" in step:
+        return _as_float(step.get("duration_seconds"))
+    minutes = _as_float(step.get("duration_minutes"))
+    return None if minutes is None else minutes * 60.0
+
+
+def _aligned_steps(
+    structure: Structure,
+    alignment: Alignment,
+    prescription: Mapping[str, Any] | None,
+) -> dict[int, dict[str, Any]]:
+    """``{split_index: {"step_type", "stride", "hr_high"}}`` for aligned laps.
+
+    What :func:`~garmin_mcp.analysis.run_moments.relabel_aligned_splits`
+    relabels the laps with. A ``run`` step is a stride when its repeat group
+    is an easy run's strides block.
+    """
+    stride_indices = {
+        flat.fit_index
+        for flat in fit_step_indices(structure)
+        if flat.group_path is not None
+        and _is_stride_group(_group_at(structure, flat.group_path), prescription)
+    }
+    labels: dict[int, dict[str, Any]] = {}
+    for segment in alignment.segments:
+        step = segment.step
+        for split_index in segment.split_indices:
+            labels[int(split_index)] = {
+                "step_type": step.get("step_type"),
+                "stride": segment.fit_index in stride_indices,
+                "hr_high": step.get("hr_high"),
+            }
+    return labels
+
+
+def _group_at(structure: Structure, path: Sequence[int]) -> Mapping[str, Any]:
+    """The repeat group at ``path`` (top-level index, then child indices)."""
+    item: Any = structure[path[0]]
+    for position in path[1:]:
+        item = item["steps"][position]
+    return item  # type: ignore[no-any-return]
+
+
+def _continuity_scope(
+    prescription: Mapping[str, Any] | None,
+    structure: Structure | None,
+    alignment: Alignment | None,
+) -> set[int] | None:
+    """The laps the purpose outcome is judged on, ``None`` for the whole run.
+
+    A structure judged per step whose single top-level steady step was aligned
+    is scoped to that step's laps (#1406), so a warmup does not set the pace
+    the run is held to. A legacy easy / long / recovery row keeps today's
+    whole-run reading.
+    """
+    if (
+        prescription is None
+        or structure is None
+        or alignment is None
+        or alignment.method == "none"
+        or _is_legacy_steady(prescription)
+    ):
+        return None
+    steady = [
+        flat
+        for flat in fit_step_indices(structure)
+        if flat.group_path is None and flat.step.get("step_type") == "run"
+    ]
+    if len(steady) != 1:
+        return None
+    covered = {
+        int(index)
+        for segment in alignment.segments
+        if segment.fit_index == steady[0].fit_index and not segment.step.get("optional")
+        for index in segment.split_indices
+    }
+    return covered or None
+
+
+def _evaluate_outcome(
+    purpose: str, splits: Sequence[Mapping[str, Any]], scope: set[int] | None
+) -> Outcome | None:
+    """``purpose_outcome.evaluate`` over the whole run or one step's laps.
+
+    A scoped outcome is shifted back onto the whole run's distance, so its
+    ``breakdown_from_km`` still places the breakdown scene where it happened.
+    """
+    if scope is None:
+        return evaluate_outcome(purpose, splits)
+    offset = 0.0
+    scoped: list[Mapping[str, Any]] = []
+    for position, split in enumerate(splits, start=1):
+        index = _as_int(split.get("split_index"))
+        if (position if index is None else index) in scope:
+            scoped.append(split)
+        elif not scoped:
+            offset += _as_float(split.get("distance_km")) or 0.0
+    outcome = evaluate_outcome(purpose, scoped)
+    if outcome is None or outcome.breakdown_from_km is None:
+        return outcome
+    start = round(outcome.breakdown_from_km + offset, 3)
+    return replace(
+        outcome,
+        breakdown_from_km=start,
+        reason=f"came apart from {start:g} km to the finish",
+    )
+
+
+def _plan_axes(
+    prescription: dict[str, Any],
+    structure: Structure | None,
+    alignment: Alignment | None,
+    today: Mapping[str, Any],
+    *,
+    splits: Sequence[Mapping[str, Any]],
+    samples: Sequence[Mapping[str, Any]],
+    steady: Sequence[bool],
+    purpose: str,
+    outcome: Outcome | None,
+    outcome_scoped: bool,
+    hr_ceiling: Mapping[str, Any] | None,
+    ceiling_avg_hr: float | None,
+) -> list[AxisResult]:
+    """The plan-check axes beyond intensity and volume (#1406).
+
+    A legacy row of the steady family keeps exactly the axes it has always
+    had (:func:`_legacy_axes`). Every other row is judged on what each of its
+    steps asked for (``plan_axes.evaluate_structure_axes``) with its laps
+    aligned through their step index; when they cannot be aligned the axes are
+    ``insufficient`` and the verdict rests on the others.
+
+    When the report's purpose outcome was scoped to the steady step's laps
+    (``outcome_scoped``), ``continuity`` is that outcome -- the same reading
+    ``plan_axes`` makes, placed on the whole run's distance -- so the plan row
+    and the breakdown scene tell the same kilometre.
+    """
+    if _is_legacy_steady(prescription):
+        return _legacy_axes(
+            prescription,
+            today,
+            splits=splits,
+            outcome=outcome,
+            hr_ceiling=hr_ceiling,
+            ceiling_avg_hr=ceiling_avg_hr,
+        )
+    if structure is None or alignment is None:
+        return []
+    axes = evaluate_structure_axes(
+        structure,
+        alignment,
+        splits=splits,
+        samples=samples,
+        steady=steady if samples else None,
+        purpose=purpose,
+    )
+    return [
+        (
+            _continuity_axis(outcome)
+            if axis.axis == "continuity" and outcome is not None and outcome_scoped
+            else axis
+        )
+        for axis in axes
+    ]
+
+
+def _legacy_axes(
+    prescription: Mapping[str, Any],
+    today: Mapping[str, Any],
+    *,
+    splits: Sequence[Mapping[str, Any]],
+    outcome: Outcome | None,
+    hr_ceiling: Mapping[str, Any] | None,
+    ceiling_avg_hr: float | None,
+) -> list[AxisResult]:
+    """The axes a legacy easy / long / recovery row has always been read on.
+
+    - ``hr_ceiling``: the whole run's steady time above ``hr_high`` (#1357),
+      the average past it only for the 🔴 overreach; the row reads the
+      steady-running average HR (#1313).
+    - ``continuity``: the purpose held to the end (#1353).
+    - ``strides``: the stride laps counted against the prescribed reps
+      (#1297); now part of the verdict like every other axis.
+    """
+    axes: list[AxisResult] = []
+    hr_high = _as_float(prescription.get("hr_high"))
+    avg_hr = (
+        ceiling_avg_hr if ceiling_avg_hr is not None else _as_float(today.get("avg_hr"))
+    )
+    if hr_high is not None:
+        kept, severity, _reason = judge_hr_ceiling(hr_high, avg_hr, hr_ceiling)
+        status: AxisStatus = (
+            "insufficient" if kept is None else "on_plan" if kept else "off_plan"
+        )
+        axes.append(
+            AxisResult(
+                axis="hr_ceiling",
+                label_ja="心拍上限",
+                target=f"{hr_high:.0f} bpm 以下",
+                actual="-" if avg_hr is None else f"{avg_hr:.0f} bpm",
+                status=status,
+                severity=severity,
+                segments=(),
+            )
+        )
+    if outcome is not None:
+        axes.append(_continuity_axis(outcome))
+    if _prescribed_strides(dict(prescription)) is not None:
+        axes.append(_strides_axis(prescription, splits))
+    return axes
+
+
+def _continuity_axis(outcome: Outcome) -> AxisResult:
+    """The purpose outcome as the ``continuity`` axis (#1353)."""
+    return AxisResult(
+        axis="continuity",
+        label_ja="継続",
+        target="最後まで走り続ける",
+        actual=(
+            "保てた" if outcome.met else f"{outcome.breakdown_from_km:g} km から崩れ"
+        ),
+        status="on_plan" if outcome.met else "off_plan",
+        severity=0 if outcome.met else 1,
+        segments=(),
+    )
 
 
 def _prescribed_strides(prescription: dict[str, Any]) -> dict[str, Any] | None:
@@ -1356,28 +1703,31 @@ def _prescribed_strides(prescription: dict[str, Any]) -> dict[str, Any] | None:
     return strides
 
 
-def _strides_check(
+def _strides_axis(
     prescription: Mapping[str, Any], splits: Sequence[Mapping[str, Any]]
-) -> dict[str, Any]:
-    """The ``strides`` row of the plan card: stride laps run against the reps.
+) -> AxisResult:
+    """The legacy ``strides`` axis: stride laps run against the reps (#1297).
 
-    ``target`` / ``actual`` read ``"4本"``; ``on_plan`` is ``done >= reps``.
-    The status is ``short`` (🟡) when some but not all strides were run and
-    ``missing`` (🔴) when none were -- an easy run that skipped its strides
-    answered only half of the prescription.
+    ``target`` / ``actual`` read ``"4本"``. The status is ``short`` when some
+    but not all strides were run and ``missing`` when none were -- both a 🟡
+    deviation that feeds the verdict (#1406), never 🔴, the same rule
+    ``plan_axes`` applies to reps.
     """
     strides = _prescribed_strides(dict(prescription)) or {}
     reps = _as_int(strides.get("reps")) or 0
     done = _count_strides(splits)
-    status = "on_plan" if done >= reps else "short" if done > 0 else "missing"
-    return {
-        "axis": "strides",
-        "target": f"{reps}本",
-        "actual": f"{done}本",
-        "status": status,
-        "on_plan": status == "on_plan",
-        "verdict": _STRIDES_VERDICTS[status],
-    }
+    status: AxisStatus = (
+        "on_plan" if done >= reps else "short" if done > 0 else "missing"
+    )
+    return AxisResult(
+        axis="strides",
+        label_ja="ウインドスプリント",
+        target=f"{reps}本",
+        actual=f"{done}本",
+        status=status,
+        severity=0 if status == "on_plan" else 1,
+        segments=(),
+    )
 
 
 def _count_strides(splits: Sequence[Mapping[str, Any]]) -> int:
@@ -1495,14 +1845,30 @@ def _target_intensity_label(session_type: Any) -> str:
     return f"{label}（{suffix}）" if suffix and label != "-" else label
 
 
-def _check(axis: str, target: str, actual: str, on_plan: bool) -> dict[str, Any]:
-    """One row of the plan card."""
+def _check(
+    axis: str,
+    label_ja: str,
+    target: str,
+    actual: str,
+    on_plan: bool,
+    *,
+    severity: int | None = None,
+) -> dict[str, Any]:
+    """One verdict-judged row of the plan card (intensity / volume / rest).
+
+    Same shape as :func:`_axis_row`. ``severity`` is the verdict's own for
+    the axis; without it an off-plan row is a 🟡.
+    """
+    level = severity if severity is not None else (0 if on_plan else 1)
     return {
         "axis": axis,
+        "label_ja": label_ja,
         "target": target,
         "actual": actual,
         "status": "on_plan" if on_plan else "off_plan",
         "on_plan": bool(on_plan),
+        "verdict": verdict_symbol(level),
+        "segments": [],
     }
 
 

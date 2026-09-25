@@ -293,6 +293,64 @@ def build_flow(splits: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+# Prescribed step type -> the role its aligned laps are told as (#1406).
+_STEP_TYPE_ROLES: dict[str, str] = {
+    "warmup": "warmup",
+    "run": "run",
+    "recovery": "recovery",
+    "rest": "recovery",
+    "cooldown": "cooldown",
+}
+
+
+def relabel_aligned_splits(
+    splits: Sequence[Mapping[str, Any]],
+    steps: Mapping[int, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Copies of ``splits`` told as the prescribed steps they were run as.
+
+    Ingest labels every lap from the lap alone (``role_phase``), so a build-up
+    whose stages were recorded as work laps reads as a rep session, and a
+    marathon-pace kilometre is judged against the easy ceiling. Once the laps
+    are aligned to the prescription (``analysis.workout_alignment``), the
+    prescribed step is the better witness, and the report relabels the laps
+    it covers at report time -- nothing is written back (#1406):
+
+    - a ``run`` (work) step is ``run``, or ``stride`` when it is a short rep
+      inside an easy run's strides block;
+    - a ``recovery`` / ``rest`` step is ``recovery``; ``warmup`` /
+      ``cooldown`` keep their names;
+    - every covered lap carries the step's ceiling as ``ceiling_bpm`` (the
+      step's ``hr_high``, ``None`` when it has none), which
+      :func:`_is_ceiling_touch` judges it against.
+
+    Args:
+        splits: The run's laps, read for ``split_index``.
+        steps: ``{split_index: {"step_type", "stride", "hr_high"}}`` for the
+            laps covered by an aligned step. Laps not in it are copied as
+            they are.
+
+    Returns:
+        New split dicts in the same order.
+    """
+    out: list[dict[str, Any]] = []
+    for position, split in enumerate(splits, start=1):
+        copy = dict(split)
+        index = _as_float(split.get("split_index"))
+        step = steps.get(position if index is None else int(index))
+        if step is not None:
+            step_type = str(step.get("step_type") or "")
+            role = _STEP_TYPE_ROLES.get(step_type)
+            if role == "run" and step.get("stride"):
+                role = "stride"
+            if role is not None:
+                copy["role_phase"] = role
+            hr_high = _as_float(step.get("hr_high"))
+            copy["ceiling_bpm"] = None if hr_high is None else int(hr_high)
+        out.append(copy)
+    return out
+
+
 def detect_moments(
     splits: Sequence[Mapping[str, Any]],
     *,
@@ -358,10 +416,11 @@ def detect_moments(
             scenes.extend(
                 _km_scenes(
                     step,
-                    hr_ceiling=hr_ceiling if step["role"] in _JOG_ROLES else None,
+                    hr_ceiling=hr_ceiling,
                     prescription=prescription,
                     named=not single,
                     breakdown_from_km=breakdown_from_km,
+                    judge_ceiling=step["role"] in _JOG_ROLES,
                 )
             )
         else:
@@ -961,11 +1020,21 @@ def _km_scenes(
     prescription: Mapping[str, Any] | None,
     named: bool,
     breakdown_from_km: float | None = None,
+    judge_ceiling: bool = True,
 ) -> list[dict[str, Any]]:
-    """The turning points *inside* one long step, narrated in kilometres."""
+    """The turning points *inside* one long step, narrated in kilometres.
+
+    ``judge_ceiling`` is ``False`` on a step no ceiling applies to (a stride,
+    a recovery jog): then neither the prescription's ceiling nor a split's own
+    ``ceiling_bpm`` can make a ceiling touch.
+    """
     valid = _valid_splits(step["rows"])
     if not valid:
         return []
+    if not judge_ceiling:
+        hr_ceiling = None
+        for row in valid:
+            row.pop("ceiling_bpm", None)
 
     prefix = f"{step['label_ja']} " if named else ""
     if step["role"] == "run" and _is_progression(prescription, valid):
@@ -1141,19 +1210,36 @@ def _is_ceiling_touch(
     the ceiling by ``CEILING_PEAK_MARGIN_BPM`` *while the average is already
     there*. A 155 bpm spike inside a kilometre averaging 131 is HR noise, not
     effort spent against the ceiling.
+
+    A split aligned to a prescribed step carries that step's own ceiling as
+    ``ceiling_bpm`` (#1406) and is judged against it first: the marathon-pace
+    kilometres of a long run are allowed up to *their* ceiling, not the easy
+    one. ``ceiling_bpm = None`` is a step with no ceiling at all.
     """
-    if hr_ceiling is None:
+    ceiling = _split_ceiling(valid[i], hr_ceiling)
+    if ceiling is None:
         return False
     avg_hr = _as_float(valid[i].get("avg_hr"))
-    if avg_hr is not None and avg_hr >= hr_ceiling:
+    if avg_hr is not None and avg_hr >= ceiling:
         return True
     max_hr = _as_float(valid[i].get("max_hr"))
     if max_hr is None or avg_hr is None:
         return False
     return (
-        max_hr >= hr_ceiling + CEILING_PEAK_MARGIN_BPM
-        and avg_hr >= hr_ceiling - CEILING_NEAR_BPM
+        max_hr >= ceiling + CEILING_PEAK_MARGIN_BPM
+        and avg_hr >= ceiling - CEILING_NEAR_BPM
     )
+
+
+def _split_ceiling(row: Mapping[str, Any], hr_ceiling: float | None) -> float | None:
+    """The ceiling one split is judged against (``None``: no ceiling).
+
+    A split aligned to a prescribed step (#1406) carries the step's own
+    ``ceiling_bpm``; any other split falls back to the prescription's.
+    """
+    if "ceiling_bpm" in row:
+        return _as_float(row.get("ceiling_bpm"))
+    return None if hr_ceiling is None else float(hr_ceiling)
 
 
 def _corrections(valid: Sequence[Mapping[str, Any]]) -> dict[int, float]:
@@ -1507,8 +1593,12 @@ def _facts(
     if kind == "ceiling_touch":
         if max_hrs:
             facts["max_hr"] = _round(max(max_hrs))
-        if hr_ceiling is not None:
-            facts["hr_ceiling"] = int(hr_ceiling)
+        # The ceiling each touched kilometre was judged against (#1406).
+        ceilings = [
+            c for c in (_split_ceiling(r, hr_ceiling) for r in rows) if c is not None
+        ]
+        if ceilings:
+            facts["hr_ceiling"] = int(min(ceilings))
         _add_correction_facts(facts, valid, members, corrections)
     elif kind == "walk_break":
         facts["km_list"] = [row["start_km"] for row in rows]

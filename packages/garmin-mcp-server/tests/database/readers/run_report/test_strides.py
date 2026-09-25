@@ -164,6 +164,24 @@ def test_plan_strides_axis_on_plan(reader_db_path: Path) -> None:
     assert check["on_plan"] is False
     assert check["status"] == "short"
     assert check["verdict"] == "🟡"
+    # The strides row is an axis of the verdict like any other (#1406).
+    assert short["plan"]["verdict"] == "🟡"
+
+
+@pytest.mark.integration
+def test_plan_strides_axis_missing_is_yellow(reader_db_path: Path) -> None:
+    """No stride run at all is ``missing`` -- a 🟡 deviation, never 🔴 (#1406)."""
+    _seed_today(reader_db_path, [*_JOG, _COOLDOWN])
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    check = _strides_check(report)
+    assert check is not None
+    assert check["actual"] == "0本"
+    assert check["status"] == "missing"
+    assert check["verdict"] == "🟡"
+    assert report["plan"]["verdict"] == "🟡"
 
 
 @pytest.mark.integration

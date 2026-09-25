@@ -362,3 +362,91 @@ def test_no_breakdown_without_a_breakdown_point() -> None:
     )
 
     assert all(m["kind"] != "breakdown" for m in moments)
+
+
+# --- per-step ceilings on aligned laps (#1406) ----------------------------------
+
+
+def _long_run_with_mp_block() -> list[dict[str, Any]]:
+    """Long + marathon-pace block: 5 easy km, 3 MP km at 155, 2 easy km.
+
+    The MP step's own ceiling is 158; the easy steps keep the 150 one.
+    """
+    rows = _rows(
+        [
+            *[(420.0, 140.0, 146.0, 178.0, 2.0)] * 5,
+            *[(382.0, 155.0, 157.0, 182.0, 2.0)] * 3,
+            *[(425.0, 142.0, 147.0, 177.0, 2.0)] * 2,
+        ]
+    )
+    for row in rows:
+        row["ceiling_bpm"] = 158 if 6 <= row["split_index"] <= 8 else 150
+    return rows
+
+
+@pytest.mark.unit
+def test_ceiling_touch_uses_segment_ceiling() -> None:
+    """An MP kilometre at 155 under its own 158 ceiling is not a touch."""
+    splits = _long_run_with_mp_block()
+
+    moments = detect_moments(splits, hr_ceiling=150)
+
+    assert "ceiling_touch" not in [m["kind"] for m in moments]
+
+    # Without the per-step ceilings the same kilometres are read against 150.
+    plain = [{k: v for k, v in row.items() if k != "ceiling_bpm"} for row in splits]
+    assert "ceiling_touch" in [m["kind"] for m in detect_moments(plain, hr_ceiling=150)]
+
+
+@pytest.mark.unit
+def test_ceiling_touch_reports_the_segment_ceiling() -> None:
+    """A touch on an aligned kilometre quotes the ceiling it was judged on."""
+    splits = _long_run_with_mp_block()
+    for row in splits[5:8]:
+        row["avg_hr"] = 159.0
+        row["max_hr"] = 162.0
+
+    touch = next(
+        m
+        for m in detect_moments(splits, hr_ceiling=150)
+        if m["kind"] == "ceiling_touch"
+    )
+
+    assert touch["facts"]["hr_ceiling"] == 158
+
+
+@pytest.mark.unit
+def test_relabel_aligned_splits_roles_and_ceilings() -> None:
+    """Aligned laps take the prescribed step's role and ceiling; others are kept."""
+    splits = [
+        {"split_index": 1, "role_phase": "run"},
+        {"split_index": 2, "role_phase": "recovery"},
+        {"split_index": 3, "role_phase": "run"},
+        {"split_index": 4, "role_phase": "run"},
+        {"split_index": 5, "role_phase": "run"},
+    ]
+    steps = {
+        1: {"step_type": "warmup", "stride": False, "hr_high": None},
+        2: {"step_type": "run", "stride": False, "hr_high": 150},
+        3: {"step_type": "run", "stride": True, "hr_high": None},
+        4: {"step_type": "rest", "stride": False, "hr_high": None},
+    }
+
+    told = run_moments.relabel_aligned_splits(splits, steps)
+
+    assert [row["role_phase"] for row in told] == [
+        "warmup",
+        "run",
+        "stride",
+        "recovery",
+        "run",
+    ]
+    assert [row.get("ceiling_bpm", "absent") for row in told] == [
+        None,
+        150,
+        None,
+        None,
+        "absent",
+    ]
+    # Nothing is written back into the input rows.
+    assert splits[1]["role_phase"] == "recovery"

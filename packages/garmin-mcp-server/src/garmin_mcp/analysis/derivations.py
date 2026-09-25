@@ -8,14 +8,17 @@ the LLM risks hallucinated "achieved" verdicts (Issue #671).
 """
 
 import copy
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from garmin_mcp.analysis.prescription_shape import expected_minutes
 from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.run_purpose import LONG_RUN_MIN_MINUTES
 from garmin_mcp.utils.week import week_bounds
+
+if TYPE_CHECKING:  # plan_axes imports this module's ceiling thresholds
+    from garmin_mcp.analysis.plan_axes import AxisResult
 
 # Fallback Japanese labels by workout_type when planned_workouts.description_ja
 # is null. Mirrors the mapping the agent previously held inline (Issue #671).
@@ -1191,6 +1194,73 @@ def _format_volume(value: float, unit: str) -> str:
     return f"{value:.1f}{unit}" if unit == "km" else f"{value:.0f}{unit}"
 
 
+def verdict_symbol(severity: int) -> str:
+    """``✅`` / ``🟡`` / ``🔴`` for a severity of 0 / 1 / 2 (clamped)."""
+    return _VERDICT_BY_SEVERITY[max(0, min(severity, len(_VERDICT_BY_SEVERITY) - 1))]
+
+
+def judge_hr_ceiling(
+    hr_high: float | None,
+    avg_hr: float | None,
+    ceiling_over: Mapping[str, Any] | None,
+    *,
+    hr_tolerance_bpm: int = 3,
+) -> tuple[bool | None, int, str | None]:
+    """Judge a whole-run HR ceiling: ``(kept, severity, reason)``.
+
+    The rule of :func:`compute_prescription_verdict` (#1357), shared with the
+    run report's legacy ``hr_ceiling`` axis so the two cannot drift: an
+    average more than :data:`_HR_RED_OVER_BPM` over the ceiling is 🔴; with
+    ``ceiling_over`` the ceiling is kept unless more than
+    :data:`HR_CEILING_OFF_PCT` of the judged time AND at least
+    :data:`HR_CEILING_OFF_SECONDS` sat above it; without it the average
+    decides (``avg_hr <= hr_high + hr_tolerance_bpm``).
+
+    Returns:
+        ``kept`` is ``None`` when nothing could be judged (no ceiling, no
+        average and no time above it); ``severity`` is 0 / 1 / 2; ``reason`` is
+        the Japanese sentence for a ceiling not kept, else ``None``.
+    """
+    over_seconds = _as_float((ceiling_over or {}).get("seconds_over"))
+    over_pct = _as_float((ceiling_over or {}).get("pct_over"))
+    if hr_high is None:
+        return None, 0, None
+    if avg_hr is not None and avg_hr - hr_high > _HR_RED_OVER_BPM:
+        return (
+            False,
+            2,
+            f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
+            f"{avg_hr - hr_high:.0f}bpm 超えました。",
+        )
+    if over_seconds is not None and over_pct is not None:
+        kept = not (
+            over_pct > HR_CEILING_OFF_PCT and over_seconds >= HR_CEILING_OFF_SECONDS
+        )
+        if kept:
+            return True, 0, None
+        return (
+            False,
+            1,
+            f"上限 {hr_high:.0f}bpm を超えた時間が "
+            f"{_format_over_time(over_seconds)}（{over_pct:g}%）ありました。",
+        )
+    if avg_hr is not None:
+        if avg_hr - hr_high <= hr_tolerance_bpm:
+            return True, 0, None
+        return (
+            False,
+            1,
+            f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
+            f"{avg_hr - hr_high:.0f}bpm 上回りました。",
+        )
+    return None, 0, None
+
+
+#: Plan-axis statuses that are a deviation (the others are on plan or were
+#: not judged).
+_DEVIATION_STATUSES: frozenset[str] = frozenset({"off_plan", "short", "missing"})
+
+
 def compute_prescription_verdict(
     prescription: dict[str, Any] | None,
     actual: dict[str, Any],
@@ -1199,6 +1269,7 @@ def compute_prescription_verdict(
     jog_avg_hr: float | None = None,
     outcome: Outcome | None = None,
     ceiling_over: Mapping[str, Any] | None = None,
+    axes: "Sequence[AxisResult] | None" = None,
 ) -> dict[str, Any] | None:
     """Judge a run against the session prescribed for that day.
 
@@ -1248,6 +1319,14 @@ def compute_prescription_verdict(
             (no time series, no zones) the average decides:
             ``avg_hr <= hr_high + hr_tolerance_bpm``. Either way an average
             more than 10 bpm over the ceiling is 🔴.
+        axes: The plan-check axes already judged for this run (#1406): the
+            structure-derived ones of ``plan_axes.evaluate_structure_axes``,
+            or the run report's legacy ceiling / continuity / strides axes.
+            When given, ``jog_avg_hr`` / ``outcome`` / ``ceiling_over`` are
+            not consulted: the verdict is the worst of intensity, volume and
+            every axis's ``severity`` (strides included), and ``on_plan``
+            names every axis whose status is ``on_plan``. An ``insufficient``
+            axis is neither on plan nor a deviation.
 
     Returns:
         ``{"verdict", "prescription_title", "reasons": [str, ...], "on_plan":
@@ -1257,7 +1336,10 @@ def compute_prescription_verdict(
         ``hr_ceiling`` / ``continuity``, or ``rest`` for a rest day taken), so
         the narration
         layer can tell "89% of target" inside the tolerance band from a real
-        shortfall (Issue #1086).
+        shortfall (Issue #1086). With ``axes`` the dict also carries
+        ``axis_severity`` -- ``{axis: 0 | 1 | 2}`` for ``intensity_class``,
+        ``volume`` (when judged) and every axis -- so each plan-card row can
+        show its own symbol.
     """
     if not prescription:
         return None
@@ -1318,6 +1400,8 @@ def compute_prescription_verdict(
                 "強度を下げています。"
             )
 
+    intensity_severity = severity
+
     # 3. Volume (only meaningful when the session type matched).
     volume = None if class_mismatch else _volume_comparison(prescription, actual)
     if volume is not None:
@@ -1346,42 +1430,36 @@ def compute_prescription_verdict(
                 f"処方 {target_s} に対し実施 {done_s}（{pct}%）で不足しています。"
             )
 
-    # 4. HR ceiling: a guard, judged on the time spent above it (#1357); the
-    #    average only decides the risk-side 🔴 and, without a time series,
-    #    the whole axis.
+    volume_on_plan = volume is not None and _VOLUME_OK_LOW <= volume[0] <= (
+        _VOLUME_OK_HIGH
+    )
     hr_high = _as_float(prescription.get("hr_high"))
     over_seconds = _as_float((ceiling_over or {}).get("seconds_over"))
     over_pct = _as_float((ceiling_over or {}).get("pct_over"))
-    hr_ceiling_kept: bool | None = None
-    if (
-        hr_high is not None
-        and avg_hr is not None
-        and (avg_hr - hr_high > _HR_RED_OVER_BPM)
-    ):
-        hr_ceiling_kept = False
-        severity = 2
-        reasons.append(
-            f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
-            f"{avg_hr - hr_high:.0f}bpm 超えました。"
+
+    # With the structure-derived axes (#1406) every axis beyond intensity and
+    # volume -- ceiling, bands, stages, reps, strides, continuity -- was judged
+    # already, and the verdict is simply the worst of them all.
+    if axes is not None:
+        return _verdict_from_axes(
+            title,
+            severity,
+            reasons,
+            axes,
+            intensity_severity=intensity_severity,
+            volume=volume,
+            volume_on_plan=volume_on_plan,
         )
-    elif hr_high is not None and over_seconds is not None and over_pct is not None:
-        hr_ceiling_kept = not (
-            over_pct > HR_CEILING_OFF_PCT and over_seconds >= HR_CEILING_OFF_SECONDS
-        )
-        if not hr_ceiling_kept:
-            severity = max(severity, 1)
-            reasons.append(
-                f"上限 {hr_high:.0f}bpm を超えた時間が "
-                f"{_format_over_time(over_seconds)}（{over_pct:g}%）ありました。"
-            )
-    elif hr_high is not None and avg_hr is not None:
-        hr_ceiling_kept = avg_hr - hr_high <= hr_tolerance_bpm
-        if not hr_ceiling_kept:
-            severity = max(severity, 1)
-            reasons.append(
-                f"平均HR {avg_hr:.0f}bpm が処方上限 {hr_high:.0f}bpm を "
-                f"{avg_hr - hr_high:.0f}bpm 上回りました。"
-            )
+
+    # 4. HR ceiling: a guard, judged on the time spent above it (#1357); the
+    #    average only decides the risk-side 🔴 and, without a time series,
+    #    the whole axis.
+    hr_ceiling_kept, ceiling_severity, ceiling_reason = judge_hr_ceiling(
+        hr_high, avg_hr, ceiling_over, hr_tolerance_bpm=hr_tolerance_bpm
+    )
+    severity = max(severity, ceiling_severity)
+    if ceiling_reason is not None:
+        reasons.append(ceiling_reason)
 
     # 5. Continuity (#1353): did the run deliver the prescription's purpose?
     if outcome is not None and not outcome.met:
@@ -1398,9 +1476,6 @@ def compute_prescription_verdict(
     on_plan: list[str] = []
     if not class_mismatch:
         on_plan.append("intensity_class")
-    volume_on_plan = volume is not None and _VOLUME_OK_LOW <= volume[0] <= (
-        _VOLUME_OK_HIGH
-    )
     if volume_on_plan:
         on_plan.append("volume")
     if hr_ceiling_kept:
@@ -1430,6 +1505,62 @@ def compute_prescription_verdict(
         "prescription_title": title,
         "reasons": reasons,
         "on_plan": on_plan,
+    }
+
+
+def _verdict_from_axes(
+    title: str,
+    severity: int,
+    reasons: list[str],
+    axes: "Sequence[AxisResult]",
+    *,
+    intensity_severity: int,
+    volume: tuple[float, str, float, float] | None,
+    volume_on_plan: bool,
+) -> dict[str, Any]:
+    """The verdict as the worst of intensity, volume and the judged axes.
+
+    ``severity`` / ``reasons`` already carry intensity and volume; every axis
+    adds its own severity, and a deviating axis its own reason.
+    """
+    axis_severity: dict[str, int] = {"intensity_class": intensity_severity}
+    on_plan: list[str] = []
+    if intensity_severity == 0:
+        on_plan.append("intensity_class")
+    if volume is not None:
+        ratio = volume[0]
+        axis_severity["volume"] = (
+            2 if ratio > _VOLUME_RED_HIGH else 0 if volume_on_plan else 1
+        )
+    if volume_on_plan:
+        on_plan.append("volume")
+
+    for axis in axes:
+        axis_severity[axis.axis] = int(axis.severity)
+        severity = max(severity, int(axis.severity))
+        if axis.status == "on_plan":
+            on_plan.append(axis.axis)
+        elif axis.status in _DEVIATION_STATUSES:
+            reasons.append(
+                f"{axis.label_ja}: 処方 {axis.target} に対し {axis.actual}。"
+            )
+
+    if severity == 0:
+        details: list[str] = []
+        if volume is not None:
+            details.append(
+                f"量 {round(volume[0] * 100)}%"
+                f"（許容 {round(_VOLUME_OK_LOW * 100)}-{round(_VOLUME_OK_HIGH * 100)}%）"
+            )
+        suffix = f"（{'、'.join(details)}）" if details else ""
+        reasons.append(f"処方「{title}」どおりに実施できています{suffix}。")
+
+    return {
+        "verdict": verdict_symbol(severity),
+        "prescription_title": title,
+        "reasons": reasons,
+        "on_plan": on_plan,
+        "axis_severity": axis_severity,
     }
 
 

@@ -109,12 +109,16 @@ def test_run_report_headline_no_flags(reader_db_path: Path) -> None:
     assert report["plan"]["verdict"] == "✅"
     assert report["plan"]["title"] == "イージー 8km"
     volume = next(c for c in report["plan"]["checks"] if c["axis"] == "volume")
+    # Every row has the AxisResult shape (#1406).
     assert volume == {
         "axis": "volume",
+        "label_ja": "量",
         "target": "8.0km",
         "actual": "8.1km（101%）",
         "status": "on_plan",
         "on_plan": True,
+        "verdict": "✅",
+        "segments": [],
     }
 
 

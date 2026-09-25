@@ -204,21 +204,36 @@ an LLM (Epic #1247).
 
 **Only two judgements exist on a single run**, and neither is a grade:
 
-1. **Plan vs actual** — `compute_prescription_verdict` scores the day's
-   prescription axis by axis (`target` / `actual` / `on_plan`, plus the HR
-   ceiling's `seconds_over` / `pct_over`) into ✅ / 🟡 / 🔴. With a
-   prescription the purpose is the prescription's, so delivering it is an
-   axis too: `continuity` is on plan when the run held its effort to the end
-   and 🟡 when it came apart (#1353, from `analysis/purpose_outcome.py`).
-   `plan` is `null` when the day carried no prescription; `purpose.outcome`
-   then answers the same question against the inferred purpose. The ceiling
-   is a guard, so it is judged on the time spent above it, not the average
-   (#1357): off plan when more than 5% of the steady time and at least 5
-   minutes sat above it; an average more than 10 bpm over stays 🔴. Only
-   steady running counts (`analysis/hr_windows.py`): stops, auto-pause resumes, bursts
-   and stride / recovery laps are masked together with the HR recovery after
-   each, read off the HR trace; `judged_share` reports how much of the run was
-   left, and form signals are not judged below half.
+1. **Plan vs actual** — the axes are derived from what the prescription's
+   steps asked for (#1406). The step structure is the stored one, or the one
+   `analysis/workout_structure.py` synthesizes for a legacy row;
+   `analysis/workout_alignment.py` matches it to the laps through their
+   `workout_step_index`, and `analysis/plan_axes.py` judges each kind of step
+   as its own axis — `hr_ceiling` per step, `hr_band` / `hr_band_2` …,
+   `stages` for an ascending build-up, `pace_band`, `reps` / `strides`,
+   `continuity` for a single steady step. When the laps cannot be matched the
+   axes are `insufficient` (not judged, never a growth point). A legacy easy /
+   long / recovery row keeps exactly its old axes (whole-run ceiling,
+   continuity, stride-lap count). `compute_prescription_verdict` adds
+   intensity and volume and takes the worst of every row — strides included —
+   into ✅ / 🟡 / 🔴; each `plan.checks` row is `{axis, label_ja, target,
+   actual, status, on_plan, verdict, segments}`. Aligned laps are also
+   relabelled at report time (a work step is `run`, or `stride` inside an easy
+   strides block; recovery / rest is `recovery`) and carry their step's
+   `ceiling_bpm`, so a marathon-pace kilometre is not a ceiling touch against
+   the easy ceiling. With a prescription the purpose is the prescription's, so
+   delivering it is an axis too: `continuity` is on plan when the run held its
+   effort to the end and 🟡 when it came apart (#1353, from
+   `analysis/purpose_outcome.py`; a per-step structure reads it on the steady
+   step's own laps). `plan` is `null` when the day carried no prescription;
+   `purpose.outcome` then answers the same question against the inferred
+   purpose. The ceiling is a guard, so it is judged on the time spent above
+   it, not the average (#1357): off plan when more than 5% of the steady time
+   and at least 5 minutes sat above it; an average more than 10 bpm over stays
+   🔴. Only steady running counts (`analysis/hr_windows.py`): stops, auto-pause
+   resumes, bursts and stride / recovery laps are masked together with the HR
+   recovery after each, read off the HR trace; `judged_share` reports how much
+   of the run was left, and form signals are not judged below half.
 2. **Today vs the athlete's own normal range** — per metric, not against a
    population or a fixed band.
 

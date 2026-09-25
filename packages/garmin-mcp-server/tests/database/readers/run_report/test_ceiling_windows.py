@@ -220,4 +220,7 @@ def test_plan_block_hr_ceiling_off_by_time_over(reader_db_path: Path) -> None:
     row = _ceiling_row(report)
     assert row["on_plan"] is False
     assert row["status"] == "off_plan"
+    # The row carries its own symbol, the verdict is the worst row (#1406).
+    assert row["verdict"] == "🟡"
+    assert row["label_ja"] == "心拍上限"
     assert report["plan"]["verdict"] == "🟡"
