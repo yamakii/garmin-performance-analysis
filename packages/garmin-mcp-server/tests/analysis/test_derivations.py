@@ -503,6 +503,53 @@ def test_verdict_yellow_easy_instead_of_threshold() -> None:
 
 
 @pytest.mark.unit
+def test_verdict_volume_counts_bookends() -> None:
+    """A 20-min threshold body run with its 15-min bookends is 100%, not 175%."""
+    verdict = compute_prescription_verdict(
+        {"session_type": "threshold", "title": "閾値 20分", "target_minutes": 20.0},
+        {
+            "distance_km": 6.5,
+            "duration_min": 35.0,
+            "avg_hr": 160,
+            "training_type": "lactate_threshold",
+        },
+    )
+
+    assert verdict is not None
+    assert verdict["verdict"] == "✅"
+    assert "volume" in verdict["on_plan"]
+    assert not any("175" in reason for reason in verdict["reasons"])
+
+
+@pytest.mark.unit
+def test_verdict_volume_uses_registered_bookends() -> None:
+    """Recorded bookends (20 min) replace the constant: 35 / 40 min = 88%."""
+    from garmin_mcp.analysis.derivations import _volume_comparison
+
+    prescription = {
+        "session_type": "threshold",
+        "title": "閾値 20分",
+        "target_minutes": 20.0,
+        "registered_bookend_minutes": 20,
+    }
+    actual = {
+        "distance_km": 6.5,
+        "duration_min": 35.0,
+        "avg_hr": 160,
+        "training_type": "lactate_threshold",
+    }
+    verdict = compute_prescription_verdict(prescription, actual)
+
+    assert verdict is not None
+    assert verdict["verdict"] == "✅"
+    assert "volume" in verdict["on_plan"]
+    volume = _volume_comparison(prescription, actual)
+    assert volume is not None
+    assert round(volume[0] * 100) == 88
+    assert volume[2] == 40.0
+
+
+@pytest.mark.unit
 def test_verdict_none_without_prescription() -> None:
     """An unprescribed day yields no verdict at all."""
     assert (

@@ -14,6 +14,7 @@ from garmin_mcp.analysis.prescription_shape import (
     WARMUP_MINUTES,
     bookend_minutes,
     bookend_minutes_from_steps,
+    expected_minutes,
     strides_block_seconds,
 )
 
@@ -32,6 +33,41 @@ def test_bookend_minutes_easy_types_and_none() -> None:
     """Easy-effort sessions (and unknown/None types) carry no bookends."""
     for session_type in ("easy", "long", "recovery", "rest", "strides", None):
         assert bookend_minutes(session_type) == 0
+
+
+@pytest.mark.unit
+def test_expected_minutes_threshold_adds_standard_bookends() -> None:
+    """A 20-min threshold body without recorded bookends expects 35 min."""
+    row = {
+        "session_type": "threshold",
+        "target_minutes": 20,
+        "registered_bookend_minutes": None,
+    }
+    assert expected_minutes(row) == 35.0
+
+
+@pytest.mark.unit
+def test_expected_minutes_prefers_registered_bookends() -> None:
+    """Recorded bookends (a hand-built 20 min) win over the constant 15."""
+    row = {
+        "session_type": "threshold",
+        "target_minutes": 20,
+        "registered_bookend_minutes": 20,
+    }
+    assert expected_minutes(row) == 40.0
+
+
+@pytest.mark.unit
+def test_expected_minutes_easy_has_no_bookends() -> None:
+    """An easy row's target_minutes is already the run total."""
+    assert expected_minutes({"session_type": "easy", "target_minutes": 35}) == 35.0
+
+
+@pytest.mark.unit
+def test_expected_minutes_none_without_target() -> None:
+    """No target_minutes, nothing to expect."""
+    row = {"session_type": "threshold", "target_minutes": None}
+    assert expected_minutes(row) is None
 
 
 @pytest.mark.unit

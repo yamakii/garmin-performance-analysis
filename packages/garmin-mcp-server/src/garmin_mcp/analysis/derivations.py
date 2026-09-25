@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
 
+from garmin_mcp.analysis.prescription_shape import expected_minutes
 from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.run_purpose import LONG_RUN_MIN_MINUTES
 from garmin_mcp.utils.week import week_bounds
@@ -1149,7 +1150,11 @@ def _volume_comparison(
     """Compare the run's volume against the prescribed one.
 
     Distance is preferred when the prescription names ``target_km``; otherwise
-    the prescribed ``target_minutes`` is compared against the run's duration.
+    the run's duration is compared against
+    :func:`~garmin_mcp.analysis.prescription_shape.expected_minutes` --
+    ``target_minutes`` plus the warmup/cooldown a quality workout carries, the
+    same figure the reconciler judges against (Issue #1399). Without it a
+    20-minute threshold run done as registered (35 minutes) read 175%.
 
     Returns:
         ``(ratio, unit, target, actual)`` or ``None`` when the prescription
@@ -1160,7 +1165,11 @@ def _volume_comparison(
     if target_km and target_km > 0 and distance_km is not None:
         return distance_km / target_km, "km", target_km, distance_km
 
-    target_min = _as_float(prescription.get("target_minutes"))
+    target_min = (
+        expected_minutes(prescription)
+        if _as_float(prescription.get("target_minutes"))
+        else None
+    )
     duration_min = _as_float(actual.get("duration_min"))
     if target_min and target_min > 0 and duration_min is not None:
         return duration_min / target_min, "分", target_min, duration_min

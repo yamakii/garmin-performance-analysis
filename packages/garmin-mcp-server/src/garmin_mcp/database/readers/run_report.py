@@ -68,6 +68,7 @@ from garmin_mcp.analysis.hr_windows import (
     steady_mask,
 )
 from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
+from garmin_mcp.analysis.prescription_shape import expected_minutes
 from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.purpose_outcome import evaluate as evaluate_outcome
 from garmin_mcp.analysis.run_moments import (
@@ -1805,14 +1806,20 @@ def _volume_texts(
     """``("8.0km", "8.1km（101%）")`` for the prescribed volume, or no target.
 
     Distance is preferred when the prescription names ``target_km``, matching
-    the order ``compute_prescription_verdict`` compares them in.
+    the order ``compute_prescription_verdict`` compares them in. Minutes are
+    the expected duration with the quality workout's warmup/cooldown included
+    (``prescription_shape.expected_minutes``), so the card's % is the verdict's.
     """
     target_km = _as_float(prescription.get("target_km"))
     distance_km = _as_float(today.get("distance_km"))
     if target_km and target_km > 0:
         return f"{target_km:.1f}km", _with_pct(distance_km, target_km, "km")
 
-    target_min = _as_float(prescription.get("target_minutes"))
+    target_min = (
+        expected_minutes(prescription)
+        if _as_float(prescription.get("target_minutes"))
+        else None
+    )
     duration_min = _as_float(today.get("duration_min"))
     if target_min and target_min > 0:
         return f"{target_min:.0f}分", _with_pct(duration_min, target_min, "分")
