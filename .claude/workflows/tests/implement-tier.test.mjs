@@ -13,9 +13,10 @@ const src = readFileSync(new URL('../implement-tier.js', import.meta.url), 'utf8
 const m = src.match(/\/\/ >>> testable\n([\s\S]*?)\n\s*\/\/ <<< testable/)
 assert.ok(m, 'testable block markers not found in implement-tier.js')
 // eslint-disable-next-line no-new-func
-const { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel } = new Function(
-  `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel }`,
-)()
+const { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel, extractMergeGate } =
+  new Function(
+    `${m[1]}\nreturn { normalizeArgs, mergeDecision, pushCmd, mergeResult, levelFromChangedFiles, withComputedLevel, extractMergeGate }`,
+  )()
 
 test('normalizeArgs parses a JSON string (the #441 regression)', () => {
   const out = normalizeArgs('{"owner":"yamakii","issues":[{"number":1}]}')
@@ -63,6 +64,44 @@ test('test_matching_level_merges: 申告 L2 + web change + all-green → ok', ()
   const acc = greenAcc(['packages/garmin-web/frontend/src/App.tsx'], 'L2')
   const d = mergeDecision(acc)
   assert.equal(d.ok, true, 'matching declared level with green gates should merge')
+})
+
+// #1425: an issue body's `## Merge gate` stops auto-merge.
+const GATED_BODY = [
+  '## Summary',
+  'x',
+  '## Merge gate (spike)',
+  'run the first strides workout',
+  'check idx',
+  '## Dependencies',
+  '- Blocked by: #1',
+].join('\n')
+
+test('test_extract_merge_gate_reads_section_until_next_heading', () => {
+  assert.equal(extractMergeGate(GATED_BODY), 'run the first strides workout\ncheck idx')
+})
+
+test('test_extract_merge_gate_absent_returns_null', () => {
+  assert.equal(extractMergeGate('## Summary\nx\n## Dependencies\n- none'), null)
+  assert.equal(extractMergeGate('## Merge gate\n\n## Dependencies\n- none'), null)
+  assert.equal(extractMergeGate(undefined), null)
+})
+
+test('test_merge_decision_escalates_on_merge_gate', () => {
+  const d = mergeDecision(greenAcc(['packages/x.py'], 'L2'), extractMergeGate(GATED_BODY))
+  assert.equal(d.ok, false)
+  assert.match(d.reason, /merge gate: run the first strides workout/)
+})
+
+test('test_merge_decision_ignores_absent_gate', () => {
+  assert.equal(mergeDecision(greenAcc(['packages/x.py'], 'L2'), null).ok, true)
+})
+
+test('test_merge_decision_failure_wins_over_gate', () => {
+  const acc = { ...greenAcc(['packages/x.py'], 'L2'), ship: { ...GREEN_SHIP, ci_conclusion: 'failure' } }
+  const d = mergeDecision(acc, 'run the first strides workout')
+  assert.equal(d.ok, false)
+  assert.equal(d.reason, 'ci-guard が failure')
 })
 
 test('test_with_computed_level_overrides_declared_level', () => {

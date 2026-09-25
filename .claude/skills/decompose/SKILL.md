@@ -134,11 +134,17 @@ Part of #{Epic番号}: {Epic タイトル}
 ### Integration
 - [ ] `test_e2e_scenario` [integration] -- {setup} → {assertion}
 
+## Merge gate
+{任意。マージ前に必ず満たす条件（例: 実データでの spike 確認）。無ければ節ごと削除する}
+
 ## Dependencies
 - Blocks: #{依存先のsub-issue番号}
 - Blocked by: #{依存元のsub-issue番号}"""
 )
 ```
+
+> `## Merge gate` 節を書いた Issue は、`/implement` が検証・CI の通過後も auto-merge せずメインセッションに
+> escalate する（#1425）。条件が無い Issue では節ごと削除する（空の節は無視される）。
 
 #### 5c: ネイティブ sub-issue リンク + Epic 本文の参照更新
 
