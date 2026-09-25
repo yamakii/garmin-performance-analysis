@@ -157,6 +157,12 @@ function StatusTag({ check }: { check: PlanCheckRow }) {
  * One line per prescribed step under a stages / reps / hr_band row: the
  * step's name, its target band, what was run and a ✅ / 🟡 badge. A missed
  * step is 🟡, never 🔴 -- the axis verdict already carries the severity.
+ *
+ * At `md`+ the list and each line are `display: contents`, so the four cells
+ * sit in the plan table's own 項目 / 目標 / 実績 / 状態 tracks -- the same
+ * reason `CheckRow` shares the grid (#1270). A grid of its own sized its
+ * columns off its own text and left the steps' targets and actuals out of line
+ * with the table above (#1419).
  */
 function StepList({
   label,
@@ -168,21 +174,33 @@ function StepList({
   return (
     <ul
       aria-label={`${label}の内訳`}
-      className="order-5 col-span-2 flex flex-col gap-0.5 pb-1 font-mono text-xs md:order-none md:col-span-4 md:border-b md:border-hairline md:pb-3 md:pl-[96px]"
+      className="order-5 col-span-2 flex flex-col gap-0.5 pb-1 font-mono text-[13px] md:contents"
     >
-      {segments.map((segment, index) => (
-        <li
-          key={`${segment.segment_id}-${index}`}
-          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-baseline gap-x-2"
-        >
-          <span className="truncate text-ink-muted">{segment.label}</span>
-          <span className="text-ink-soft">{segment.target}</span>
-          <span className="text-ink">{segment.actual}</span>
-          <span aria-label={segment.on_plan ? "計画どおり" : "ずれ"}>
-            {segment.on_plan ? "✅" : "🟡"}
-          </span>
-        </li>
-      ))}
+      {segments.map((segment, index) => {
+        // The hairline that closes the row goes under the last step only.
+        const cell =
+          index === segments.length - 1
+            ? "md:border-b md:border-hairline md:pb-3 md:pr-3"
+            : "md:pb-1 md:pr-3";
+        return (
+          <li
+            key={`${segment.segment_id}-${index}`}
+            className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-baseline gap-x-2 md:contents"
+          >
+            <span className={`truncate text-ink-muted md:pl-3 ${cell}`}>
+              {segment.label}
+            </span>
+            <span className={`text-ink-soft ${cell}`}>{segment.target}</span>
+            <span className={`text-ink ${cell}`}>{segment.actual}</span>
+            <span
+              className={cell}
+              aria-label={segment.on_plan ? "計画どおり" : "ずれ"}
+            >
+              {segment.on_plan ? "✅" : "🟡"}
+            </span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -271,8 +289,8 @@ function CheckRow({
       >
         <StatusTag check={check} />
       </div>
-      {/* The step list spans the whole row at `md`+ (a fifth cell of the
-          shared grid set to every track) and sits last when stacked. */}
+      {/* The step list adds one table line per step at `md`+ (its cells join
+          the shared grid) and sits last when stacked. */}
       {steps.length > 0 && <StepList label={label} segments={steps} />}
     </div>
   );

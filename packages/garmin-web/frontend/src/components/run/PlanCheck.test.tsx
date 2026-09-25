@@ -472,6 +472,32 @@ describe("structure-derived axes (#1407)", () => {
     }
   });
 
+  it("step rows share the plan table grid", () => {
+    // jsdom does no layout, so this pins the mechanism (#1419): at md+ the list
+    // and each step are display:contents, so a step's four cells fall into the
+    // table's 項目 / 目標 / 実績 / 状態 tracks instead of a grid of their own.
+    render(<PlanCheck plan={{ ...PLAN, checks: [STAGES_ROW] }} />);
+
+    const list = screen.getByRole("list", {
+      name: "段階的ビルドアップの内訳",
+    });
+    expect(list.className).toContain("md:contents");
+    expect(list.className).not.toContain("md:pl-[96px]");
+    const items = within(list).getAllByRole("listitem");
+    for (const item of items) {
+      expect(item.className).toContain("md:contents");
+      expect(item.children).toHaveLength(4);
+    }
+    const [label, target, actual, badge] = Array.from(items[0].children);
+    expect(label).toHaveTextContent("第1段");
+    expect(target).toHaveTextContent("130-140 bpm");
+    expect(actual).toHaveTextContent("135 bpm");
+    expect(badge).toHaveTextContent("✅");
+    // Only the last step closes the row with the hairline.
+    expect(items[0].children[1].className).not.toContain("md:border-b");
+    expect(items[4].children[1].className).toContain("md:border-b");
+  });
+
   it("marks an off-band step with 🟡 on reps and hr_band rows", () => {
     render(
       <PlanCheck
