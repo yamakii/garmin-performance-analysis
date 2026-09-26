@@ -4,11 +4,15 @@ Reads the athlete's current focus, race goals, and season retrospectives from
 the three athlete-centric tables (``athlete_profile``, ``athlete_goals``,
 ``season_retrospectives``). Registration/updates are owned by the CLI
 (``/set-goal``); the Web app is display-only.
+
+The profile prose is served without emoji (Issue #1428): a profile saved before
+the write gate existed may still carry some.
 """
 
 import datetime as _dt
 
 import duckdb
+from garmin_mcp.validation.pictographs import strip_pictographs
 
 _SELECT_PROFILE = """
     SELECT current_focus, focus_notes, updated_at
@@ -92,8 +96,12 @@ def get_goal(
         }
     else:
         profile = {
-            "current_focus": profile_row[0],
-            "focus_notes": profile_row[1],
+            "current_focus": (
+                strip_pictographs(profile_row[0]) if profile_row[0] else profile_row[0]
+            ),
+            "focus_notes": (
+                strip_pictographs(profile_row[1]) if profile_row[1] else profile_row[1]
+            ),
             "updated_at": (str(profile_row[2]) if profile_row[2] is not None else None),
         }
 

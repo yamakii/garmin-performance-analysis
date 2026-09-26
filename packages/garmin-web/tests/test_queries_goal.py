@@ -1,5 +1,6 @@
 """Integration tests for garmin_web.queries.goal.get_goal."""
 
+import duckdb
 import pytest
 from garmin_mcp.database.connection import get_connection
 
@@ -44,3 +45,22 @@ def test_get_goal_empty(empty_goal_db_path):
     assert result["profile"]["current_focus"] is None
     assert result["profile"]["focus_notes"] is None
     assert result["profile"]["updated_at"] is None
+
+
+@pytest.mark.integration
+def test_goal_focus_notes_strips_pictographs(goal_db_path):
+    """A profile saved before the write gate is served without emoji (#1428)."""
+    conn = duckdb.connect(str(goal_db_path))
+    try:
+        conn.execute(
+            "UPDATE athlete_profile SET current_focus = ?, focus_notes = ?",
+            ["🏃 持久力強化", "🟢絞る週（安定週） 🟡維持週（ロング更新週）"],
+        )
+    finally:
+        conn.close()
+
+    with get_connection(goal_db_path) as read_conn:
+        profile = get_goal(read_conn)["profile"]
+
+    assert profile["current_focus"] == "持久力強化"
+    assert profile["focus_notes"] == "絞る週（安定週） 維持週（ロング更新週）"

@@ -27,6 +27,8 @@ from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from garmin_mcp.validation.pictographs import reject_pictographs
+
 logger = logging.getLogger(__name__)
 
 #: Phases a training block may declare.
@@ -470,8 +472,12 @@ def insert_training_blocks(
 
     Raises:
         ValueError: On an invalid phase, an inverted date range, or a ladder
-            step without ``week_start`` / a single target.
+            step without ``week_start`` / a single target, or emoji in any
+            block text (Issue #1428).
     """
+    # Block titles, purposes and notes are shown on the web Plan page.
+    reject_pictographs(blocks, where="save_training_blocks")
+
     if db_path is None:
         db_path = _default_db_path()
 
@@ -671,8 +677,13 @@ def insert_weekly_prescriptions(
             _validate_bookended_targets`), an invalid ``strides`` add-on, an
             unknown or incompatible ``purpose``, invalid ``allowances``, an
             invalid ``structure`` (or one combined with ``strides``), or a
-            revision that skips the review (see the revision guard above).
+            revision that skips the review (see the revision guard above), or
+            emoji anywhere but ``rating`` (Issue #1428).
     """
+    # ``rating`` is the verdict key the web maps to words; every other field
+    # (title, rationale, ...) is rendered as text.
+    reject_pictographs(prescriptions, where="save_weekly_prescriptions")
+
     if db_path is None:
         db_path = _default_db_path()
 

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.db_writer import GarminDBWriter
+from garmin_mcp.validation.pictographs import find_pictographs
 from garmin_mcp.validation.section_schemas import validate_section_data
 from garmin_mcp.validation.validators import check_run_note_grounding
 
@@ -73,6 +74,17 @@ def merge_section_analyses(temp_dir: Path, *, keep: bool = False) -> dict:
                     f"{section_type}: schema validation failed: {schema_errors}"
                 )
                 continue  # Do not insert a schema-invalid section.
+
+            # Guard 0b: the web app shows no emoji (Issue #1428). The writer
+            # refuses such prose too, but only this path can say where it is.
+            emoji_paths = find_pictographs(analysis_data)
+            if emoji_paths:
+                failed.append(section_type)
+                errors.append(
+                    f"{section_type}: emoji in prose at {', '.join(emoji_paths)}; "
+                    "write the word instead"
+                )
+                continue  # Do not insert prose the page would have to hide.
 
             if section_type == "run_note":
                 # The coach review is the only LLM-written part of the redesigned

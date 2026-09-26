@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import PlanCheck, { formatOverTime, outcomeText } from "./PlanCheck";
+import { expectNoPictographs } from "../../test/utils";
 import type { PlanCheckRow, RunPlan, RunPurpose } from "../../types";
 
 const PLAN: RunPlan = {
@@ -467,9 +468,10 @@ describe("structure-derived axes (#1407)", () => {
     expect(items[4]).toHaveTextContent("170-180 bpm");
     expect(items[4]).toHaveTextContent("174 bpm");
     for (const item of items) {
-      expect(item).toHaveTextContent("✅");
-      expect(item).not.toHaveTextContent("🟡");
+      expect(within(item).getByText("計画どおり")).toHaveClass("text-ink-muted");
+      expect(within(item).queryByText("ずれ")).toBeNull();
     }
+    expectNoPictographs(row);
   });
 
   it("step rows share the plan table grid", () => {
@@ -492,7 +494,7 @@ describe("structure-derived axes (#1407)", () => {
     expect(label).toHaveTextContent("第1段");
     expect(target).toHaveTextContent("130-140 bpm");
     expect(actual).toHaveTextContent("135 bpm");
-    expect(badge).toHaveTextContent("✅");
+    expect(badge).toHaveTextContent("計画どおり");
     // Only the last step closes the row with the hairline.
     expect(items[0].children[1].className).not.toContain("md:border-b");
     expect(items[4].children[1].className).toContain("md:border-b");
@@ -529,7 +531,9 @@ describe("structure-derived axes (#1407)", () => {
     }
   });
 
-  it("marks an off-band step with 🟡 on reps and hr_band rows", () => {
+  it("test_step_rows_use_word_tags_not_emoji", () => {
+    // An off-band step reads ずれ in the same warn voice as the axis rows,
+    // never a verdict emoji (#1428; #1407 had shipped ✅ / 🟡 badges here).
     render(
       <PlanCheck
         plan={{
@@ -566,9 +570,15 @@ describe("structure-derived axes (#1407)", () => {
 
     const row = screen.getByRole("group", { name: "本数" });
     const items = within(row).getAllByRole("listitem");
-    expect(items[0]).toHaveTextContent("✅");
-    expect(items[1]).toHaveTextContent("🟡");
+    expect(within(items[0]).getByText("計画どおり")).toHaveClass(
+      "text-ink-muted",
+    );
+    expect(within(items[1]).getByText("ずれ")).toHaveClass(
+      "font-bold",
+      "text-status-warn",
+    );
     expect(within(row).getByText("不足")).toHaveClass("text-status-warn");
+    expectNoPictographs(row);
   });
 
   it("renders insufficient as neutral", () => {
@@ -596,7 +606,6 @@ describe("structure-derived axes (#1407)", () => {
     expect(tag).toHaveClass("text-ink-muted");
     expect(tag).not.toHaveClass("text-status-warn");
     expect(within(row).queryByText("ずれ")).toBeNull();
-    expect(row).not.toHaveTextContent("✅");
-    expect(row).not.toHaveTextContent("🟡");
+    expectNoPictographs(row);
   });
 });

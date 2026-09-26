@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import SummaryReport from "./SummaryReport";
+import { expectNoPictographs } from "../../test/utils";
 
 // Real-schema mock (Spike #198: summary core keys at 100% occurrence).
 const baseData = {
@@ -253,7 +254,7 @@ describe("SummaryReport", () => {
         exact: false,
       });
       expect(line.textContent).toContain(marker);
-      expect(document.body.textContent).not.toMatch(/[✅🟡🔴]/u);
+      expectNoPictographs(document.body);
       unmount();
     }
   });

@@ -9,6 +9,7 @@ import logging
 from datetime import UTC, datetime
 
 from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.validation.pictographs import find_pictographs
 
 logger = logging.getLogger(__name__)
 
@@ -800,8 +801,18 @@ class GarminDBWriter:
                 (single-section write = its own version).
 
         Returns:
-            True if successful
+            True if successful; False (nothing written) when the prose carries
+            emoji, which the web app never shows (Issue #1428)
         """
+        emoji_paths = find_pictographs(analysis_data)
+        if emoji_paths:
+            logger.error(
+                "Refusing %s for %s: emoji in prose at %s",
+                section_type,
+                activity_id,
+                ", ".join(emoji_paths),
+            )
+            return False
         try:
             with get_write_connection(self.db_path) as conn:
                 # Start transaction

@@ -233,3 +233,48 @@ def test_list_weekly_review_versions_verdict_per_version(plan_conn):
         "イージー 8km",
     ]
     assert [v["review_data"]["prescription_batch_id"] for v in versions] == [9, 1]
+
+
+@pytest.mark.integration
+def test_weekly_review_prose_strips_pictographs(weekly_reviews_db_path):
+    """Prose saved before the write gate is served without emoji (#1428).
+
+    The verdict ``rating`` is the key the page maps to words, so it is kept.
+    """
+    conn = duckdb.connect(str(weekly_reviews_db_path))
+    try:
+        conn.execute(
+            "INSERT INTO weekly_reviews ("
+            "review_id, user_id, week_start_date, week_end_date, review_date,"
+            " review_data, created_at, agent_name, agent_version"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                1428,
+                "default",
+                "2026-07-06",
+                "2026-07-12",
+                "2026-07-06",
+                json.dumps(
+                    {
+                        "overall": "✅ロング復活",
+                        "recommendations": ["⚠️一方で2本目のTempoは外す"],
+                        "verdict": [{"rating": "✅", "comment": "🟡条件付き"}],
+                    },
+                    ensure_ascii=False,
+                ),
+                "2026-07-06 09:00:00",
+                "weekly-review",
+                "1.0",
+            ],
+        )
+    finally:
+        conn.close()
+
+    with get_connection(weekly_reviews_db_path) as read_conn:
+        review = get_weekly_review(read_conn, "2026-07-06")
+
+    assert review is not None
+    data = review["review_data"]
+    assert data["overall"] == "ロング復活"
+    assert data["recommendations"] == ["一方で2本目のTempoは外す"]
+    assert data["verdict"] == [{"rating": "✅", "comment": "条件付き"}]

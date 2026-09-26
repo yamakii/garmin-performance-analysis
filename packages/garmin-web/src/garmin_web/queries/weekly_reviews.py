@@ -9,14 +9,18 @@ converted to ``str`` so the result is JSON-serializable at the MCP/API boundary.
 rating, comment) lives in ``weekly_prescriptions`` only, so the verdict is
 projected from the batch linked to the review version — else the week's
 canonical batch, else the stored payload for pre-split reviews (Issue #1021).
-``garmin_web`` never imports ``garmin_mcp``, so this mirrors the derivation in
-``garmin_mcp.database.readers.athlete`` rather than sharing it.
+The derivation mirrors ``garmin_mcp.database.readers.athlete``.
+
+The page shows no emoji (Issue #1428). New prose is refused at save time, and
+versions saved before that gate are served with their emoji stripped; the
+verdict ``rating`` key is kept, since the page maps it to words.
 """
 
 import datetime as _dt
 import json
 
 import duckdb
+from garmin_mcp.validation.pictographs import strip_pictographs_deep
 
 _REVIEW_COLUMNS = (
     "review_id, user_id, week_start_date, week_end_date, review_date, "
@@ -82,7 +86,9 @@ def _review_row_to_dict(columns: list[str], row: tuple) -> dict:
         else:
             record[col] = value
     raw = record.get("review_data")
-    record["review_data"] = json.loads(raw) if raw is not None else None
+    record["review_data"] = (
+        strip_pictographs_deep(json.loads(raw)) if raw is not None else None
+    )
     return record
 
 

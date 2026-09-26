@@ -1,4 +1,7 @@
 import type { StatusTone } from "../components/StatusBadge";
+import { PICTOGRAPH_RE } from "./emoji";
+
+const PICTOGRAPHS = new RegExp(PICTOGRAPH_RE.source, "gu");
 
 /**
  * Verdict marks the weekly-review agent emits, with the status tone and the
@@ -24,13 +27,17 @@ export interface RatingMeta {
 /**
  * Tone + word for a verdict rating. The mark is matched by containment so a
  * decorated rating ("✅ 完了") still resolves; an unknown rating stays neutral
- * and keeps whatever text the agent wrote as its own label.
+ * and keeps whatever words the agent wrote as its own label -- without its
+ * emoji (#1428): pre-split reviews stored marks such as ⚪, and the site shows
+ * none. A rating that is nothing but an unknown mark reads 判定なし.
  */
 export function ratingMeta(rating: string): RatingMeta {
   const known = RATING_MARKS.find(({ mark }) => rating.includes(mark));
-  return known != null
-    ? { tone: known.tone, label: known.label }
-    : { tone: "info", label: rating };
+  if (known != null) {
+    return { tone: known.tone, label: known.label };
+  }
+  const words = rating.replace(PICTOGRAPHS, "").trim();
+  return { tone: "info", label: words === "" ? "判定なし" : words };
 }
 
 /** The marks in verdict order (good → warn → bad), with their words. */

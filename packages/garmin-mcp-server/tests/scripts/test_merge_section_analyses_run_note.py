@@ -216,6 +216,36 @@ class TestMergeRunNoteGroundingGate:
         assert any("no run report" in error for error in result["errors"])
         mock_writer.insert_section_analysis.assert_not_called()
 
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBReader")
+    @patch("garmin_mcp.scripts.merge_section_analyses.GarminDBWriter")
+    def test_merge_rejects_run_note_with_emoji(
+        self, mock_writer_cls, mock_reader_cls, tmp_path
+    ):
+        # A grounded review whose prose carries a verdict emoji (Issue #1428):
+        # the web app shows no emoji, so the review is not inserted and the
+        # error says where the emoji is.
+        mock_reader_cls.return_value.get_run_report.return_value = copy.deepcopy(
+            _REPORT
+        )
+        mock_writer = MagicMock()
+        mock_writer.insert_section_analysis.return_value = True
+        mock_writer_cls.return_value = mock_writer
+
+        _write_section(
+            tmp_path,
+            "run_note",
+            _run_note(story="✅ " + _VALID_RUN_NOTE["story"]),
+        )
+
+        result = merge_section_analyses(tmp_path, keep=True)
+
+        assert result["failed"] == ["run_note"]
+        assert any(
+            error.startswith("run_note: emoji in prose at story")
+            for error in result["errors"]
+        )
+        mock_writer.insert_section_analysis.assert_not_called()
+
 
 @pytest.mark.integration
 class TestMergeRejectsLegacySections:

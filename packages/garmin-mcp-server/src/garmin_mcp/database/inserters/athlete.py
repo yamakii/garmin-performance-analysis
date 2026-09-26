@@ -28,6 +28,8 @@ import json
 import logging
 from typing import Any
 
+from garmin_mcp.validation.pictographs import reject_pictographs
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,7 +46,19 @@ def insert_athlete_profile(profile: dict[str, Any], db_path: str | None = None) 
             0=Monday … 6=Sunday; defaults to 0), ``goals`` (list of goal dicts),
             and ``retrospectives`` (list of retrospective dicts).
         db_path: Path to DuckDB database. If None, uses default.
+
+    Raises:
+        ValueError: When the profile prose carries emoji (Issue #1428).
     """
+    # The profile prose is shown on the web Goal page.
+    reject_pictographs(
+        {
+            key: profile.get(key)
+            for key in ("current_focus", "focus_notes", "goals", "retrospectives")
+        },
+        where="save_athlete_profile",
+    )
+
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
 
@@ -179,7 +193,8 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
         The new row's ``review_id``.
 
     Raises:
-        ValueError: When ``review_data.verdict`` is non-empty.
+        ValueError: When ``review_data.verdict`` is non-empty, or when the
+            prose carries emoji (Issue #1428).
     """
     review_data = review.get("review_data")
     if isinstance(review_data, dict) and review_data.get("verdict"):
@@ -187,6 +202,8 @@ def insert_weekly_review(review: dict[str, Any], db_path: str | None = None) -> 
             "per-day plan rows belong in save_weekly_prescriptions "
             "(rating/rationale); verdict is derived"
         )
+    # The review prose is rendered by the web app.
+    reject_pictographs(review_data, where="save_weekly_review")
 
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
@@ -252,7 +269,12 @@ def insert_symptom(row: dict[str, Any], db_path: str | None = None) -> int:
 
     Returns:
         The new row's ``symptom_id``.
+
+    Raises:
+        ValueError: When ``note`` carries emoji (Issue #1428).
     """
+    reject_pictographs(row.get("note"), where="save_symptom")
+
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
 
