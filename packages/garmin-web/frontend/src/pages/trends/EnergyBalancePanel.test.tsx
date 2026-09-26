@@ -22,7 +22,17 @@ vi.mock("../../lib/echarts", () => ({
 interface BarOption {
   xAxis: {
     data: string[];
-    axisLabel: { formatter: (value: string) => string };
+    axisLabel: {
+      formatter: (value: string) => string;
+      interval?: number;
+      hideOverlap?: boolean;
+    };
+  };
+  yAxis: {
+    min: number;
+    max: number;
+    interval: number;
+    axisLabel: { formatter: (value: number) => string };
   };
   series: {
     data: (number | null)[];
@@ -31,7 +41,11 @@ interface BarOption {
       itemStyle: { color: string };
       data: [{ yAxis: number }, { yAxis: number }][];
     };
-    markLine?: { lineStyle: { color: string }; data: { yAxis: number }[] };
+    markLine?: {
+      lineStyle: { color: string };
+      label: { position?: string };
+      data: { yAxis: number }[];
+    };
   }[];
 }
 
@@ -97,6 +111,57 @@ describe("buildEnergyBalanceOption", () => {
     expect(insufficient.markArea).toBeDefined();
   });
 
+  it("mean label stays inside the plot", () => {
+    // The default `end` label sat past the frame and was clipped to 「平」.
+    expect(optionOf().series[0].markLine?.label.position).toBe("insideEndTop");
+  });
+
+  it("y axis rounds outward to 500", () => {
+    // Data -1173..251 with the 維持 band: round ticks, the +251 bar off the frame.
+    const deeper = optionOf().yAxis;
+    expect(deeper.min).toBe(-1500);
+    expect(deeper.max).toBe(500);
+    expect(deeper.interval).toBe(500);
+    expect(deeper.axisLabel.formatter(-1000)).toBe("-1000");
+
+    // The 絞る band sits below the data here; zero stays the top.
+    const days = [
+      "2026-09-23",
+      "2026-09-24",
+      "2026-09-25",
+    ].map((date, index) => ({
+      date,
+      intake_kcal: 2000,
+      expenditure_kcal: 2200 + index * 50,
+      balance_kcal: -200 - index * 50,
+      intake_status: "settled",
+      expenditure_status: "ok",
+      used: true,
+      in_window: true,
+      confirmation: null,
+    }));
+    const cut = optionOf(
+      energyBalanceFixture({
+        days,
+        window: { mean_balance_kcal: -250 },
+        target: {
+          weight_mode: "絞る",
+          band_kcal: [-500, -100],
+          verdict: "within_target",
+        },
+      }),
+    ).yAxis;
+    expect(cut.min).toBe(-500);
+    expect(cut.max).toBe(0);
+    expect(Object.is(cut.max, -0)).toBe(false);
+  });
+
+  it("x axis keeps every date", () => {
+    const { axisLabel } = optionOf().xAxis;
+    expect(axisLabel.hideOverlap).toBe(false);
+    expect(axisLabel.interval).toBe(0);
+  });
+
   it("omits the band when the block sets none", () => {
     const [bars] = optionOf(
       energyBalanceFixture({ target: { band_kcal: null, verdict: null } }),
@@ -113,9 +178,20 @@ describe("EnergyBalancePanel", () => {
     expect(screen.getByText("-469")).toBeInTheDocument();
     expect(screen.getByText("1880")).toBeInTheDocument();
     expect(screen.getByText("2350")).toBeInTheDocument();
-    expect(screen.getByText("7/7日 · 暫定6日")).toBeInTheDocument();
+    expect(screen.getByText("7/7日")).toBeInTheDocument();
+    expect(screen.getByText("暫定6日")).toBeInTheDocument();
     expect(screen.getByText("平均 -469 · 目標帯より赤字側")).toBeInTheDocument();
     expect(screen.getByText("目標帯 -150〜+150（維持）")).toBeInTheDocument();
+  });
+
+  it("EnergyBalancePanel keeps units and sub-line segments whole", () => {
+    render(<EnergyBalancePanel data={energyBalanceFixture()} />);
+
+    for (const unit of screen.getAllByText("kcal/日")) {
+      expect(unit).toHaveClass("whitespace-nowrap");
+    }
+    expect(screen.getByText("7/7日")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByText("暫定6日")).toHaveClass("whitespace-nowrap");
   });
 
   it("EnergyBalancePanel insufficient window", () => {
