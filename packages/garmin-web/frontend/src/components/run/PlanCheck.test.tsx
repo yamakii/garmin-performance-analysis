@@ -468,7 +468,9 @@ describe("structure-derived axes (#1407)", () => {
     expect(items[4]).toHaveTextContent("170-180 bpm");
     expect(items[4]).toHaveTextContent("174 bpm");
     for (const item of items) {
-      expect(within(item).getByText("計画どおり")).toHaveClass("text-ink-muted");
+      const status = item.children[3];
+      expect(status).toHaveTextContent("✓");
+      expect(within(item).getByText("計画どおり")).toHaveClass("sr-only");
       expect(within(item).queryByText("ずれ")).toBeNull();
     }
     expectNoPictographs(row);
@@ -494,7 +496,7 @@ describe("structure-derived axes (#1407)", () => {
     expect(label).toHaveTextContent("第1段");
     expect(target).toHaveTextContent("130-140 bpm");
     expect(actual).toHaveTextContent("135 bpm");
-    expect(badge).toHaveTextContent("計画どおり");
+    expect(badge).toHaveTextContent("✓");
     // Only the last step closes the row with the hairline.
     expect(items[0].children[1].className).not.toContain("md:border-b");
     expect(items[4].children[1].className).toContain("md:border-b");
@@ -531,9 +533,11 @@ describe("structure-derived axes (#1407)", () => {
     }
   });
 
-  it("test_step_rows_use_word_tags_not_emoji", () => {
-    // An off-band step reads ずれ in the same warn voice as the axis rows,
-    // never a verdict emoji (#1428; #1407 had shipped ✅ / 🟡 badges here).
+  it("test_step_rows_use_check_glyph_and_word_not_emoji", () => {
+    // A step on plan is the design system's ink ✓ (read out as 計画どおり);
+    // an off-band step reads ずれ in the same warn voice as the axis rows.
+    // Never a verdict emoji (#1428; #1407 had shipped ✅ / 🟡 badges here),
+    // and not the 計画どおり word either, which wrapped the band at 400px (#1430).
     render(
       <PlanCheck
         plan={{
@@ -570,9 +574,14 @@ describe("structure-derived axes (#1407)", () => {
 
     const row = screen.getByRole("group", { name: "本数" });
     const items = within(row).getAllByRole("listitem");
-    expect(within(items[0]).getByText("計画どおり")).toHaveClass(
-      "text-ink-muted",
+    const onPlanStatus = items[0].children[3];
+    expect(onPlanStatus).toHaveTextContent("✓");
+    expect(within(onPlanStatus as HTMLElement).getByText("✓")).toHaveAttribute(
+      "aria-hidden",
+      "true",
     );
+    expect(within(items[0]).getByText("計画どおり")).toHaveClass("sr-only");
+    expect(within(items[1]).queryByText("✓")).toBeNull();
     expect(within(items[1]).getByText("ずれ")).toHaveClass(
       "font-bold",
       "text-status-warn",
