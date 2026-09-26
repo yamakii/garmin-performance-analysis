@@ -21,6 +21,8 @@ import json
 import logging
 from typing import Any
 
+from garmin_mcp.validation.pictographs import reject_pictographs
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +38,13 @@ def insert_trend_analysis(trend: dict[str, Any], db_path: str | None = None) -> 
 
     Returns:
         ``True`` on success.
+
+    Raises:
+        ValueError: When the narration carries emoji (Issue #1428).
     """
+    # The narration is rendered on the web Trends page.
+    reject_pictographs(trend.get("analysis_data"), where="save_trend_narration")
+
     if db_path is None:
         from garmin_mcp.utils.paths import get_database_dir
 

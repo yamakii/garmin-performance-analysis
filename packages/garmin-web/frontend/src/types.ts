@@ -302,7 +302,7 @@ export interface BodyCompositionTrend {
 export interface WeeklyReviewVerdict {
   date?: string;
   session?: string;
-  rating?: string; // "✅" | "🟡" | "🔴"
+  rating?: string; // verdict mark (good / warn / bad); words via verdictRating.ts
   comment?: string;
   [key: string]: unknown;
 }
@@ -526,7 +526,7 @@ export interface PlanCheckRow {
   actual: string;
   status: PlanCheckStatus;
   on_plan: boolean;
-  /** ✅ / 🟡 / 🔴 for this axis, when the report states one. */
+  /** Verdict mark (good / warn / bad) for this axis, when the report states one. */
   verdict?: string;
   /** Per-step detail of a structure-derived axis (#1404). */
   segments?: PlanCheckSegment[];
@@ -540,7 +540,7 @@ export interface HrCeiling {
 }
 
 export interface RunPlan {
-  /** ✅ / 🟡 / 🔴, as `compute_prescription_verdict` decided it. */
+  /** Verdict mark (good / warn / bad), as `compute_prescription_verdict` decided it. */
   verdict: string;
   title: string;
   checks: PlanCheckRow[];
@@ -990,7 +990,7 @@ export interface Prescription {
   allowances?: { walk?: boolean } | null;
   /** The session's step structure (#1401); null / absent on unstructured rows. */
   structure?: PrescriptionStructure | null;
-  /** Coach verdict of the prescribed session (✅ / 🟡 / 🔴), the canonical one. */
+  /** Coach verdict mark of the prescribed session (good / warn / bad), the canonical one. */
   rating?: string | null;
   /** The coach's one-line comment on the session. */
   rationale?: string | null;

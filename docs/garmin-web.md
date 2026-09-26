@@ -59,6 +59,25 @@ live in `frontend/src/index.css` (`@theme`) and `components/chartTheme.ts`, and
 (`rounded-xl`, `shadow-*`, `bg-gradient`, raw `slate-*` hues, the old display /
 numeric faces) reappears.
 
+**No emoji anywhere on the site** (#1186 / #1187 / #1188, enforced by #1428).
+Verdicts are words (良好 / 注意 / 要改善, 計画どおり / ずれ) or the `✓` / `!`
+glyphs; the stored `rating` key (a verdict mark) is turned into its word by
+`frontend/src/utils/verdictRating.ts`, the only source file allowed to spell
+one. What counts as emoji is defined once per language and pinned together by
+`tests/test_pictograph_parity.py`: `garmin_mcp.validation.pictographs` on the
+server, `frontend/src/utils/emoji.ts` in the browser. Three layers keep it out:
+
+- **Write gate** — every store the site renders prose from refuses a payload
+  with emoji (weekly reviews and prescriptions except `rating`, the athlete
+  profile, training blocks, symptoms, trend narration, and section analyses at
+  both `merge_section_analyses` and the writer).
+- **Display strip** — prose saved before the gate (`weekly_reviews`,
+  `athlete_profile`) is served with its emoji removed by the web queries; the
+  stored history is not rewritten.
+- **Frontend guards** — `src/test/noPictographsInSource.test.ts` fails on any
+  emoji in a non-test source file (comments included), and component tests
+  assert rendered output with `expectNoPictographs` from `src/test/utils.tsx`.
+
 ## Pages
 
 The SPA follows one information-architecture rule: **one page answers one

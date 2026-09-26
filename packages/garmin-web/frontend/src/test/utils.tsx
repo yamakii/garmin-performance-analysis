@@ -4,6 +4,29 @@ import {
   type RenderOptions,
 } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
+import { expect } from "vitest";
+import { PICTOGRAPH_RE } from "../utils/emoji";
+
+/**
+ * Assert that no emoji reached the rendered DOM (#1428): verdicts are words or
+ * the `✓` / `!` glyphs. Reads the text and every attribute, so an emoji in an
+ * `aria-label` or `title` fails too.
+ */
+export function expectNoPictographs(container: Element): void {
+  const found: string[] = [];
+  const text = container.textContent ?? "";
+  if (PICTOGRAPH_RE.test(text)) {
+    found.push(`text: ${text.slice(0, 120)}`);
+  }
+  for (const el of [container, ...Array.from(container.querySelectorAll("*"))]) {
+    for (const attr of Array.from(el.attributes)) {
+      if (PICTOGRAPH_RE.test(attr.value)) {
+        found.push(`<${el.tagName.toLowerCase()} ${attr.name}="${attr.value}">`);
+      }
+    }
+  }
+  expect(found, "emoji reached the DOM").toEqual([]);
+}
 
 /**
  * A QueryClient tuned for tests: retries are disabled so a rejected fetch

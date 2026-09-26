@@ -139,6 +139,29 @@ const OFF_PLAN_TEXT: Record<string, string> = {
   missing: "未実施",
 };
 
+/**
+ * The on / off plan word, in the one voice the table uses for it: a quiet
+ * 計画どおり, a bold warn-coloured word for a deviation. Words, never emoji
+ * (#1186 / #1428): the word is what is read and announced.
+ */
+function PlanTag({
+  onPlan,
+  offText = "ずれ",
+}: {
+  onPlan: boolean;
+  offText?: string;
+}): JSX.Element {
+  return (
+    <span
+      className={`font-mono text-xs whitespace-nowrap ${
+        onPlan ? "text-ink-muted" : "font-bold text-status-warn"
+      }`}
+    >
+      {onPlan ? "計画どおり" : offText}
+    </span>
+  );
+}
+
 function StatusTag({ check }: { check: PlanCheckRow }) {
   if (check.status === "insufficient") {
     // Not judged is not the same as fine: a neutral tag, no badge colour.
@@ -148,22 +171,19 @@ function StatusTag({ check }: { check: PlanCheckRow }) {
       </span>
     );
   }
-  const onPlan = check.on_plan;
   return (
-    <span
-      className={`font-mono text-xs whitespace-nowrap ${
-        onPlan ? "text-ink-muted" : "font-bold text-status-warn"
-      }`}
-    >
-      {onPlan ? "計画どおり" : (OFF_PLAN_TEXT[check.status] ?? "ずれ")}
-    </span>
+    <PlanTag
+      onPlan={check.on_plan}
+      offText={OFF_PLAN_TEXT[check.status] ?? "ずれ"}
+    />
   );
 }
 
 /**
  * One line per prescribed step under a stages / reps / hr_band row: the
- * step's name, its target band, what was run and a ✅ / 🟡 badge. A missed
- * step is 🟡, never 🔴 -- the axis verdict already carries the severity.
+ * step's name, its target band, what was run and the same 計画どおり / ずれ
+ * tag as the axis rows. A missed step reads ずれ at warn weight, never worse
+ * -- the axis verdict already carries the severity.
  *
  * At `md`+ the list and each line are `display: contents`, so the four cells
  * sit in the plan table's own 項目 / 目標 / 実績 / 状態 tracks -- the same
@@ -199,11 +219,8 @@ function StepList({
             </span>
             <span className={`text-ink-soft ${cell}`}>{segment.target}</span>
             <span className={`text-ink ${cell}`}>{segment.actual}</span>
-            <span
-              className={cell}
-              aria-label={segment.on_plan ? "計画どおり" : "ずれ"}
-            >
-              {segment.on_plan ? "✅" : "🟡"}
+            <span className={cell}>
+              <PlanTag onPlan={segment.on_plan} />
             </span>
           </li>
         );
