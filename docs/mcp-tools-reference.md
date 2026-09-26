@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **74 tools** (72 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -17,11 +17,11 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Metadata](#metadata) (3)
 - [Splits](#splits) (2)
 - [Analysis](#analysis) (9)
-- [Physiology](#physiology) (13)
+- [Physiology](#physiology) (14)
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (10)
+- [Athlete](#athlete) (11)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -351,6 +351,18 @@ Judge what one run cost over the following two mornings: joins the activity to t
 |-----------|------|----------|-------------|
 | `activity_id` | integer | **required** | Activity ID of the run whose next-morning cost to judge. |
 
+### `get_energy_balance`
+
+CLI: `garmin-db physiology energy-balance`
+
+Get the logged energy balance (food intake from MyFitnessPal via Garmin minus Garmin total expenditure) over a window (default the 7 days ending yesterday) and judge it against the current training block's weight_mode. Every day carries intake_status (no_data / in_progress / pending / not_logged / athlete_reported_incomplete / suspect_low / provisional / settled) and expenditure_status (no_data / in_progress / unsynced / low_wear / ok); only settled/provisional intake with ok expenditure is averaged and missing days are never imputed. Returns end_date, as_of, window_days, days [{date, intake_kcal, expenditure_kcal, balance_kcal, intake_status, expenditure_status, used, in_window, confirmation}], window {status ok/insufficient/no_logging, paired_days, required_days (5 of every 7), mean_intake_kcal, mean_expenditure_kcal, mean_balance_kcal, provisional_days, excluded [{date, reason}]}, logging {first_logged_date, last_logged_date, days_since_last_log, lapsed (3+ closed days unlogged)}, target {weight_mode, block_id, crosses_block_boundary, band_kcal (維持 0 / 絞る -350..-250, widened by 150), verdict deeper_than_target / within_target / shallower_than_target, reason, basis='logged', calibration_status}, calibration over calibration_days (needs 21 paired days and 10 weigh-ins; Theil-Sen weight slope x 7700 kcal/kg with a 90% CI: consistent / logged_deficit_exceeds_weight / logged_deficit_below_weight / insufficient, plus notes -- values are never corrected), and weight {recent_median_kg, n_weighins, slope_kg_per_week}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `end_date` | string | optional | Last day of the window as YYYY-MM-DD. Omit to use yesterday (the last closed day). |
+| `window_days` | integer | optional (default `7`) | Window length in days (default: 7). |
+| `calibration_days` | integer | optional (default `28`) | Weight-calibration window in days ending at end_date (default: 28). |
+
 ## Performance
 
 ### `get_performance_trends`
@@ -581,6 +593,18 @@ Get the deterministic symptom verdict for a day: reads the last 14 days of sympt
 |-----------|------|----------|-------------|
 | `date` | string | optional | Reference day (YYYY-MM-DD). When omitted, today is used (symptoms describe how the legs are now, not on the last run's date). |
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `save_intake_confirmation`
+
+CLI: `garmin-db athlete save-intake-confirmation`
+
+Record the athlete's own word on one day's food log (MyFitnessPal via Garmin): status 'complete' (everything eaten is logged -- lifts a suspect_low flag so the day counts) or 'incomplete' (food is missing -- the day is excluded from get_energy_balance). One row per date: a later call replaces the earlier one. The confirmation is ignored once the day's intake changes after it was given. Returns {saved, date, status, note, user_id, confirmed_at}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | **required** | Day the food log is about (YYYY-MM-DD) |
+| `status` | enum: `complete`, `incomplete` | **required** | complete: the log holds everything eaten that day (lifts a suspect_low flag); incomplete: food is missing (the day is excluded from the energy balance) |
+| `note` | string | optional | Free-form note in the athlete's own words |
 
 ### `prefetch_weekly_review_context`
 

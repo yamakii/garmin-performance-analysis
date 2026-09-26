@@ -952,6 +952,35 @@
     }
   },
   {
+    "name": "save_intake_confirmation",
+    "description": "Record the athlete's own word on one day's food log (MyFitnessPal via Garmin): status 'complete' (everything eaten is logged -- lifts a suspect_low flag so the day counts) or 'incomplete' (food is missing -- the day is excluded from get_energy_balance). One row per date: a later call replaces the earlier one. The confirmation is ignored once the day's intake changes after it was given. Returns {saved, date, status, note, user_id, confirmed_at}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Day the food log is about (YYYY-MM-DD)"
+        },
+        "status": {
+          "type": "string",
+          "description": "complete: the log holds everything eaten that day (lifts a suspect_low flag); incomplete: food is missing (the day is excluded from the energy balance)",
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-form note in the athlete's own words"
+        }
+      },
+      "required": [
+        "date",
+        "status"
+      ]
+    }
+  },
+  {
     "name": "prefetch_weekly_review_context",
     "description": "Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), prescriptions_current_week (W's canonical batch with its batch_id / review_id), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.",
     "inputSchema": {
@@ -1273,6 +1302,29 @@
       "required": [
         "activity_id"
       ]
+    }
+  },
+  {
+    "name": "get_energy_balance",
+    "description": "Get the logged energy balance (food intake from MyFitnessPal via Garmin minus Garmin total expenditure) over a window (default the 7 days ending yesterday) and judge it against the current training block's weight_mode. Every day carries intake_status (no_data / in_progress / pending / not_logged / athlete_reported_incomplete / suspect_low / provisional / settled) and expenditure_status (no_data / in_progress / unsynced / low_wear / ok); only settled/provisional intake with ok expenditure is averaged and missing days are never imputed. Returns end_date, as_of, window_days, days [{date, intake_kcal, expenditure_kcal, balance_kcal, intake_status, expenditure_status, used, in_window, confirmation}], window {status ok/insufficient/no_logging, paired_days, required_days (5 of every 7), mean_intake_kcal, mean_expenditure_kcal, mean_balance_kcal, provisional_days, excluded [{date, reason}]}, logging {first_logged_date, last_logged_date, days_since_last_log, lapsed (3+ closed days unlogged)}, target {weight_mode, block_id, crosses_block_boundary, band_kcal (維持 0 / 絞る -350..-250, widened by 150), verdict deeper_than_target / within_target / shallower_than_target, reason, basis='logged', calibration_status}, calibration over calibration_days (needs 21 paired days and 10 weigh-ins; Theil-Sen weight slope x 7700 kcal/kg with a 90% CI: consistent / logged_deficit_exceeds_weight / logged_deficit_below_weight / insufficient, plus notes -- values are never corrected), and weight {recent_median_kg, n_weighins, slope_kg_per_week}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "end_date": {
+          "type": "string",
+          "description": "Last day of the window as YYYY-MM-DD. Omit to use yesterday (the last closed day)."
+        },
+        "window_days": {
+          "type": "integer",
+          "description": "Window length in days (default: 7).",
+          "default": 7
+        },
+        "calibration_days": {
+          "type": "integer",
+          "description": "Weight-calibration window in days ending at end_date (default: 28).",
+          "default": 28
+        }
+      }
     }
   },
   {

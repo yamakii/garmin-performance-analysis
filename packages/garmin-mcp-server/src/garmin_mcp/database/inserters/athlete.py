@@ -20,6 +20,8 @@ Write semantics:
 - ``athlete_symptoms`` is append-only: every reported pain / niggle is a new
   row, so the same day can carry one row per body region and a later report
   never overwrites an earlier one.
+- ``intake_confirmations`` is upserted on ``(user_id, date)``: the latest
+  confirmation of a day's food log replaces the earlier one.
 """
 
 from __future__ import annotations
@@ -322,3 +324,85 @@ def insert_symptom(row: dict[str, Any], db_path: str | None = None) -> int:
         )
 
     return symptom_id
+
+
+_INTAKE_CONFIRMATION_STATUSES = frozenset({"complete", "incomplete"})
+
+
+def insert_intake_confirmation(
+    date: str,
+    status: str,
+    note: str | None = None,
+    user_id: str = "default",
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Upsert the athlete's confirmation of one day's intake log.
+
+    One row per ``(user_id, date)``: a second confirmation for the same day
+    replaces the first, and ``confirmed_at`` is refreshed to the local time of
+    the save (the same naive-local convention as ``daily_energy.fetched_at``,
+    so the reader can tell whether the intake changed afterwards). Issue #1434.
+
+    Args:
+        date: Day the confirmation is about (``YYYY-MM-DD``).
+        status: ``"complete"`` (the log holds everything eaten) or
+            ``"incomplete"`` (food is missing; the day is excluded).
+        note: Optional free-form note in the athlete's own words.
+        user_id: Profile owner identifier (defaults to ``"default"``).
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        ``{"date", "status", "note", "user_id", "confirmed_at"}``.
+
+    Raises:
+        ValueError: When ``status`` is not ``complete`` / ``incomplete`` or
+            ``note`` carries emoji (Issue #1428).
+    """
+    from datetime import date as date_cls
+    from datetime import datetime
+
+    if status not in _INTAKE_CONFIRMATION_STATUSES:
+        raise ValueError(
+            f"save_intake_confirmation: status must be 'complete' or "
+            f"'incomplete', got {status!r}"
+        )
+    date_cls.fromisoformat(date)
+    reject_pictographs(note, where="save_intake_confirmation")
+
+    if db_path is None:
+        from garmin_mcp.utils.paths import get_database_dir
+
+        db_path = str(get_database_dir() / "garmin_performance.duckdb")
+
+    from garmin_mcp.database.connection import get_write_connection
+
+    user_id = user_id or "default"
+    confirmed_at = datetime.now().replace(microsecond=0)
+
+    with get_write_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO intake_confirmations (
+                user_id, date, status, note, confirmed_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, date) DO UPDATE SET
+                status = EXCLUDED.status,
+                note = EXCLUDED.note,
+                confirmed_at = EXCLUDED.confirmed_at
+            """,
+            [user_id, date, status, note, confirmed_at],
+        )
+        logger.info(
+            "Saved intake confirmation user_id=%s date=%s status=%s",
+            user_id,
+            date,
+            status,
+        )
+
+    return {
+        "date": date,
+        "status": status,
+        "note": note,
+        "user_id": user_id,
+        "confirmed_at": confirmed_at.isoformat(),
+    }

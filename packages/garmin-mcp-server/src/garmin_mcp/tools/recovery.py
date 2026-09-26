@@ -65,6 +65,27 @@ class GetLongRunRecoveryCostParams(BaseModel):
     )
 
 
+class GetEnergyBalanceParams(BaseModel):
+    """Arguments for ``get_energy_balance``."""
+
+    end_date: str | None = Field(
+        default=None,
+        description=(
+            "Last day of the window as YYYY-MM-DD. Omit to use yesterday (the "
+            "last closed day)."
+        ),
+    )
+    window_days: int = Field(
+        default=7, description="Window length in days (default: 7)."
+    )
+    calibration_days: int = Field(
+        default=28,
+        description=(
+            "Weight-calibration window in days ending at end_date (default: 28)."
+        ),
+    )
+
+
 def _get_recovery_trend(reader: GarminDBReader, p: GetRecoveryTrendParams) -> Any:
     return reader.get_recovery_trend(p.weeks)
 
@@ -83,6 +104,14 @@ def _get_long_run_recovery_cost(
     reader: GarminDBReader, p: GetLongRunRecoveryCostParams
 ) -> Any:
     return reader.get_long_run_recovery_cost(p.activity_id)
+
+
+def _get_energy_balance(reader: GarminDBReader, p: GetEnergyBalanceParams) -> Any:
+    return reader.get_energy_balance(
+        end_date=p.end_date,
+        window_days=p.window_days,
+        calibration_days=p.calibration_days,
+    )
 
 
 RECOVERY_TOOLS: list[ToolDef] = [
@@ -173,6 +202,41 @@ RECOVERY_TOOLS: list[ToolDef] = [
         handler=_get_long_run_recovery_cost,
         cli_group="physiology",
         cli_name="long-run-recovery-cost",
+    ),
+    ToolDef(
+        name="get_energy_balance",
+        description=(
+            "Get the logged energy balance (food intake from MyFitnessPal via "
+            "Garmin minus Garmin total expenditure) over a window (default the "
+            "7 days ending yesterday) and judge it against the current "
+            "training block's weight_mode. Every day carries intake_status "
+            "(no_data / in_progress / pending / not_logged / "
+            "athlete_reported_incomplete / suspect_low / provisional / "
+            "settled) and expenditure_status (no_data / in_progress / "
+            "unsynced / low_wear / ok); only settled/provisional intake with "
+            "ok expenditure is averaged and missing days are never imputed. "
+            "Returns end_date, as_of, window_days, days [{date, intake_kcal, "
+            "expenditure_kcal, balance_kcal, intake_status, "
+            "expenditure_status, used, in_window, confirmation}], window "
+            "{status ok/insufficient/no_logging, paired_days, required_days "
+            "(5 of every 7), mean_intake_kcal, mean_expenditure_kcal, "
+            "mean_balance_kcal, provisional_days, excluded [{date, reason}]}, "
+            "logging {first_logged_date, last_logged_date, "
+            "days_since_last_log, lapsed (3+ closed days unlogged)}, target "
+            "{weight_mode, block_id, crosses_block_boundary, band_kcal "
+            "(維持 0 / 絞る -350..-250, widened by 150), verdict "
+            "deeper_than_target / within_target / shallower_than_target, "
+            "reason, basis='logged', calibration_status}, calibration over "
+            "calibration_days (needs 21 paired days and 10 weigh-ins; Theil-Sen "
+            "weight slope x 7700 kcal/kg with a 90% CI: consistent / "
+            "logged_deficit_exceeds_weight / logged_deficit_below_weight / "
+            "insufficient, plus notes -- values are never corrected), and "
+            "weight {recent_median_kg, n_weighins, slope_kg_per_week}."
+        ),
+        params=GetEnergyBalanceParams,
+        handler=_get_energy_balance,
+        cli_group="physiology",
+        cli_name="energy-balance",
     ),
 ]
 

@@ -184,6 +184,22 @@ class GetSymptomStatusParams(BaseModel):
     )
 
 
+class SaveIntakeConfirmationParams(BaseModel):
+    """Arguments for ``save_intake_confirmation``."""
+
+    date: str = Field(description="Day the food log is about (YYYY-MM-DD)")
+    status: Literal["complete", "incomplete"] = Field(
+        description=(
+            "complete: the log holds everything eaten that day (lifts a "
+            "suspect_low flag); incomplete: food is missing (the day is "
+            "excluded from the energy balance)"
+        )
+    )
+    note: str | None = Field(
+        default=None, description="Free-form note in the athlete's own words"
+    )
+
+
 class PrefetchWeeklyReviewContextParams(BaseModel):
     """Arguments for ``prefetch_weekly_review_context``."""
 
@@ -339,6 +355,21 @@ def _get_symptom_status(reader: GarminDBReader, p: GetSymptomStatusParams) -> An
         )
     except Exception as e:  # noqa: BLE001
         logger.error(f"Get symptom status failed: {e}")
+        return {"error": str(e)}
+
+
+def _save_intake_confirmation(
+    reader: GarminDBReader, p: SaveIntakeConfirmationParams
+) -> Any:
+    from garmin_mcp.database.inserters.athlete import insert_intake_confirmation
+
+    try:
+        saved = insert_intake_confirmation(
+            date=p.date, status=p.status, note=p.note, db_path=str(reader.db_path)
+        )
+        return {"saved": True, **saved}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Save intake confirmation failed: {e}")
         return {"error": str(e)}
 
 
@@ -501,6 +532,23 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_get_symptom_status,
         cli_group="athlete",
         cli_name="symptom-status",
+    ),
+    ToolDef(
+        name="save_intake_confirmation",
+        description=(
+            "Record the athlete's own word on one day's food log (MyFitnessPal "
+            "via Garmin): status 'complete' (everything eaten is logged -- "
+            "lifts a suspect_low flag so the day counts) or 'incomplete' (food "
+            "is missing -- the day is excluded from get_energy_balance). One "
+            "row per date: a later call replaces the earlier one. The "
+            "confirmation is ignored once the day's intake changes after it "
+            "was given. Returns {saved, date, status, note, user_id, "
+            "confirmed_at}."
+        ),
+        params=SaveIntakeConfirmationParams,
+        handler=_save_intake_confirmation,
+        cli_group="athlete",
+        cli_name="save-intake-confirmation",
     ),
     ToolDef(
         name="prefetch_weekly_review_context",
