@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PAPER_COLOR } from "./components/chartTheme";
 
 /**
  * Contrast regression guard for the Morning Brief palette (#911 → #1116).
@@ -63,6 +64,13 @@ function componentSources(): { path: string; text: string }[] {
       text: readFileSync(join(SRC_DIR, entry), "utf8"),
     }));
 }
+
+describe("chart-side token copies", () => {
+  it("test_paper_color_matches_css_token", () => {
+    // ECharts cannot read CSS variables, so chartTheme keeps a copy (#1443).
+    expect(PAPER_COLOR.toLowerCase()).toBe(themeToken("paper"));
+  });
+});
 
 describe("palette contrast", () => {
   /**
