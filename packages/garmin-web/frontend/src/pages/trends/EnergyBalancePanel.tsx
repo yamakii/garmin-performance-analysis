@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { TopLevelFormatterParams } from "echarts/types/dist/shared";
 import ChartHeader from "../../components/ChartHeader";
 import EChart from "../../components/EChart";
@@ -9,7 +9,6 @@ import {
   CHART_FONT_FAMILY,
   CHART_FONT_SIZE,
   CHART_GRID,
-  CHART_SPLIT_NUMBER,
   COMPARE_COLOR,
   INK_COLOR,
   THRESHOLD_LINE,
@@ -44,6 +43,16 @@ function dayTooltip(day: EnergyBalanceDay, reason: string | undefined): string {
   );
 }
 
+/** The y axis is rounded out to multiples of this, so its ticks read as round numbers. */
+const Y_STEP = 500;
+
+/** Round `value` out to a multiple of {@link Y_STEP} (never returning -0). */
+function roundOut(value: number, direction: "down" | "up"): number {
+  const steps =
+    direction === "down" ? Math.floor(value / Y_STEP) : Math.ceil(value / Y_STEP);
+  return steps === 0 ? 0 : steps * Y_STEP;
+}
+
 /**
  * The daily bar strip (Issue #1439). One ink bar per window day; a day left out
  * of the mean has no bar (null, never 0) and names its reason under the date.
@@ -61,6 +70,16 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
   const offTarget =
     data.target.verdict === "deeper_than_target" ||
     data.target.verdict === "shallower_than_target";
+  const bars = days.map((day) => (day.used ? day.balance_kcal : null));
+
+  // The extent keeps the band and zero in view even when every bar sits outside
+  // them, rounded out so the extremes are not printed as ticks (-1,173 / 251)
+  // and the tallest bar does not touch the frame (#1441).
+  const values = bars.filter((value): value is number => value != null);
+  const yMin = roundOut(Math.min(...values, band?.[0] ?? 0, 0), "down");
+  const yMax = roundOut(Math.max(...values, band?.[1] ?? 0, 0), "up");
+  const yInterval =
+    Y_STEP * Math.max(1, Math.ceil((yMax - yMin) / Y_STEP / 4));
 
   return {
     ...BASE_CHART_OPTION,
@@ -80,7 +99,10 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
       ...X_AXIS_STYLE,
       axisLabel: {
         ...X_AXIS_STYLE.axisLabel,
+        // Seven dates fit a phone-width strip; dropping every other one (the
+        // shared hideOverlap) would also drop an excluded day's reason.
         interval: 0,
+        hideOverlap: false,
         formatter: (value: string) => {
           const reason = reasons.get(value);
           return reason != null
@@ -92,19 +114,21 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
     yAxis: {
       type: "value",
       name: "kcal",
-      splitNumber: CHART_SPLIT_NUMBER,
-      // Keep the band and zero on the axis even when every bar sits outside.
-      min: (extent: { min: number }) =>
-        Math.min(extent.min, band?.[0] ?? 0, 0),
-      max: (extent: { max: number }) =>
-        Math.max(extent.max, band?.[1] ?? 0, 0),
+      min: yMin,
+      max: yMax,
+      interval: yInterval,
       ...AXIS_STYLE,
+      axisLabel: {
+        ...AXIS_STYLE.axisLabel,
+        // No digit grouping, like every other number on the page.
+        formatter: (value: number) => formatNumber(value, 0),
+      },
     },
     series: [
       {
         name: "収支",
         type: "bar",
-        data: days.map((day) => (day.used ? day.balance_kcal : null)),
+        data: bars,
         barMaxWidth: 28,
         itemStyle: { color: INK_COLOR, borderRadius: 0 },
         ...(band != null && {
@@ -123,6 +147,9 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
               type: "dotted",
             },
             label: {
+              // Inside the plot, above the line's right end: the default `end`
+              // sits past the frame and was clipped to 「平」 (#1441).
+              position: "insideEndTop",
               formatter: "平均",
               fontFamily: CHART_FONT_FAMILY,
               fontSize: CHART_FONT_SIZE,
@@ -136,27 +163,39 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
   };
 }
 
-/** One reading of the window (the 体組成 `Reading` style, without a swatch). */
+/**
+ * One reading of the window (the 体組成 `Reading` style, without a swatch).
+ * The unit and each sub-line segment wrap whole: in a phone-width third of the
+ * row, 「kcal/日」 and 「暫定6日」 used to break before their last character (#1441).
+ */
 function Reading({
   label,
   value,
-  sub,
+  sub = [],
 }: {
   label: string;
   value: string;
-  sub?: string;
+  /** Sub-line segments, joined by 「 · 」 and each kept on one line. */
+  sub?: string[];
 }) {
   return (
     <div>
       <dt className="font-mono text-xs text-ink-muted">{label}</dt>
       <dd className="mt-1 font-mono text-[20px] leading-none font-medium text-ink">
         {value}
-        <span className="ml-[3px] font-sans text-[13px] text-ink-muted">
+        <span className="ml-[3px] font-sans text-[13px] whitespace-nowrap text-ink-muted">
           kcal/日
         </span>
       </dd>
-      {sub != null && (
-        <dd className="mt-1.5 font-mono text-xs text-ink-muted">{sub}</dd>
+      {sub.length > 0 && (
+        <dd className="mt-1.5 font-mono text-xs text-ink-muted">
+          {sub.map((segment, index) => (
+            <Fragment key={segment}>
+              {index > 0 && " · "}
+              <span className="whitespace-nowrap">{segment}</span>
+            </Fragment>
+          ))}
+        </dd>
       )}
     </div>
   );
@@ -179,8 +218,10 @@ export default function EnergyBalancePanel({ data }: { data: EnergyBalance }) {
 
   const status = headerStatus(data);
   const calibration = calibrationText(data.calibration.status);
-  const provisional =
-    window.provisional_days > 0 ? ` · 暫定${window.provisional_days}日` : "";
+  const coverage = [
+    `${window.paired_days}/${data.window_days}日`,
+    ...(window.provisional_days > 0 ? [`暫定${window.provisional_days}日`] : []),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -189,7 +230,7 @@ export default function EnergyBalancePanel({ data }: { data: EnergyBalance }) {
           <Reading
             label="平均収支"
             value={formatSigned(window.mean_balance_kcal, 0)}
-            sub={`${window.paired_days}/${data.window_days}日${provisional}`}
+            sub={coverage}
           />
           <Reading
             label="摂取"

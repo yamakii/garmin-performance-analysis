@@ -18,6 +18,17 @@ describe("ChartHeader", () => {
     expect(screen.getByText("最適").className).not.toMatch(/text-status-/);
   });
 
+  it("ChartHeader wraps whole items", () => {
+    // Narrow columns wrap the parts, never the words inside the title or status.
+    const { container } = render(
+      <ChartHeader title="日ごとの収支" note="目標帯" status="平均 -469" />,
+    );
+
+    expect(container.firstElementChild).toHaveClass("flex-wrap");
+    expect(screen.getByText("日ごとの収支")).toHaveClass("whitespace-nowrap");
+    expect(screen.getByText("平均 -469")).toHaveClass("whitespace-nowrap");
+  });
+
   it("omits the note and the status when absent", () => {
     const { container } = render(<ChartHeader title="HRV" />);
 

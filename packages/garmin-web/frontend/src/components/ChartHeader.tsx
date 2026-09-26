@@ -13,6 +13,10 @@ const STATUS_CLASS: Record<"muted" | "warn" | "bad", string> = {
  * Charts in this system carry no card header and no legend box: the title is
  * this line and the series are labelled directly, so the ink in the frame goes
  * to the data instead of to its packaging.
+ *
+ * On a wide column the three parts share one line. On a narrow one the row
+ * wraps whole parts onto the next line rather than squeezing each into a
+ * column that breaks the title and the status mid-word (#1441).
  */
 export default function ChartHeader({
   title,
@@ -28,11 +32,13 @@ export default function ChartHeader({
   statusTone?: "muted" | "warn" | "bad";
 }): JSX.Element {
   return (
-    <div className="flex items-baseline gap-3 font-mono text-xs text-ink-muted">
-      <span className="font-semibold text-ink">{title}</span>
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 font-mono text-xs text-ink-muted">
+      <span className="font-semibold whitespace-nowrap text-ink">{title}</span>
       {note != null && <span>{note}</span>}
       {status != null && (
-        <span className={`ml-auto ${STATUS_CLASS[statusTone]}`}>{status}</span>
+        <span className={`ml-auto whitespace-nowrap ${STATUS_CLASS[statusTone]}`}>
+          {status}
+        </span>
       )}
     </div>
   );
