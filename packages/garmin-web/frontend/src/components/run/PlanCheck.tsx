@@ -181,9 +181,12 @@ function StatusTag({ check }: { check: PlanCheckRow }) {
 
 /**
  * One line per prescribed step under a stages / reps / hr_band row: the
- * step's name, its target band, what was run and the same 計画どおり / ずれ
- * tag as the axis rows. A missed step reads ずれ at warn weight, never worse
- * -- the axis verdict already carries the severity.
+ * step's name, its target band, what was run and its status: the design
+ * system's ink ✓ for a step on plan (read out as 計画どおり), the axis rows'
+ * bold warn ずれ for one that is not -- never worse, the axis verdict already
+ * carries the severity. A ✓ rather than the 計画どおり word (#1430): at 400px
+ * the word squeezed the band onto two lines per step, and a five-stage
+ * build-up repeated it five times.
  *
  * At `md`+ the list and each line are `display: contents`, so the four cells
  * sit in the plan table's own 項目 / 目標 / 実績 / 状態 tracks -- the same
@@ -220,7 +223,14 @@ function StepList({
             <span className={`text-ink-soft ${cell}`}>{segment.target}</span>
             <span className={`text-ink ${cell}`}>{segment.actual}</span>
             <span className={cell}>
-              <PlanTag onPlan={segment.on_plan} />
+              {segment.on_plan ? (
+                <span className="font-mono text-xs text-ink">
+                  <span aria-hidden="true">✓</span>
+                  <span className="sr-only">計画どおり</span>
+                </span>
+              ) : (
+                <PlanTag onPlan={false} />
+              )}
             </span>
           </li>
         );
