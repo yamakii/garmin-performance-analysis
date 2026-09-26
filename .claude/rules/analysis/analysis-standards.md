@@ -56,6 +56,6 @@ Consolidated reference for all analysis rules.
 
 - **日別プランの正本は `weekly_prescriptions` の最新バッチだけ**（セッション・目標値・判定 `rating`・コメント `rationale`）。週次レビューの散文（`recommendations` / `overall`）は**同じ `review_id` に対する背景**であって、日別プランの別ソースではない
 - `get_weekly_review()` の `review_data.verdict` は保存値ではなく**処方バッチから導出**される（`verdict_source` = `prescriptions` / `stored`、`prescription_batch_id` 併記）。レビューに `verdict` を保存しようとすると拒否される
-- **プランを改訂するときは必ず版をペアで更新**: 新しいレビュー版（`save_weekly_review`、`review_data.revision_note` に理由）→ その `review_id` で `save_weekly_prescriptions` の順。処方だけの再保存は拒否される。Garmin 登録済みなら `schedule_weekly_prescriptions(dry_run=False)` で作り直す
+- **プランを改訂するときは必ず版をペアで更新**: 新しいレビュー版（`save_weekly_review`、`review_data.revision_note` に理由）→ その `review_id` で `save_weekly_prescriptions` の順。処方だけの再保存は拒否される。Garmin 登録済みの行は、時計に送る中身（タイトルとステップ）が変わらなければ新しい版に登録が引き継がれる（#1447）。`save_weekly_prescriptions` の返り値 `needs_reregistration` に挙がった行（中身が変わった行）だけ `schedule_weekly_prescriptions(dry_run=False)` で作り直す（Garmin への書き込みなので実行前にユーザーに確認）
 - **読む側の版チェック**: 処方行の `review_id` とレビューの `review_id` が一致しないときは**処方が正**。そのレビューの日別の言及は使わない
 - **Garmin カレンダー**: `[MCP]` 項目はこちらの処方の写し（正本は処方行）、`fbtAdaptiveWorkout` は参考情報にとどめる

@@ -428,6 +428,36 @@ def registrable_steps(structure: Structure) -> list[dict[str, Any]]:
     return _registrable_items(structure)  # type: ignore[arg-type]
 
 
+def registration_fingerprint(row: Mapping[str, Any]) -> str | None:
+    """Canonical JSON of what the watch would receive for one prescription row.
+
+    The title plus the registrable steps, built by the same
+    :func:`synthesize_structure` → :func:`registrable_steps` path registration
+    uses (``tools.workout_scheduling.build_steps_from_prescription``), so no
+    field list is kept by hand: judge-only fields (``rationale``, ``rating``,
+    ``allowances``, ``purpose``, pace bounds) never change it, while targets,
+    HR bounds, strides, a stored structure or the title do. Two rows with equal
+    fingerprints put the same workout on the watch (#1447).
+
+    Returns:
+        The fingerprint, or ``None`` when the row cannot be registered as a
+        run (not a run session, no volume, or an invalid structure).
+    """
+    if str(row.get("session_type") or "") not in RUN_SESSION_TYPES:
+        return None
+    try:
+        structure = synthesize_structure(row)
+    except ValueError:
+        return None
+    if structure is None:
+        return None
+    return json.dumps(
+        {"title": str(row.get("title") or ""), "steps": registrable_steps(structure)},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
 def fit_step_indices(structure: Structure) -> list[FlatStep]:
     """Return every registered executable step with its FIT step index.
 

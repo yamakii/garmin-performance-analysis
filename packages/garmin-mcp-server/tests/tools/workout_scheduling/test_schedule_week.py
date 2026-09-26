@@ -263,8 +263,9 @@ def test_get_superseded_workout_ids_older_batches_only(
     long_id, easy_id = _seed(week_reader, [_long_row(), _easy_row()])
     _register(week_reader, easy_id, 11)
     _register(week_reader, long_id, 12)
-    # The revision: a new batch without Garmin ids.
-    _seed(week_reader, [_easy_row()])
+    # The revision changes the easy run's workout, so nothing is carried over
+    # (#1447) and the new batch has no Garmin ids.
+    _seed(week_reader, [{**_easy_row(), "target_minutes": 50}])
 
     assert PlanReader(db_path=str(week_reader.db_path)).get_superseded_workout_ids(
         WEEK_START

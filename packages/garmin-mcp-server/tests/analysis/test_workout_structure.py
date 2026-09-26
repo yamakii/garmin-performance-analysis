@@ -9,6 +9,7 @@ import pytest
 from garmin_mcp.analysis.workout_structure import (
     fit_step_indices,
     registrable_steps,
+    registration_fingerprint,
     structure_totals,
     synthesize_structure,
     validate_structure,
@@ -265,3 +266,31 @@ def test_structure_totals_mixed_is_none() -> None:
     structure = [WU10, {"step_type": "run", "distance_m": 5000}]
 
     assert structure_totals(structure) == (None, None)  # type: ignore[arg-type]
+
+
+@pytest.mark.unit
+def test_registration_fingerprint_ignores_judge_only_fields() -> None:
+    """Only what the watch receives counts: title + registrable steps (#1447)."""
+    long_run: dict[str, Any] = {
+        "session_type": "long",
+        "title": "ロング28km",
+        "target_minutes": None,
+        "target_km": 28.0,
+        "hr_low": None,
+        "hr_high": 150,
+        "rationale": "最終ロング",
+    }
+    judge_only_edit = {
+        **long_run,
+        "rationale": "補給は45分ごと",
+        "allowances": {"walk": True},
+        "purpose": "long_easy",
+        "pace_low_s_per_km": 420,
+    }
+
+    fingerprint = registration_fingerprint(long_run)
+    assert fingerprint is not None
+    assert registration_fingerprint(judge_only_edit) == fingerprint
+    assert registration_fingerprint({**long_run, "hr_high": 145}) != fingerprint
+    assert registration_fingerprint({**long_run, "title": "ロング26km"}) != fingerprint
+    assert registration_fingerprint({"session_type": "rest", "title": "休養"}) is None

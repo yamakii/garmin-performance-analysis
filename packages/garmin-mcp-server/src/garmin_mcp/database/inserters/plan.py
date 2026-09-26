@@ -446,6 +446,51 @@ def _json_or_none(value: Any) -> str | None:
     return json.dumps(value, ensure_ascii=False, default=str)
 
 
+_REGISTRATION_COLUMNS = (
+    "prescription_id",
+    "date",
+    "session_type",
+    "title",
+    "target_minutes",
+    "target_km",
+    "hr_low",
+    "hr_high",
+    "strides",
+    "structure",
+    "garmin_workout_id",
+    "garmin_schedule_id",
+    "registered_bookend_minutes",
+)
+
+
+def _previous_registrations(
+    conn: Any, week_start: date, user_id: str
+) -> list[dict[str, Any]]:
+    """The Garmin-registered rows of the week's current latest batch (#1447).
+
+    Read before a new batch is inserted, so "latest" is the batch being
+    superseded. The step-shaping JSON columns are decoded, so each row can be
+    fingerprinted exactly like the incoming rows.
+    """
+    rows = conn.execute(
+        f"SELECT {', '.join(_REGISTRATION_COLUMNS)} FROM weekly_prescriptions "
+        "WHERE user_id = ? AND week_start_date = ? AND status = 'registered' "
+        "AND garmin_schedule_id IS NOT NULL AND batch_id = ("
+        "  SELECT MAX(batch_id) FROM weekly_prescriptions "
+        "  WHERE user_id = ? AND week_start_date = ?"
+        ") ORDER BY date, prescription_id",
+        [user_id, week_start, user_id, week_start],
+    ).fetchall()
+    previous: list[dict[str, Any]] = []
+    for values in rows:
+        row = dict(zip(_REGISTRATION_COLUMNS, values, strict=True))
+        for key in ("strides", "structure"):
+            if isinstance(row[key], str):
+                row[key] = json.loads(row[key])
+        previous.append(row)
+    return previous
+
+
 def insert_training_blocks(
     blocks: list[dict[str, Any]],
     user_id: str = "default",
@@ -648,6 +693,16 @@ def insert_weekly_prescriptions(
     **latest** review version and each version may own only one batch (Issue
     #1021). Weeks without a review keep accepting unlinked batches.
 
+    A Garmin registration survives a revision that leaves the workout alone
+    (#1447): a new row whose status is ``prescribed`` (or omitted) takes over
+    ``status="registered"`` and the Garmin workout / schedule ids and bookend
+    minutes of the superseded batch's registered row on the same date when both
+    rows would put the same workout on the watch
+    (:func:`~garmin_mcp.analysis.workout_structure.registration_fingerprint`).
+    Judge-only edits (rationale, rating, allowances, purpose, pace bounds) keep
+    the registration; a change to the targets, HR bounds, strides, structure or
+    title does not, and the row is listed for re-registration instead.
+
     Args:
         week_start_date: Week start (``YYYY-MM-DD``); every row's ``date`` must
             fall in ``[week_start_date, week_start_date + 6]``.
@@ -667,7 +722,12 @@ def insert_weekly_prescriptions(
         db_path: Path to DuckDB database. If None, uses the default path.
 
     Returns:
-        ``{"batch_id": int, "count": int, "prescription_ids": list[int]}``.
+        ``{"batch_id": int, "count": int, "prescription_ids": list[int],
+        "carried_registrations": [{prescription_id, date, garmin_schedule_id}],
+        "needs_reregistration": [{prescription_id, date}]}``. The latter lists
+        the new registrable rows on dates the superseded batch had registered
+        but whose workout changed, i.e. what ``schedule_weekly_prescriptions``
+        has to register again.
 
     Raises:
         ValueError: On a date outside the week, an unknown ``session_type``,
@@ -744,9 +804,21 @@ def insert_weekly_prescriptions(
         allowances = _validate_allowances(row)
         validated.append((row, row_date, strides, purpose, allowances))
 
+    from garmin_mcp.analysis.workout_structure import registration_fingerprint
+
     prescription_ids: list[int] = []
+    carried_registrations: list[dict[str, Any]] = []
+    needs_reregistration: list[dict[str, Any]] = []
     with get_write_connection(db_path) as conn:
         _check_revision_guard(conn, week_start, review_id, user_id)
+
+        # Read before the new batch exists, so these are the superseded rows.
+        previous = [
+            (prev, registration_fingerprint(prev))
+            for prev in _previous_registrations(conn, week_start, user_id)
+        ]
+        registered_dates = {prev["date"] for prev, _ in previous}
+        used: set[int] = set()
 
         batch_row = conn.execute(
             "SELECT nextval('seq_weekly_prescription_batches')"
@@ -758,6 +830,38 @@ def insert_weekly_prescriptions(
                 "SELECT nextval('seq_weekly_prescriptions_id')"
             ).fetchone()
             prescription_id = int(id_row[0]) if id_row is not None else 0
+
+            status = row.get("status") or "prescribed"
+            carried: dict[str, Any] | None = None
+            fingerprint = registration_fingerprint({**row, "strides": strides})
+            if status == "prescribed" and fingerprint is not None:
+                for prev, prev_fingerprint in previous:
+                    if (
+                        prev["prescription_id"] not in used
+                        and prev["date"] == row_date
+                        and prev_fingerprint == fingerprint
+                    ):
+                        carried = prev
+                        used.add(int(prev["prescription_id"]))
+                        break
+            if carried is not None:
+                status = "registered"
+                carried_registrations.append(
+                    {
+                        "prescription_id": prescription_id,
+                        "date": row_date.isoformat(),
+                        "garmin_schedule_id": carried["garmin_schedule_id"],
+                    }
+                )
+            elif (
+                status == "prescribed"
+                and fingerprint is not None
+                and row_date in registered_dates
+            ):
+                needs_reregistration.append(
+                    {"prescription_id": prescription_id, "date": row_date.isoformat()}
+                )
+
             conn.execute(
                 """
                 INSERT INTO weekly_prescriptions (
@@ -765,9 +869,11 @@ def insert_weekly_prescriptions(
                     week_start_date, date, session_type, title, target_minutes,
                     target_km, hr_low, hr_high, pace_low_s_per_km,
                     pace_high_s_per_km, rationale, rating, status, strides,
-                    purpose, allowances, structure
+                    purpose, allowances, structure, garmin_workout_id,
+                    garmin_schedule_id, registered_bookend_minutes
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
                 )
                 """,
                 [
@@ -787,27 +893,34 @@ def insert_weekly_prescriptions(
                     row.get("pace_high_s_per_km"),
                     row.get("rationale"),
                     row.get("rating"),
-                    row.get("status") or "prescribed",
+                    status,
                     _json_or_none(strides),
                     purpose,
                     _json_or_none(allowances),
                     _json_or_none(row.get("structure")),
+                    carried["garmin_workout_id"] if carried else None,
+                    carried["garmin_schedule_id"] if carried else None,
+                    carried["registered_bookend_minutes"] if carried else None,
                 ],
             )
             prescription_ids.append(prescription_id)
 
         logger.info(
-            "Saved %d prescriptions user_id=%s week_start_date=%s (batch_id=%d)",
+            "Saved %d prescriptions user_id=%s week_start_date=%s (batch_id=%d, "
+            "%d registrations carried over)",
             len(prescription_ids),
             user_id,
             week_start,
             batch_id,
+            len(carried_registrations),
         )
 
     return {
         "batch_id": batch_id,
         "count": len(prescription_ids),
         "prescription_ids": prescription_ids,
+        "carried_registrations": carried_registrations,
+        "needs_reregistration": needs_reregistration,
     }
 
 
