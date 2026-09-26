@@ -6,12 +6,9 @@ import {
   AXIS_STYLE,
   BASELINE_BAND_COLOR,
   BASE_CHART_OPTION,
-  CHART_FONT_FAMILY,
-  CHART_FONT_SIZE,
   CHART_GRID,
   COMPARE_COLOR,
   INK_COLOR,
-  PAPER_COLOR,
   THRESHOLD_LINE,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
@@ -147,20 +144,11 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
               color: offTarget ? THRESHOLD_LINE.warn : COMPARE_COLOR,
               type: "dotted",
             },
-            label: {
-              // Inside the plot, above the line's right end: the default `end`
-              // sits past the frame and was clipped to 「平」 (#1441). At phone
-              // width a bar fills most of its column, so wherever the label
-              // sits it crosses a bar; the paper ground keeps it readable
-              // there instead of printing brown on ink (#1443).
-              position: "insideEndTop",
-              formatter: "平均",
-              fontFamily: CHART_FONT_FAMILY,
-              fontSize: CHART_FONT_SIZE,
-              color: offTarget ? THRESHOLD_LINE.warn : COMPARE_COLOR,
-              backgroundColor: PAPER_COLOR,
-              padding: [1, 3],
-            },
+            // No text on the line: the chart header's status names it
+            // (「平均 -469 · …」, in the line's colour), as 回復トレンド's
+            // header names its band. An in-plot label crosses a bar at
+            // phone width, and a paper patch behind it cut the bar (#1445).
+            label: { show: false },
             data: [{ yAxis: mean }],
           },
         }),
