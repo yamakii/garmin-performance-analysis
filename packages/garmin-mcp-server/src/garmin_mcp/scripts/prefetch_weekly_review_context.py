@@ -52,6 +52,9 @@ Output (JSON to stdout, one line):
                                           #   run (null when W-1 had none)
       "symptoms": {"prev_week": [...],      # W-1 symptom reports (#1223)
                    "status": {...}}|null,   #   deterministic rule as of today
+      "energy_balance": {...}|null,       # get_energy_balance over the 7 days
+                                          #   ending min(W end, today - 1),
+                                          #   as_of today (#1435)
       "strength": {"prev_week": [...]|null, "current_week": [...]|null},
       "hiking": {"prev_week": [...]|null, "current_week": [...]|null},
       "training_block": {                  # review backbone (Issue #980)
@@ -106,7 +109,7 @@ import sys
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
@@ -121,6 +124,9 @@ from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.readers.metadata import collect_week_gear_usage
 from garmin_mcp.utils.week import get_week_start_day, week_bounds
+
+if TYPE_CHECKING:
+    from garmin_mcp.database.db_reader import GarminDBReader
 
 # Multi-week load lookback (matches the skill's get_load_trend(lookback_weeks=10)).
 _LOAD_LOOKBACK_WEEKS = 10
@@ -145,6 +151,8 @@ _LONG_RUN_GATE_MIN_KM = 10.0
 # Post-event window verdicts that force a cutback on their own (Issue #1222):
 # a long run past the pre-race ceiling while the protection window is open.
 _EVENT_WINDOW_CUTBACK = ("yellow", "red")
+# Energy-balance window in days (Issue #1435): one review week.
+_ENERGY_WINDOW_DAYS = 7
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -526,6 +534,32 @@ def _slim_past_review(review: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
+def _collect_energy_balance(
+    reader: GarminDBReader, week_end: date, today: date
+) -> dict[str, Any] | None:
+    """The logged energy balance over the week, as of today (Issue #1435).
+
+    The window ends on W's last day, or on yesterday when W is still running
+    (today's intake is never closed). Wrapped in :func:`_safe`, so a missing
+    ``daily_energy`` table or any reader failure nulls the key instead of
+    aborting the bundle.
+
+    Args:
+        reader: A ``GarminDBReader``.
+        week_end: Target week W's last day.
+        today: The reference "today".
+
+    Returns:
+        The ``get_energy_balance`` payload, or ``None`` on error.
+    """
+    end = min(week_end, today - timedelta(days=1))
+    return _safe(
+        lambda: reader.get_energy_balance(
+            end_date=str(end), window_days=_ENERGY_WINDOW_DAYS, as_of=str(today)
+        )
+    )
+
+
 def _resolve_activities(conn: Any, start: str, end: str) -> list[dict[str, Any]]:
     """Return activity metadata rows whose ``activity_date`` is within the window.
 
@@ -787,6 +821,10 @@ def prefetch_weekly_review_context(
         }
     )
 
+    # Logged energy balance over W (#1435): the 【体重・収支】 step reads it
+    # against the block's weight_mode and the weight trend.
+    energy_balance = _collect_energy_balance(reader, week_end, today_d)
+
     # Goals with weeks-to-race pre-computed against W's start (ceil, null-safe).
     # Derived *before* the profile is slimmed: this list is the only copy of the
     # goals that ships in the bundle.
@@ -818,6 +856,7 @@ def prefetch_weekly_review_context(
         "acwr": acwr,
         "recovery": recovery,
         "symptoms": symptoms,
+        "energy_balance": energy_balance,
         "strength": strength,
         "hiking": hiking,
         "training_block": training_block,

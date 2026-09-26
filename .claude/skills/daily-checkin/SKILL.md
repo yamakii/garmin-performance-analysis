@@ -14,16 +14,16 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance")
 ```
 
-## Step 1: 今朝の wellness を取り込む（必須・単独ステップ）
+## Step 1: 今朝の wellness と前日の収支を取り込む（必須・単独ステップ）
 
 今朝の HRV/RHR/睡眠は日次同期より先にユーザーが質問することが多く、取り込み前だと `get_recovery_status` が **前日**の値を返します。
-write 系なので他の read より先に単独で実行します:
+前日の摂取/消費カロリー（`energy`）も同じ呼び出しで取り込みます。write 系なので他の read より先に単独で実行します:
 
 ```
-mcp__garmin-db__catch_up_ingest(domains=["wellness"], end_date=<対象日>)
+mcp__garmin-db__catch_up_ingest(domains=["wellness", "energy"], end_date=<対象日>)
 ```
 
 ## Step 1b: 脚の状態を 1 問だけ聞いて記録する（必須）
@@ -60,6 +60,7 @@ wellness 取り込みの直後に、**質問を 1 つだけ**します（増や�
 | `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rating / rationale / status / review_id）。これが判定の背骨 |
 | `get_weekly_review` | `week_start_date=<今週の開始日>`（引数なしだと最新週＝翌週分のレビューが返りうる） | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
 | `get_symptom_status` | `date=<対象日>` | 症状ルールの判定（`flag` / `flagged_regions` / `asked_today` / `clear_today` / `reason_ja`）。Step 1b の記録が反映された状態で読む |
+| `get_energy_balance` | `end_date=<前日>` | 前日の収支（`days[]` のうち `date=<前日>` の行の `balance_kcal` / `intake_status`）と 7 日平均（`window.status` / `window.mean_balance_kcal`）。Step 4 の 1 行にだけ使う |
 
 **前日のランは `get_run_report` の `headline` で一言に要約する**（例:「昨日は処方どおり、指摘なし」「昨日は一部ずれ、心拍が想定より高め」）。
 通常の範囲の内側（`within` / `edge`）の指標は今日の判断材料にしません。星評価・保存分析の散文は使わず、
@@ -89,6 +90,14 @@ wellness 取り込みの直後に、**質問を 1 つだけ**します（増や�
 - 冒頭 1〜2 文で結論（走ってよい/抑える/休む、距離帯、HR 上限）
 - 回復指標の小さな表（指標 / 今日 / ベースライン / 判定）。**脚の症状の行を必ず 1 行入れる**（例: 「脚の張り | 右ふくらはぎ 3/10 | 2回連続で3以上 | 🔴 ロングは見送り」。申告なしの日は「なし（本日確認済み）」、14 日記録が無ければ「未確認」）
 - 今日の処方との対応（処方のどこに沿っているか。ずらす場合はどうずらすか）
+- **収支の 1 行**（`get_energy_balance`。**質問はしない**: このチェックインの質問は Step 1b の 1 問だけ）。前日の行の `intake_status` で書き分ける:
+  - `settled` → 「昨日の収支 -320 kcal、7 日平均 -280 kcal/日」
+  - `provisional` → 同じ形で前日の値に「（暫定）」を付ける（まだ食事の記録が追加されうる）
+  - `suspect_low` → 前日の値に「少なめ・未確認」と添える（確認は週次レビューでまとめて行うので、ここでは問いかけない）
+  - `not_logged` / `pending` / `no_data` → 「昨日: 記録なし／同期待ち（収支は出していません）」
+  - `athlete_reported_incomplete`（本人が「抜けあり」と申告済み）、または `balance_kcal` が null（消費側が未同期・装着不足）→ 前日の値は出さず、その理由を短く添える
+  - 7 日平均は `window.status = "ok"` のときだけ `window.mean_balance_kcal` を添える。`insufficient` / `no_logging` なら平均は出さない
+  - 記録を促す・催促する言い回しは使わない（記録の途切れに触れるのは `/weekly-review` の 1 回だけ）
 - 注意点は最大 2 つ、次のアクションは 1 つ
 - 目的を達しているランや状態に対して「成功条件」「合否」の表現は使わない（維持目標・改善余地として述べる）
 

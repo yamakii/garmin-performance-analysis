@@ -87,6 +87,7 @@ def _mock_prefetch(
         _no_event_window() if event_window is None else event_window
     )
     reader.get_long_run_recovery_cost.return_value = None
+    reader.get_energy_balance.return_value = {"window": {"status": "ok"}}
 
     athlete_reader = MagicMock()
     athlete_reader.get_athlete_profile.return_value = (
