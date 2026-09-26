@@ -121,11 +121,11 @@ def test_kept_tools_present() -> None:
 
 
 @pytest.mark.unit
-def test_tool_count_is_74() -> None:
-    """The live MCP surface is exactly 74 tools (76 -> 74 after #1378)."""
-    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 74
+def test_tool_count_is_76() -> None:
+    """The live MCP surface is exactly 76 tools (74 after #1378, +2 in #1434)."""
+    assert len(ALL_DEFS) + len(_SERVER_TOOLS) == 76
     golden = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
-    assert len(golden) == 74
+    assert len(golden) == 76
 
 
 @pytest.mark.unit
@@ -152,7 +152,7 @@ def test_hiking_tools_registered() -> None:
         t["name"] for t in json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
     }
     assert {"ingest_hiking_sessions", "get_hiking_sessions"} <= golden_names
-    assert len(golden_names) == 74
+    assert len(golden_names) == 76
 
     # get_hiking_sessions -> GarminDBReader.get_hiking_sessions
     reader = MagicMock()

@@ -1401,6 +1401,154 @@ class GarminDBReader:
         )
         return evaluate_symptom_rule(rows, str(ref))
 
+    # ========== Energy Balance Methods ==========
+
+    def get_energy_balance(
+        self,
+        end_date: str | None = None,
+        window_days: int = 7,
+        calibration_days: int = 28,
+        as_of: str | None = None,
+        user_id: str = "default",
+    ) -> dict[str, Any]:
+        """Get the energy balance over a window, judged against ``weight_mode``.
+
+        Reads ``daily_energy``, ``intake_confirmations``, the day's activity
+        durations (``activities`` / ``hiking_sessions`` / ``strength_sessions``),
+        ``body_composition`` (explicit date range) and the ``training_blocks``
+        row covering ``end_date``, then delegates to
+        :func:`garmin_mcp.analysis.energy_balance.build_energy_balance`
+        (issue #1434).
+
+        Args:
+            end_date: ``YYYY-MM-DD`` last day of the window. ``None`` (default)
+                uses the day before ``as_of`` (the last closed day).
+            window_days: Window length in days (default 7).
+            calibration_days: Weight-calibration window in days (default 28).
+            as_of: ``YYYY-MM-DD`` reference "today" (default: today).
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            ``json.dumps``-serializable dict with ``end_date``, ``as_of``,
+            ``window_days``, ``days``, ``window``, ``logging``, ``target``,
+            ``calibration`` and ``weight``.
+        """
+        from datetime import date as date_cls
+        from datetime import datetime, timedelta
+
+        from garmin_mcp.analysis.energy_balance import (
+            Confirmation,
+            EnergyDay,
+            build_energy_balance,
+        )
+
+        as_of_d = date_cls.today() if as_of is None else date_cls.fromisoformat(as_of)
+        end_d = (
+            as_of_d - timedelta(days=1)
+            if end_date is None
+            else date_cls.fromisoformat(end_date)
+        )
+        window_start = end_d - timedelta(days=window_days - 1)
+        cal_start = end_d - timedelta(days=calibration_days - 1)
+        last_day = max(end_d, as_of_d)
+
+        def _as_date(value: Any) -> date_cls:
+            if isinstance(value, datetime):
+                return value.date()
+            if isinstance(value, date_cls):
+                return value
+            return date_cls.fromisoformat(str(value))
+
+        def _as_ts(value: Any) -> datetime | None:
+            if value is None or isinstance(value, datetime):
+                return value
+            return datetime.fromisoformat(str(value))
+
+        activity_seconds: dict[date_cls, int] = {}
+        for sql in (
+            "SELECT activity_date, SUM(total_time_seconds) FROM activities "
+            "WHERE activity_date <= ? GROUP BY activity_date",
+            "SELECT activity_date, SUM(duration_seconds) FROM hiking_sessions "
+            "WHERE activity_date <= ? GROUP BY activity_date",
+            "SELECT activity_date, SUM(active_duration_seconds) "
+            "FROM strength_sessions WHERE activity_date <= ? GROUP BY activity_date",
+        ):
+            for day_val, seconds in self.execute_read_query(sql, (str(last_day),)):
+                if day_val is None or seconds is None:
+                    continue
+                key = _as_date(day_val)
+                activity_seconds[key] = activity_seconds.get(key, 0) + int(seconds)
+
+        days = [
+            EnergyDay(
+                date=_as_date(row[0]),
+                consumed_kcal=row[1],
+                includes_consumed=row[2],
+                total_kcal=row[3],
+                bmr_kcal=row[4],
+                coverage_seconds=row[5],
+                awake_seconds=row[6],
+                asleep_seconds=row[7],
+                activity_seconds=activity_seconds.get(_as_date(row[0]), 0),
+                fetched_at=_as_ts(row[8]),
+                consumed_changed_at=_as_ts(row[9]),
+            )
+            for row in self.execute_read_query(
+                "SELECT date, consumed_kcal, includes_consumed, total_kcal, "
+                "bmr_kcal, coverage_seconds, awake_seconds, asleep_seconds, "
+                "fetched_at, consumed_changed_at FROM daily_energy "
+                "WHERE date <= ? ORDER BY date",
+                (str(last_day),),
+            )
+        ]
+
+        confirmations: dict[date_cls, Confirmation] = {}
+        for day_val, status, note, confirmed_at in self.execute_read_query(
+            "SELECT date, status, note, confirmed_at FROM intake_confirmations "
+            "WHERE user_id = ? AND date <= ? AND status IN ('complete', 'incomplete')",
+            (user_id, str(last_day)),
+        ):
+            ts = _as_ts(confirmed_at)
+            if ts is None:
+                continue
+            confirmations[_as_date(day_val)] = Confirmation(
+                status=status, confirmed_at=ts, note=note
+            )
+
+        weigh_ins = [
+            (_as_date(day_val), float(weight))
+            for day_val, weight in self.execute_read_query(
+                "SELECT date, AVG(weight_kg) FROM body_composition "
+                "WHERE date >= ? AND date <= ? AND weight_kg IS NOT NULL "
+                "GROUP BY date ORDER BY date",
+                (str(cal_start), str(end_d)),
+            )
+        ]
+
+        blocks = self.execute_read_query(
+            "SELECT block_id, weight_mode, start_date, end_date FROM training_blocks "
+            "WHERE user_id = ? AND start_date <= ? AND end_date >= ? "
+            "ORDER BY start_date",
+            (user_id, str(end_d), str(window_start)),
+        )
+        covering = [b for b in blocks if _as_date(b[2]) <= end_d <= _as_date(b[3])]
+        block_id = covering[-1][0] if covering else None
+        weight_mode = covering[-1][1] if covering else None
+
+        result = build_energy_balance(
+            days,
+            confirmations,
+            weigh_ins,
+            weight_mode,
+            end_date=end_d,
+            window_days=window_days,
+            calibration_days=calibration_days,
+            as_of=as_of_d,
+        )
+        result["target"]["block_id"] = block_id
+        result["target"]["crosses_block_boundary"] = len(blocks) > 1
+        return result
+
     # ========== Post-Event Window Methods ==========
 
     def get_post_event_window(self, date: str | None = None) -> dict[str, Any]:
