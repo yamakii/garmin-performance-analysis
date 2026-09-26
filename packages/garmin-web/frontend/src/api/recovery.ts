@@ -1,5 +1,6 @@
 import type {
   BodyCompositionTrend,
+  EnergyBalance,
   FormAnomalyFlagsResponse,
   RecoveryStatus,
   RecoveryTrend,
@@ -30,6 +31,11 @@ export function fetchBodyCompositionTrend(
   weeks = 12,
 ): Promise<BodyCompositionTrend> {
   return fetchJson(`/api/body-composition-trend?weeks=${weeks}`);
+}
+
+/** Logged energy balance over the window ending yesterday (#1439). */
+export function fetchEnergyBalance(windowDays = 7): Promise<EnergyBalance> {
+  return fetchJson(`/api/energy-balance?window_days=${windowDays}`);
 }
 
 /** Weight ↔ easy-run economy (EF) coupling over the trailing N weeks (#554). */

@@ -1,5 +1,6 @@
 import {
   useBodyCompositionTrend,
+  useEnergyBalance,
   useFormAnomalyFlags,
   useRecoveryStatus,
   useRecoveryTrend,
@@ -14,6 +15,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import type {
   AcwrStatus,
   AcwrTrend,
+  EnergyBalance,
   MetricBaseline,
   RecoveryStatus,
   RecoveryTrend,
@@ -24,6 +26,8 @@ import { formatDate } from "../utils/format";
 import { formatNumber } from "../utils/formatNumber";
 import { conditionVerdict } from "../utils/verdict";
 import BodyCompositionChart from "./trends/BodyCompositionChart";
+import EnergyBalancePanel from "./trends/EnergyBalancePanel";
+import { monthDay } from "./trends/energyBalanceLabels";
 import FormAnomalyFlagsCard from "./trends/FormAnomalyFlagsCard";
 import RecoveryPanel from "./trends/RecoveryPanel";
 import TrainingLoadBlock from "./trends/TrainingLoadBlock";
@@ -67,6 +71,15 @@ function bandNote(
   }
   const outside = metric?.adverse === true || underRecovery;
   return `${outside ? "基準外" : label} ${band}`;
+}
+
+/** "MM/DD – MM/DD" of the energy-balance window, once the data has landed. */
+function energyWindowNote(data: EnergyBalance | undefined): string | undefined {
+  const days = data?.days.filter((day) => day.in_window) ?? [];
+  if (days.length === 0) {
+    return undefined;
+  }
+  return `${monthDay(days[0].date)} – ${monthDay(days[days.length - 1].date)}`;
 }
 
 /** The four readings the morning turns on, in the order the verdict used them. */
@@ -141,7 +154,8 @@ function vitalsItems(
  * band, how many cautions the recent runs raised), states the four numbers
  * behind it once, and then spends one section on each supporting reading:
  * this week's cautions, the recovery trend, the distance from the personal
- * baseline, the training load and body composition (#1120).
+ * baseline, the training load, the logged energy balance (#1439) and body
+ * composition (#1120).
  *
  * The `form-anomaly` / `recovery` / `training-load` anchors are the home vitals
  * row's deep-link targets and the `/trends` redirect's, so they sit on the
@@ -160,6 +174,7 @@ export default function Condition() {
   const wellnessBaselineQuery = useWellnessBaselineDeviation();
   const trainingLoadQuery = useTrainingLoad();
   const bodyCompositionQuery = useBodyCompositionTrend();
+  const energyBalanceQuery = useEnergyBalance();
 
   // Supplementary readings: they qualify the verdict and the recovery band but
   // must not fail either, so they are read off the query rather than awaited.
@@ -268,7 +283,19 @@ export default function Condition() {
         </QueryBoundary>
       </SectionBlock>
 
-      {/* ⑦ 体組成: 体重の内訳 */}
+      {/* ⑦ エネルギー収支: 記録された摂取と消費の差を減量方針の目標帯と比べて */}
+      <SectionBlock
+        id="energy-balance"
+        title="エネルギー収支"
+        note={energyWindowNote(energyBalanceQuery.data)}
+        noteMono
+      >
+        <QueryBoundary label="エネルギー収支" query={energyBalanceQuery}>
+          {(data) => <EnergyBalancePanel data={data} />}
+        </QueryBoundary>
+      </SectionBlock>
+
+      {/* ⑧ 体組成: 体重の内訳 */}
       <SectionBlock
         title="体組成"
         note={

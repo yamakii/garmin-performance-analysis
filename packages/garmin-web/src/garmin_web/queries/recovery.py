@@ -41,6 +41,25 @@ def get_body_composition_trend(
     )
 
 
+def get_energy_balance(
+    conn: duckdb.DuckDBPyConnection,
+    end_date: str | None = None,
+    window_days: int = 7,
+) -> dict[str, Any]:
+    """Logged energy balance over the window ending ``end_date`` (delegates #1434).
+
+    Day statuses, the usable-day mean, the ``weight_mode`` verdict and the weight
+    calibration are all computed by the reader; ``end_date=None`` is the reader's
+    default (yesterday, the last closed day).
+    """
+    return cast(
+        "dict[str, Any]",
+        GarminDBReader.from_connection(conn).get_energy_balance(
+            end_date=end_date, window_days=window_days
+        ),
+    )
+
+
 def get_weight_economy_coupling(
     conn: duckdb.DuckDBPyConnection, weeks: int = 52
 ) -> dict[str, Any]:

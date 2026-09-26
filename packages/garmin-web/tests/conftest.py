@@ -1988,3 +1988,82 @@ def plan_db_path(tmp_path: Path) -> Path:
     finally:
         conn.close()
     return db_path
+
+
+# --- Energy balance fixture (Issue #1439) -----------------------------------
+# The reader (#1434) reads seven tables. The two #1433 tables and the hiking /
+# strength session tables come from garmin_mcp's own migration functions, so no
+# DDL is copied here; activities / body_composition / training_blocks reuse the
+# shared constants above. Values are the observed 2026-09-17..09-26 days.
+
+# (date, intake, total, bmr, active, coverage_seconds, awake, asleep)
+_ENERGY_DAYS = [
+    ("2026-09-17", 1581, 2392, 1971, 421, 86400, 52000, 28000),
+    ("2026-09-18", 1405, 2365, 1969, 396, 86400, 52000, 28000),
+    ("2026-09-19", 1866, 3039, 1966, 1073, 86400, 52000, 28000),
+    ("2026-09-20", 2009, 2090, 1971, 119, 86400, 52000, 28000),
+    ("2026-09-21", 1777, 1984, 1981, 3, 86400, 52000, 28000),
+    ("2026-09-22", 1505, 2316, 1969, 347, 86400, 52000, 28000),
+    ("2026-09-23", 1915, 2519, 1973, 546, 86400, 52000, 28000),
+    ("2026-09-24", 2516, 2265, 1973, 292, 86400, 52000, 28000),
+    ("2026-09-25", 1574, 2235, 1973, 262, 86400, 52000, 28000),
+    ("2026-09-26", 909, 851, 850, 1, 37260, 9060, 22020),
+]
+
+
+@pytest.fixture
+def energy_balance_db_path(tmp_path: Path) -> Path:
+    """DuckDB with a week of logged intake and a 維持 block covering it."""
+    from garmin_mcp.database.migrations.add_daily_energy_tables import (
+        add_daily_energy_tables,
+    )
+    from garmin_mcp.database.migrations.add_hiking_sessions import (
+        add_hiking_sessions,
+    )
+    from garmin_mcp.database.migrations.add_strength_sessions import (
+        add_strength_sessions,
+    )
+
+    db_path = tmp_path / "test_garmin_web_energy_balance.duckdb"
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute(_CREATE_ACTIVITIES)
+        conn.execute(_CREATE_BODY_COMPOSITION)
+        conn.execute(_CREATE_TRAINING_BLOCKS)
+        add_daily_energy_tables(conn)
+        add_hiking_sessions(conn)
+        add_strength_sessions(conn)
+        conn.executemany(
+            "INSERT INTO daily_energy (date, consumed_kcal, includes_consumed, "
+            "total_kcal, active_kcal, bmr_kcal, coverage_seconds, awake_seconds, "
+            "asleep_seconds, total_steps, fetched_at, first_fetched_at, "
+            "post_close_revisions, consumed_changed_at) "
+            "VALUES (?, ?, TRUE, ?, ?, ?, ?, ?, ?, 8000, "
+            "'2026-09-26 15:47:00', '2026-09-26 15:47:00', 0, NULL)",
+            [
+                (day, intake, total, active, bmr, coverage, awake, asleep)
+                for (
+                    day,
+                    intake,
+                    total,
+                    bmr,
+                    active,
+                    coverage,
+                    awake,
+                    asleep,
+                ) in _ENERGY_DAYS
+            ],
+        )
+        conn.execute(
+            "INSERT INTO training_blocks (block_id, sequence, phase, title, "
+            "start_date, end_date, weight_mode) VALUES "
+            "(15, 1, 'build', '新潟ラダー', '2026-08-24', '2026-09-27', '維持')"
+        )
+        conn.executemany(
+            "INSERT INTO body_composition (measurement_id, date, weight_kg) "
+            "VALUES (?, ?, ?)",
+            [(1, "2026-09-22", 77.6), (2, "2026-09-25", 78.0)],
+        )
+    finally:
+        conn.close()
+    return db_path

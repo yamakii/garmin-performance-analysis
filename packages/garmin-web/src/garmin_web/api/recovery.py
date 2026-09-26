@@ -60,6 +60,21 @@ def get_body_composition_trend_endpoint(
         return recovery_queries.get_body_composition_trend(conn, weeks)
 
 
+@router.get("/energy-balance")
+def get_energy_balance_endpoint(
+    request: Request, end_date: str | None = None, window_days: int = 7
+) -> dict[str, Any]:
+    """Logged energy balance (intake - expenditure) over a window (#1439).
+
+    Read-only: delegates entirely to the reader (#1434). ``end_date`` defaults to
+    yesterday. Every day carries its intake / expenditure status; only usable days
+    are averaged, excluded days are listed in ``window.excluded`` with a reason,
+    and ``target.verdict`` judges the mean against the block's ``weight_mode``.
+    """
+    with get_connection(_db_path(request)) as conn:
+        return recovery_queries.get_energy_balance(conn, end_date, window_days)
+
+
 @router.get("/form-anomaly-flags")
 def get_form_anomaly_flags_endpoint(
     request: Request, weeks: int = 2, max_activities: int = 12

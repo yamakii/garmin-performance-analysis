@@ -188,3 +188,29 @@ def test_no_dbpath_reader_construction_left():
         if pattern.search(py.read_text(encoding="utf-8"))
     ]
     assert offenders == [], f"Direct GarminDBReader(...) construction in: {offenders}"
+
+
+@pytest.mark.unit
+def test_get_energy_balance_query_delegates(monkeypatch):
+    """The query is a pass-through: the reader owns every energy-balance rule."""
+    calls: dict[str, object] = {}
+    sentinel = {"window": {"status": "ok"}}
+
+    class _FakeReader:
+        def get_energy_balance(self, end_date=None, window_days=7):
+            calls.update(end_date=end_date, window_days=window_days)
+            return sentinel
+
+    conn = object()
+    monkeypatch.setattr(
+        recovery_queries.GarminDBReader,
+        "from_connection",
+        classmethod(lambda cls, c: _FakeReader() if c is conn else None),
+    )
+
+    result = recovery_queries.get_energy_balance(
+        conn, end_date="2026-09-25", window_days=7
+    )
+
+    assert result is sentinel
+    assert calls == {"end_date": "2026-09-25", "window_days": 7}

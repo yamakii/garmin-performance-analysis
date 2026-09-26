@@ -149,6 +149,7 @@ parameters are documented in each handler's docstring.
 | `/api/activities/{activity_id}/track` | Return the GPS track for an activity. |
 | `/api/body-composition-trend` | Body-composition trend over the trailing ``weeks`` weeks (#501). |
 | `/api/durability-trend` | Return the long-run decoupling trend over a date window. |
+| `/api/energy-balance` | Logged energy balance (intake - expenditure) over a window (#1439). |
 | `/api/form-anomaly-flags` | "今週の注意点": form-anomaly flags across the trailing ``weeks`` runs (#636). |
 | `/api/goal` | Return the athlete goal payload (profile + goals + retrospectives). |
 | `/api/plan/blocks` | Return the mesocycle block ledger in display order. |
