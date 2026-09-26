@@ -21,12 +21,6 @@ export const COMPARE_COLOR = "#c9c3b6";
 /** Personal-baseline / optimal band: a faint ink wash (`markArea`). */
 export const BASELINE_BAND_COLOR = "rgba(28,27,24,0.06)";
 
-/**
- * The page ground (`--color-paper`), for chart text that must stay readable
- * where it crosses a bar, e.g. a reference line's label (#1443).
- */
-export const PAPER_COLOR = "#f4f1ea";
-
 /** Threshold lines (`markLine`, dotted): 注意 / 高リスク. */
 export const THRESHOLD_LINE = { warn: "#9a5b12", bad: "#a83a2e" } as const;
 

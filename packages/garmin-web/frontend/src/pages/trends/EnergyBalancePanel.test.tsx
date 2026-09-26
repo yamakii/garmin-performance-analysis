@@ -7,7 +7,6 @@ import {
   BASELINE_BAND_COLOR,
   COMPARE_COLOR,
   INK_COLOR,
-  PAPER_COLOR,
   THRESHOLD_LINE,
 } from "../../components/chartTheme";
 import { energyBalanceFixture } from "../../test/energyBalanceFixture";
@@ -44,7 +43,7 @@ interface BarOption {
     };
     markLine?: {
       lineStyle: { color: string };
-      label: { position?: string; backgroundColor?: string };
+      label: { show?: boolean };
       data: { yAxis: number }[];
     };
   }[];
@@ -112,16 +111,12 @@ describe("buildEnergyBalanceOption", () => {
     expect(insufficient.markArea).toBeDefined();
   });
 
-  it("mean label stays inside the plot", () => {
-    // The default `end` label sat past the frame and was clipped to 「平」.
-    expect(optionOf().series[0].markLine?.label.position).toBe("insideEndTop");
-  });
-
-  it("mean label has a paper background", () => {
-    // At phone width the label crosses a bar; paper keeps it off the ink.
-    const label = optionOf().series[0].markLine?.label;
-    expect(label?.backgroundColor).toBe(PAPER_COLOR);
-    expect(label?.position).toBe("insideEndTop");
+  it("mean line carries no text label", () => {
+    // The header's status names the line; an in-plot label crossed a bar
+    // at phone width and a paper patch behind it cut the bar (#1445).
+    const line = optionOf().series[0].markLine;
+    expect(line?.label.show).toBe(false);
+    expect(line?.lineStyle.color).toBe(THRESHOLD_LINE.warn);
   });
 
   it("y axis rounds outward to 500", () => {
