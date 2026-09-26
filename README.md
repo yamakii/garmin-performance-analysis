@@ -7,7 +7,7 @@ A comprehensive running performance analysis system that integrates with Garmin 
 ## Features
 
 - **Garmin MCP Integration**: token-optimized MCP tools for data retrieval and analysis, declared from a single-source `tools/` registry ([tool reference](docs/mcp-tools-reference.md) lists the full set)
-- **DuckDB Backend**: Normalized storage (28 tables, 100+ activities) for efficient querying
+- **DuckDB Backend**: Normalized storage (30 tables, 100+ activities) for efficient querying
 - **Coach Review**: one analysis agent (`run-note-analyst`) writing the prose on top of the deterministic run report
 - **Japanese Analysis**: All analysis stored in DuckDB and viewed via the web app (`packages/garmin-web`)
 - **Environmental Integration**: Weather, terrain, and body condition analysis

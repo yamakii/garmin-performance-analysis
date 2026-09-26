@@ -75,6 +75,10 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={"ingested_days": 0, "with_data": 0, "dates": []},
         ) as wellness_mock,
+        patch(
+            "garmin_mcp.ingest.energy_ingest.ingest_energy_range",
+            return_value={"ingested_days": 0, "with_intake": 0, "dates": []},
+        ),
     ):
         result = catch_up_ingest(end_date="2026-06-20", db_path=str(temp_db_path))
 
@@ -84,6 +88,7 @@ def test_catch_up_resolves_per_domain_window(temp_db_path: Path) -> None:
         "hiking": {"start": "2026-05-21", "end": "2026-06-20"},
         "weight": {"start": "2026-05-21", "end": "2026-06-20"},
         "wellness": {"start": "2026-05-21", "end": "2026-06-20"},
+        "energy": {"start": "2026-05-21", "end": "2026-06-20"},
     }
 
     run_mock.assert_called_once_with(
@@ -128,10 +133,14 @@ def test_catch_up_end_defaults_today(temp_db_path: Path) -> None:
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={},
         ),
+        patch(
+            "garmin_mcp.ingest.energy_ingest.ingest_energy_range",
+            return_value={},
+        ),
     ):
         result = catch_up_ingest(db_path=str(temp_db_path))
 
-    for domain in ("running", "weight", "strength", "hiking", "wellness"):
+    for domain in ("running", "weight", "strength", "hiking", "wellness", "energy"):
         assert result["window"][domain]["end"] == today
 
 
@@ -197,6 +206,10 @@ def test_catch_up_domain_error_isolated(temp_db_path: Path) -> None:
         patch(
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={"ingested_days": 0, "with_data": 0, "dates": []},
+        ),
+        patch(
+            "garmin_mcp.ingest.energy_ingest.ingest_energy_range",
+            return_value={"ingested_days": 0, "with_intake": 0, "dates": []},
         ),
     ):
         result = catch_up_ingest(end_date="2026-06-20", db_path=str(temp_db_path))
@@ -416,6 +429,10 @@ def test_catch_up_includes_wellness_by_default(temp_db_path: Path) -> None:
             "garmin_mcp.ingest.wellness_ingest.ingest_wellness_range",
             return_value={"ingested_days": 0, "with_data": 0, "dates": []},
         ) as wellness_mock,
+        patch(
+            "garmin_mcp.ingest.energy_ingest.ingest_energy_range",
+            return_value={"ingested_days": 0, "with_intake": 0, "dates": []},
+        ),
     ):
         result = catch_up_ingest(end_date="2026-06-25", db_path=str(temp_db_path))
 
@@ -543,3 +560,35 @@ def test_catch_up_wellness_ingests_range(tmp_path: Path) -> None:
     with get_connection(str(db_path)) as conn:
         count_row = conn.execute("SELECT COUNT(*) FROM daily_wellness").fetchone()
     assert count_row is not None and count_row[0] == 3
+
+
+# ---------------------------------------------------------------------------
+# energy domain (issue #1433)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_energy_window_refetches_settle_days(temp_db_path: Path) -> None:
+    """Today's partial row is the latest energy date, yet the window still
+    reaches back SETTLE_DAYS so the still-settling days are re-fetched."""
+    init_schema(temp_db_path)
+    with get_write_connection(str(temp_db_path)) as conn:
+        conn.execute(
+            "INSERT INTO daily_energy (date, coverage_seconds) VALUES (?, ?)",
+            ["2026-09-26", 37_260],
+        )
+
+    with patch(
+        "garmin_mcp.ingest.energy_ingest.ingest_energy_range",
+        return_value={"ingested_days": 8, "with_intake": 0, "dates": []},
+    ) as energy_mock:
+        result = catch_up_ingest(
+            end_date="2026-09-26",
+            domains=["energy"],
+            db_path=str(temp_db_path),
+        )
+
+    energy_mock.assert_called_once_with(
+        "2026-09-19", "2026-09-26", db_path=str(temp_db_path)
+    )
+    assert result["window"]["energy"] == {"start": "2026-09-19", "end": "2026-09-26"}

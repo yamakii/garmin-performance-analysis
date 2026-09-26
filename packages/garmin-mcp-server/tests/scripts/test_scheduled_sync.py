@@ -36,7 +36,7 @@ def test_run_sync_records_success(initialized_db_path: Path) -> None:
 
     assert len(rows) == 1
     assert rows[0][0] == outcome["run_id"]
-    assert rows[0][1] == "running,weight,strength,hiking,wellness"
+    assert rows[0][1] == "running,weight,strength,hiking,wellness,energy"
     assert rows[0][2] == "success"
 
 
@@ -105,7 +105,7 @@ def test_run_sync_error_message_not_persisted(initialized_db_path: Path) -> None
 
 @pytest.mark.unit
 def test_run_sync_default_domains_all(initialized_db_path: Path) -> None:
-    """domains=None -> catch_up_ingest receives all five default domains."""
+    """domains=None -> catch_up_ingest receives all six default domains."""
     with patch.object(
         scheduled_sync, "catch_up_ingest", return_value=dict(_ALL_OK)
     ) as mock_catch:
@@ -118,6 +118,7 @@ def test_run_sync_default_domains_all(initialized_db_path: Path) -> None:
         "strength",
         "hiking",
         "wellness",
+        "energy",
     ]
 
 

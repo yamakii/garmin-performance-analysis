@@ -1,4 +1,4 @@
-"""Catch-up ingest: fill running/weight/strength/hiking/wellness gaps in one call.
+"""Catch-up ingest: fill running/weight/strength/hiking/wellness/energy gaps.
 
 For each requested domain, resolve an independent ``[start, end]`` window and
 delegate to that domain's existing ingest primitive:
@@ -8,13 +8,15 @@ delegate to that domain's existing ingest primitive:
 - ``strength`` -> :func:`ingest_strength_sessions`
 - ``hiking``   -> :func:`ingest_hiking_sessions`
 - ``wellness`` -> :func:`ingest_wellness_range`
+- ``energy``   -> :func:`ingest_energy_range`
 
 The window is resolved per domain because each table advances at its own pace:
 
 - ``end``           = ``end_date`` or today.
 - per-domain start  = ``start_date`` (explicit, shared) or the domain's latest
   stored date (issue #460 readers), or ``end - 30 days`` when that table is
-  empty (``_EMPTY_DB_FLOOR_DAYS``).
+  empty (``_EMPTY_DB_FLOOR_DAYS``). ``energy`` additionally reaches back at
+  least ``SETTLE_DAYS`` so still-settling days are re-fetched.
 
 A failure in one domain does not abort the others: the offending domain's entry
 carries an ``error`` string while the remaining domains complete normally.
@@ -44,6 +46,7 @@ DEFAULT_DOMAINS: tuple[str, ...] = (
     "strength",
     "hiking",
     "wellness",
+    "energy",
 )
 _EMPTY_DB_FLOOR_DAYS = 30
 
@@ -59,6 +62,7 @@ _LATEST_DATE_METHOD: dict[str, str] = {
     "strength": "get_latest_strength_date",
     "hiking": "get_latest_hiking_date",
     "wellness": "get_latest_wellness_date",
+    "energy": "get_latest_energy_date",
 }
 
 
@@ -129,7 +133,7 @@ def _resolve_domain_window(
 
     Args:
         domain: One of ``"running"``, ``"weight"``, ``"strength"``,
-            ``"hiking"``, ``"wellness"``.
+            ``"hiking"``, ``"wellness"``, ``"energy"``.
         start_date: Explicit shared start (``YYYY-MM-DD``), or ``None`` for
             catch-up resolution from the domain's latest stored date.
         resolved_end: The already-resolved window end (``YYYY-MM-DD``).
@@ -138,17 +142,35 @@ def _resolve_domain_window(
     Returns:
         ``(start, end)`` as ``YYYY-MM-DD`` strings. When ``start_date`` is
         omitted: the domain's latest stored date, or ``end - 30 days`` when the
-        domain's table is empty.
+        domain's table is empty. For ``energy`` the start is additionally
+        capped at ``end - SETTLE_DAYS``.
     """
     if start_date is not None:
         return start_date, resolved_end
 
+    end = date.fromisoformat(resolved_end)
     latest_method = getattr(reader, _LATEST_DATE_METHOD[domain])
     latest = latest_method()
+
+    if domain == "energy":
+        # Energy days keep changing (partial coverage, late intake edits) until
+        # they settle, and today's partial row is always the latest stored
+        # date -- so "from the latest date" would stop re-fetching yesterday.
+        # Always reach back at least SETTLE_DAYS.
+        from garmin_mcp.ingest.energy_fetcher import SETTLE_DAYS
+
+        base = (
+            date.fromisoformat(latest)
+            if latest is not None
+            else end - timedelta(days=_EMPTY_DB_FLOOR_DAYS)
+        )
+        start = min(base, end - timedelta(days=SETTLE_DAYS))
+        return start.isoformat(), resolved_end
+
     if latest is not None:
         return latest, resolved_end
 
-    floor = date.fromisoformat(resolved_end) - timedelta(days=_EMPTY_DB_FLOOR_DAYS)
+    floor = end - timedelta(days=_EMPTY_DB_FLOOR_DAYS)
     return floor.isoformat(), resolved_end
 
 
@@ -182,12 +204,21 @@ def _run_wellness(window_start: str, window_end: str, db_path: str) -> dict[str,
     return ingest_wellness_range(window_start, window_end, db_path=db_path)
 
 
+def _run_energy(
+    window_start: str, window_end: str, db_path: str | None
+) -> dict[str, Any]:
+    from garmin_mcp.ingest.energy_ingest import ingest_energy_range
+
+    return ingest_energy_range(window_start, window_end, db_path=db_path)
+
+
 _DOMAIN_RUNNERS = {
     "running": _run_running,
     "weight": _run_weight,
     "strength": _run_strength,
     "hiking": _run_hiking,
     "wellness": _run_wellness,
+    "energy": _run_energy,
 }
 
 
@@ -197,7 +228,7 @@ def catch_up_ingest(
     domains: list[str] | None = None,
     db_path: str | None = None,
 ) -> dict[str, Any]:
-    """Differential catch-up ingest across running/weight/strength/hiking/wellness.
+    """Differential catch-up ingest across all DEFAULT_DOMAINS.
 
     For each requested domain, resolve an independent window and delegate to its
     ingest primitive. The ``end`` is shared (``end_date`` or today); each
@@ -210,7 +241,8 @@ def catch_up_ingest(
         end_date: Optional inclusive window end (``YYYY-MM-DD``). Defaults to
             today when omitted.
         domains: Optional subset of ``["running", "weight", "strength",
-            "hiking", "wellness"]``. Defaults to all five. Domains not listed
+            "hiking", "wellness", "energy"]``. Defaults to all six. Domains not
+            listed
             are skipped entirely.
         db_path: Optional DuckDB path (defaults to the configured database).
 

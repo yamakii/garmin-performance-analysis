@@ -94,3 +94,8 @@ def get_weight_raw_dir() -> Path:
 def get_wellness_raw_dir() -> Path:
     """Get the daily wellness raw data directory."""
     return get_data_base_dir() / "raw" / "wellness"
+
+
+def get_energy_raw_dir() -> Path:
+    """Get the daily energy (intake / expenditure) raw data directory."""
+    return get_data_base_dir() / "raw" / "energy"
