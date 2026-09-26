@@ -11,6 +11,7 @@ import {
   CHART_GRID,
   COMPARE_COLOR,
   INK_COLOR,
+  PAPER_COLOR,
   THRESHOLD_LINE,
   X_AXIS_STYLE,
 } from "../../components/chartTheme";
@@ -148,12 +149,17 @@ export function buildEnergyBalanceOption(data: EnergyBalance): EChartsOption {
             },
             label: {
               // Inside the plot, above the line's right end: the default `end`
-              // sits past the frame and was clipped to 「平」 (#1441).
+              // sits past the frame and was clipped to 「平」 (#1441). At phone
+              // width a bar fills most of its column, so wherever the label
+              // sits it crosses a bar; the paper ground keeps it readable
+              // there instead of printing brown on ink (#1443).
               position: "insideEndTop",
               formatter: "平均",
               fontFamily: CHART_FONT_FAMILY,
               fontSize: CHART_FONT_SIZE,
               color: offTarget ? THRESHOLD_LINE.warn : COMPARE_COLOR,
+              backgroundColor: PAPER_COLOR,
+              padding: [1, 3],
             },
             data: [{ yAxis: mean }],
           },
