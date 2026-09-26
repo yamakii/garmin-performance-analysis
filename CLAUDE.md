@@ -9,7 +9,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis
 
 **Key Features:**
-- DuckDB normalized storage (28 tables, 100+ activities)
+- DuckDB normalized storage (30 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
 - 1 analysis agent (run-note-analyst) writing the coach review on top of the deterministic run report
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
@@ -112,7 +112,7 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 | `uv run python -m garmin_mcp.scripts.bulk_fetch_raw_data --start-date YYYY-MM-DD` | Fetch raw data |
 | `uv run python -m garmin_mcp.scripts.bulk_fetch_activity_details --activity-ids N` | Fetch activity details |
 | `uv run python -m garmin_mcp.scripts.backfill_wellness [--start-date YYYY-MM-DD]` | Rate-limit-safe full-history daily_wellness backfill (monthly chunks, 429 backoff, auto data-floor stop, resume) |
-| `uv run python -m garmin_mcp ingest catch-up --domains wellness --start-date YYYY-MM-DD` | Backfill daily wellness (RHR/HRV/sleep) over a date range |
+| `uv run garmin-db ingest catch-up --domains wellness --start-date YYYY-MM-DD` | Backfill daily wellness (RHR/HRV/sleep) over a date range |
 
 ---
 

@@ -1,7 +1,7 @@
 """Catch-up ingest orchestrator tool definitions (issues #463, #1025).
 
-Exposes ``catch_up_ingest``, which fills running/weight/strength/hiking/wellness
-gaps in one call by resolving an independent window per domain and delegating to
+Exposes ``catch_up_ingest``, which fills running/weight/strength/hiking/wellness/
+energy gaps in one call by resolving an independent window per domain and delegating to
 each domain's ingest primitive, plus the read-only ``get_pending_trend_period``,
 which answers "which completed week still lacks a trend narration?" independently
 of any ingest run. Both delegate to ``ingest.catch_up``.
@@ -45,7 +45,7 @@ class CatchUpIngestParams(BaseModel):
         default=None,
         description=(
             "Subset of domains to ingest. Defaults to all of running, weight, "
-            "strength, hiking, wellness. Domains not listed are skipped."
+            "strength, hiking, wellness, energy. Domains not listed are skipped."
         ),
     )
 
@@ -97,15 +97,17 @@ INGEST_TOOLS: list[ToolDef] = [
         name="catch_up_ingest",
         description=(
             "Differential catch-up ingest across the running, weight, strength, "
-            "hiking and wellness domains in a single call. Resolves an independent "
-            "window per domain (each table advances at its own pace): end_date or "
-            "today as the shared end, and per-domain start = start_date (when "
-            "given) or that domain's latest stored date, or end_date - 30 days "
-            "when the domain is empty. running delegates to "
+            "hiking, wellness and energy domains in a single call. Resolves an "
+            "independent window per domain (each table advances at its own "
+            "pace): end_date or today as the shared end, and per-domain start = "
+            "start_date (when given) or that domain's latest stored date, or "
+            "end_date - 30 days when the domain is empty; energy always reaches "
+            "back at least 7 days so still-settling days (partial coverage, late "
+            "intake edits) are re-fetched. running delegates to "
             "ingest_running_activities, weight to ingest_weight_range, strength "
             "to ingest_strength_sessions, hiking to ingest_hiking_sessions, "
-            "wellness to ingest_wellness_range. Pass "
-            "domains to ingest a subset (default: all five). A failure in one "
+            "wellness to ingest_wellness_range, energy to ingest_energy_range. "
+            "Pass domains to ingest a subset (default: all six). A failure in one "
             "domain is isolated (its entry carries an error) while the others "
             "complete. Returns each requested domain's result plus a window map "
             "of {domain: {start, end}}. When the running domain succeeds, the "

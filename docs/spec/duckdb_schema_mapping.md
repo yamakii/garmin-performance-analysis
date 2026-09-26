@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 29th table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 31st table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.15 (2026-09-26)
+- **`daily_energy` and `intake_confirmations` tables added** (migration `add_daily_energy_tables`, version 34; also created in `_ensure_tables()`). The daily user summary's intake (MyFitnessPal via Garmin) and expenditure fields had no home, and a single fetch cannot tell a partial or still-edited day from a real one. `daily_energy` stores them per date with `coverage_seconds`, first / latest fetch times and `post_close_revisions` (intake changes after the day had closed); each date is re-fetched until it is 7 days old. `intake_confirmations` holds the athlete's confirmation that a day's log is complete; it is athlete input and is lost if the DB is regenerated from raw files (issue #1433, Epic #1432).
 
 ### Version 2.14 (2026-09-26)
 - **`weekly_prescriptions.structure` added** (migration `add_prescription_structure`, version 33). A prescription only described its body (one target, one HR band) while the watch workout, the bookend accounting and the judging each rebuilt the steps on their own, so a hand-built build-up or interval session could not be stored or judged as prescribed. `structure` holds the ordered step list (`warmup | run | recovery | rest | cooldown` steps, each with exactly one of `duration_minutes` / `duration_seconds` / `distance_m` and optional `hr_low` / `hr_high` in **bpm only**, plus repeat groups `{repeat_count, steps}` nested at most two deep), JSON in `VARCHAR`, validated by `analysis/workout_structure.validate_structure`. A row may carry `strides` or `structure`, never both; when `target_minutes` is omitted and every step is timed it is derived from the structure (the body only for threshold / tempo, the total otherwise), while `hr_low` / `hr_high` are never derived. `update_prescription_status(structure=...)` records the steps of a hand-built registration. Legacy rows stay NULL and are synthesized from their columns (issue #1401, Epic #1398).
@@ -79,7 +82,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (28 domain tables by category)
+## Table of Contents (30 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -111,6 +114,8 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 28 | [training_block_versions](#28-training_block_versions) | Plan | `version_id` | per ledger save |
 | 29 | [weekly_prescriptions](#29-weekly_prescriptions) | Plan | `prescription_id` | ~5-7 rows/week × batches |
 | 30 | [athlete_symptoms](#30-athlete_symptoms) | Athlete | `symptom_id` | per reported niggle/day |
+| 31 | [daily_energy](#31-daily_energy) | Physiology | `date` | daily |
+| 32 | [intake_confirmations](#32-intake_confirmations) | Athlete | `(user_id, date)` | per confirmed day |
 
 ---
 
@@ -1106,6 +1111,59 @@ Rows of the five section types written before the run note — `split`, `phase`,
 <!-- END GENERATED: schema:athlete_symptoms -->
 
 **Units & notes**: rows are **append-only**, one per (`date`, `body_region`), so two sore spots on one day are two rows and a later report never overwrites an earlier one. `body_region` is a controlled vocabulary enforced by the tool schema (`foot | ankle | achilles | calf | shin | knee | hamstring | quad | hip | glute | groin | lower_back | other`) and stored as VARCHAR; `side` ∈ `left | right | both` (NULL when not applicable); `phase` ∈ `during_run | after_run | morning | rest_day`. `severity` is a 0-10 scale and **0 is a meaningful row**: it records "asked and clear", which is what lets a gate distinguish "no pain" from "not asked" (issue #1220). `activity_id` links the report to the run it refers to when there is one. Read via `get_symptoms(start_date, end_date, body_region=None)`, which returns rows oldest-first with dates as strings.
+
+---
+
+## 31. daily_energy
+
+**Purpose**: Daily food intake (MyFitnessPal via Garmin) and energy expenditure as facts, with the metadata that tells a partial or still-settling day from a real one
+**Primary Key**: `date`
+**Source**: `client.get_user_summary(date)`, cached as `raw/energy/{date}.json` by `ingest/energy_fetcher.collect_energy_data` and upserted by `ingest_energy_range` (catch-up domain `energy`)
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:daily_energy -->
+| Column | Type |
+|--------|------|
+| date (PK) | DATE |
+| consumed_kcal | INTEGER |
+| includes_consumed | BOOLEAN |
+| total_kcal | INTEGER |
+| active_kcal | INTEGER |
+| bmr_kcal | INTEGER |
+| coverage_seconds | INTEGER |
+| awake_seconds | INTEGER |
+| asleep_seconds | INTEGER |
+| total_steps | INTEGER |
+| fetched_at | TIMESTAMP |
+| first_fetched_at | TIMESTAMP |
+| post_close_revisions | INTEGER |
+| consumed_changed_at | TIMESTAMP |
+<!-- END GENERATED: schema:daily_energy -->
+
+**Units & notes**: all energy columns are kcal (`consumedKilocalories`, `totalKilocalories`, `activeKilocalories`, `bmrKilocalories`); `includes_consumed` is `includesCalorieConsumedData`. `coverage_seconds` is `durationInMilliseconds / 1000`, so a value below 86,400 marks a day the summary does not yet fully cover (today's row is always partial); `awake_seconds` / `asleep_seconds` are `measurableAwakeDuration` / `measurableAsleepDuration`. A date is **re-fetched on every sync until `fetched_at >= date + 7 days`** (`SETTLE_DAYS`), then the cached snapshot is final; the catch-up window therefore always reaches back at least 7 days. The raw file keeps a revision history appended only when the intake changed; `post_close_revisions` counts intake changes where both that fetch and the one it replaced covered the full day (late food-log edits), `consumed_changed_at` is the fetch time of the latest intake revision, and `first_fetched_at` / `fetched_at` are local naive times. Rows are replaced per date (DELETE + INSERT).
+
+---
+
+## 32. intake_confirmations
+
+**Purpose**: The athlete's own confirmation that a day's intake log is complete (or not)
+**Primary Key**: `(user_id, date)`
+**Source**: Athlete input (not API-derived)
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:intake_confirmations -->
+| Column | Type |
+|--------|------|
+| user_id (PK) | VARCHAR |
+| date (PK) | DATE |
+| status | VARCHAR |
+| note | VARCHAR |
+| confirmed_at | TIMESTAMP |
+<!-- END GENERATED: schema:intake_confirmations -->
+
+**Units & notes**: `user_id` defaults to `'default'`. This is athlete input that **cannot be re-fetched**: deleting the DB file and regenerating it from raw files loses these rows (issue #1433).
 
 ---
 

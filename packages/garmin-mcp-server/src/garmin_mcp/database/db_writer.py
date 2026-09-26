@@ -7,8 +7,13 @@ Provides write operations to DuckDB for inserting performance data.
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.database.migrations.add_daily_energy_tables import (
+    DAILY_ENERGY_DDL,
+    INTAKE_CONFIRMATIONS_DDL,
+)
 from garmin_mcp.validation.pictographs import find_pictographs
 
 logger = logging.getLogger(__name__)
@@ -152,6 +157,81 @@ def _wellness_row(date: str, wellness_data: dict) -> dict | None:
     return row
 
 
+_FULL_DAY_SECONDS = 86_400
+
+
+def _int_or_none(value: Any) -> int | None:
+    """Coerce a numeric API value to ``int`` (``None`` stays ``None``)."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _energy_row(date: str, energy_raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Build a normalized daily_energy row from a raw energy snapshot.
+
+    Maps the snapshot written by
+    :func:`garmin_mcp.ingest.energy_fetcher.collect_energy_data`
+    (``{fetched_at, first_fetched_at, summary, revisions}``) onto the
+    ``daily_energy`` columns. ``coverage_seconds`` is
+    ``durationInMilliseconds / 1000``; ``post_close_revisions`` counts intake
+    changes where both the changed fetch and the fetch it replaced covered the
+    full day (86,400 s); ``consumed_changed_at`` is the fetch time of the
+    latest intake revision.
+
+    Args:
+        date: Date in ``YYYY-MM-DD`` format.
+        energy_raw: Raw energy snapshot dict.
+
+    Returns:
+        Row dict keyed by the ``daily_energy`` columns, or ``None`` when the
+        snapshot has no summary.
+    """
+    summary = energy_raw.get("summary")
+    if not isinstance(summary, dict) or not summary:
+        return None
+
+    millis = _int_or_none(summary.get("durationInMilliseconds"))
+    revisions = [r for r in (energy_raw.get("revisions") or []) if isinstance(r, dict)]
+
+    post_close = 0
+    for index, revision in enumerate(revisions):
+        if index == 0:
+            continue
+        previous_coverage = revision.get(
+            "previous_coverage_seconds", revisions[index - 1].get("coverage_seconds")
+        )
+        if (
+            revision.get("coverage_seconds") == _FULL_DAY_SECONDS
+            and previous_coverage == _FULL_DAY_SECONDS
+        ):
+            post_close += 1
+
+    includes_consumed = summary.get("includesCalorieConsumedData")
+
+    return {
+        "date": date,
+        "consumed_kcal": _int_or_none(summary.get("consumedKilocalories")),
+        "includes_consumed": (
+            bool(includes_consumed) if includes_consumed is not None else None
+        ),
+        "total_kcal": _int_or_none(summary.get("totalKilocalories")),
+        "active_kcal": _int_or_none(summary.get("activeKilocalories")),
+        "bmr_kcal": _int_or_none(summary.get("bmrKilocalories")),
+        "coverage_seconds": millis // 1000 if millis is not None else None,
+        "awake_seconds": _int_or_none(summary.get("measurableAwakeDuration")),
+        "asleep_seconds": _int_or_none(summary.get("measurableAsleepDuration")),
+        "total_steps": _int_or_none(summary.get("totalSteps")),
+        "fetched_at": energy_raw.get("fetched_at"),
+        "first_fetched_at": energy_raw.get("first_fetched_at"),
+        "post_close_revisions": post_close,
+        "consumed_changed_at": (revisions[-1].get("fetched_at") if revisions else None),
+    }
+
+
 class GarminDBWriter:
     """Write operations to DuckDB for Garmin performance data."""
 
@@ -188,6 +268,8 @@ class GarminDBWriter:
         - strength_sessions: Strength-training (補強) summaries
         - hiking_sessions: Hiking (山行) summaries
         - athlete_symptoms: Pain / niggle log (one row per date + body region)
+        - daily_energy: Daily intake / expenditure facts (issue #1433)
+        - intake_confirmations: Athlete confirmation of a day's intake log
 
         Tables owned exclusively by migrations (NOT created here):
         - athlete_profile / athlete_goals / season_retrospectives /
@@ -686,6 +768,11 @@ class GarminDBWriter:
                 )
             """)
 
+            # Create daily_energy + intake_confirmations (same DDL as
+            # migrations/add_daily_energy_tables.py, issue #1433).
+            conn.execute(DAILY_ENERGY_DDL)
+            conn.execute(INTAKE_CONFIRMATIONS_DDL)
+
             # Create indexes for time_series_metrics
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_time_series_activity "
@@ -1042,4 +1129,38 @@ class GarminDBWriter:
             return True
         except Exception as e:
             logger.error(f"Error inserting daily wellness data: {e}")
+            return False
+
+    def insert_daily_energy(self, date: str, energy_raw: dict[str, Any]) -> bool:
+        """Upsert (DELETE + INSERT keyed on ``date``) one daily_energy row.
+
+        Args:
+            date: Date in ``YYYY-MM-DD`` format.
+            energy_raw: Raw energy snapshot from
+                :func:`garmin_mcp.ingest.energy_fetcher.collect_energy_data`.
+
+        Returns:
+            True on success, False when the snapshot has no summary or the
+            write failed.
+        """
+        try:
+            row = _energy_row(date, energy_raw)
+            if row is None:
+                logger.warning(f"No energy summary found for {date}")
+                return False
+
+            columns = list(row.keys())
+            placeholders = ", ".join("?" for _ in columns)
+            with get_write_connection(self.db_path) as conn:
+                conn.execute("DELETE FROM daily_energy WHERE date = ?", [row["date"]])
+                conn.execute(
+                    f"INSERT INTO daily_energy ({', '.join(columns)}) "
+                    f"VALUES ({placeholders})",
+                    [row[c] for c in columns],
+                )
+
+            logger.info(f"Inserted daily energy data for {date}")
+            return True
+        except Exception as e:
+            logger.error(f"Error inserting daily energy data: {e}")
             return False

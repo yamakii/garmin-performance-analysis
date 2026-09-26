@@ -1,7 +1,7 @@
 # Scheduled Auto-Sync
 
 The scheduled sync entrypoint runs a catch-up ingest across every domain
-(running / weight / strength / hiking / wellness) and records the run in the `sync_runs`
+(running / weight / strength / hiking / wellness / energy) and records the run in the `sync_runs`
 table. It replaces the previously manual `catch-up` / `backfill` invocations
 with a single command that is safe to trigger unattended from cron or a systemd
 timer (issue #712, parent #701).
@@ -20,6 +20,16 @@ latest stored date (see `ingest/catch_up.py`). It then writes one row to
 | `domains` | CSV of requested domains |
 | `results` | `json.dumps` of the `catch_up_ingest` payload (per-domain result or `{"error": ...}`, plus resolved windows) |
 | `status` | `success` (all OK) / `partial` (≥1 domain error) / `error` (run itself raised) |
+
+The `energy` domain (daily intake / expenditure, issue #1433) always reaches back
+at least 7 days, because a day keeps changing (partial coverage, late food-log
+edits) until it settles; each date is re-fetched until its cache is 7 days old.
+
+> **Athlete input is not re-fetchable.** `intake_confirmations` (the athlete's
+> confirmation that a day's intake log is complete) is written by the athlete,
+> not ingested from Garmin. Deleting the DB file and regenerating it from raw
+> files loses those rows, so back them up (or avoid `--delete-db`) before a full
+> rebuild.
 
 ## Exit code
 
