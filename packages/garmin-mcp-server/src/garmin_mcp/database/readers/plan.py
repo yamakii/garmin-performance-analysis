@@ -257,8 +257,10 @@ class PlanReader(BaseDBReader):
     ) -> dict[str, list[int]]:
         """Garmin workouts recorded on the week's superseded batches, by date.
 
-        A revised week is saved as a new batch whose rows carry no Garmin ids,
-        so the workouts registered from older batches are only known here.
+        A revised week is saved as a new batch; its rows carry Garmin ids only
+        where a registration was carried over unchanged (#1447). Every other
+        workout registered from an older batch is only known here, and those
+        are the ones a new registration on the same day replaces.
 
         Args:
             week_start_date: Week start (``YYYY-MM-DD``).
@@ -267,7 +269,9 @@ class PlanReader(BaseDBReader):
         Returns:
             ``{date: [garmin_workout_id, ...]}`` over every batch below the
             week's highest ``batch_id``, newest batch first within a date and
-            without duplicates. Empty when nothing older was registered.
+            without duplicates. A workout the latest batch still carries is
+            live, not superseded, and is left out, so registering another item
+            that day never deletes it. Empty when nothing older was registered.
         """
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -277,8 +281,24 @@ class PlanReader(BaseDBReader):
                 "AND batch_id < ("
                 "  SELECT MAX(batch_id) FROM weekly_prescriptions "
                 "  WHERE user_id = ? AND week_start_date = CAST(? AS DATE)"
+                ") AND garmin_workout_id NOT IN ("
+                "  SELECT garmin_workout_id FROM weekly_prescriptions "
+                "  WHERE user_id = ? AND week_start_date = CAST(? AS DATE) "
+                "  AND garmin_workout_id IS NOT NULL AND batch_id = ("
+                "    SELECT MAX(batch_id) FROM weekly_prescriptions "
+                "    WHERE user_id = ? AND week_start_date = CAST(? AS DATE)"
+                "  )"
                 ") ORDER BY date, batch_id DESC, prescription_id",
-                [user_id, week_start_date, user_id, week_start_date],
+                [
+                    user_id,
+                    week_start_date,
+                    user_id,
+                    week_start_date,
+                    user_id,
+                    week_start_date,
+                    user_id,
+                    week_start_date,
+                ],
             ).fetchall()
         by_date: dict[str, list[int]] = {}
         for on_date, workout_id in rows:

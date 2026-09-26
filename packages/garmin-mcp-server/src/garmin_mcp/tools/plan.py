@@ -466,8 +466,18 @@ PLAN_TOOLS: list[ToolDef] = [
             "bpm (convert zones first), pace params s/km, and bookended "
             "templates also take warmup_minutes / cooldown_minutes. Templates "
             "(session types: example params): " + _template_catalog_text() + ". "
+            "A Garmin registration survives the revision when a new row "
+            "(status prescribed or omitted) would put the same workout on the "
+            "watch as the superseded batch's registered row on that date (same "
+            "title and registrable steps): the row is saved registered with the "
+            "old workout/schedule ids. Judge-only edits (rationale, rating, "
+            "allowances, purpose, pace bounds) keep it; changed targets, HR "
+            "bounds, strides, structure or title do not. "
             "Returns {status, week_start_date, batch_id, count, "
-            "prescription_ids}."
+            "prescription_ids, carried_registrations [{prescription_id, date, "
+            "garmin_schedule_id}], needs_reregistration [{prescription_id, "
+            "date}]} — re-register only the needs_reregistration rows with "
+            "schedule_weekly_prescriptions."
         ),
         params=SaveWeeklyPrescriptionsParams,
         handler=_save_weekly_prescriptions,
