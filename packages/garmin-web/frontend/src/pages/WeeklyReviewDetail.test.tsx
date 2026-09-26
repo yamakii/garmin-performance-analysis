@@ -293,6 +293,42 @@ describe("WeeklyReviewDetail", () => {
     expect(screen.getByText(/79\.6/)).toBeInTheDocument();
     expect(screen.getByText(/24\.1/)).toBeInTheDocument();
     expect(screen.getByText("微減")).toBeInTheDocument();
+    // No energy object -> the row is exactly the two weight cells.
+    expect(screen.queryByText("平均収支")).not.toBeInTheDocument();
+  });
+
+  it("WeeklyReviewDetail shows the 平均収支 cell when weight_tracking.energy exists", async () => {
+    renderDetail({
+      weight_tracking: {
+        recent_median_kg: 78.0,
+        bmi: 28.0,
+        energy: {
+          mean_balance_kcal: -469,
+          paired_days: 7,
+          required_days: 5,
+          verdict: "deeper_than_target",
+        },
+      },
+    });
+
+    expect(await screen.findByText("平均収支")).toBeInTheDocument();
+    expect(screen.getByText("-469")).toBeInTheDocument();
+    const note = screen.getByText("目標帯より赤字側 · 7日分");
+    expect(note).toHaveClass("text-status-warn");
+  });
+
+  it("drops the 平均収支 cell when the skill wrote no numeric mean", async () => {
+    renderDetail({
+      weight_tracking: {
+        recent_median_kg: 78.0,
+        energy: { mean_balance_kcal: "-469", verdict: "deeper_than_target" },
+      },
+    });
+
+    expect(
+      await screen.findByRole("heading", { level: 3, name: "体重トラッキング" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("平均収支")).not.toBeInTheDocument();
   });
 
   it("test_renders_continuity_note", async () => {

@@ -26,8 +26,10 @@ import {
   intensityLabel,
   weekEndIso,
 } from "../utils/format";
-import { formatNumber } from "../utils/formatNumber";
+import { formatNumber, formatSigned } from "../utils/formatNumber";
 import { ratingMeta } from "../utils/verdictRating";
+import type { WeeklyReviewEnergy } from "../types";
+import { verdictText, verdictTone } from "./trends/energyBalanceLabels";
 
 /**
  * One card. Its title is an h3 because the card lives inside a `Group` whose
@@ -129,6 +131,30 @@ function tile(label: string, value: unknown, unit?: string): VitalItem | null {
   return typeof value === "number" && Number.isFinite(value)
     ? { label, value: formatNumber(value, 1), unit }
     : null;
+}
+
+/**
+ * The week's logged energy balance as one more weight cell (#1439): the mean,
+ * with where it sits against the target band as the note — warn only when the
+ * mean left the band. `energy` is JSON the /weekly-review skill writes, so each
+ * field is checked before it is shown, and a missing mean drops the cell.
+ */
+function energyTile(energy: WeeklyReviewEnergy | null | undefined): VitalItem | null {
+  const mean = energy?.mean_balance_kcal;
+  if (typeof mean !== "number" || !Number.isFinite(mean)) {
+    return null;
+  }
+  const verdict = typeof energy?.verdict === "string" ? energy.verdict : null;
+  const days =
+    typeof energy?.paired_days === "number" ? `${energy.paired_days}日分` : null;
+  const note = [verdictText(verdict), days].filter(Boolean).join(" · ");
+  return {
+    label: "平均収支",
+    value: formatSigned(mean, 0),
+    unit: "kcal/日",
+    note: note !== "" ? note : undefined,
+    noteTone: verdictTone(verdict),
+  };
 }
 
 /** The measured cells of one group, as the shared vitals row (#1187). */
@@ -417,6 +443,7 @@ export default function WeeklyReviewDetail() {
                     items={[
                       tile("直近中央値", weightTracking.recent_median_kg, "kg"),
                       tile("BMI", weightTracking.bmi),
+                      energyTile(weightTracking.energy),
                     ]}
                   />
                   {(weightTracking.trend != null ||

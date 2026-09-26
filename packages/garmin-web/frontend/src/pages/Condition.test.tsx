@@ -1,5 +1,6 @@
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { energyBalanceFixture } from "../test/energyBalanceFixture";
 import { render, screen, within } from "../test/utils";
 import Condition from "./Condition";
 
@@ -185,12 +186,13 @@ const FORM_ANOMALY_FLAGS_EMPTY = {
   flags: [],
 };
 
-/** The five section headings of the brief, in page order (#1120). */
+/** The six section headings of the brief, in page order (#1120, #1439). */
 const SECTION_HEADINGS = {
   formAnomaly: "今週の注意点",
   recovery: "回復トレンド",
   wellnessBaseline: "個人基準との差",
   trainingLoad: "訓練負荷",
+  energyBalance: "エネルギー収支",
   bodyComposition: "体組成",
 };
 
@@ -240,6 +242,9 @@ function stubConditionFetch({
       if (url.startsWith("/api/body-composition-trend")) {
         return Promise.resolve(jsonResponse(BODY_COMPOSITION));
       }
+      if (url.startsWith("/api/energy-balance")) {
+        return Promise.resolve(jsonResponse(energyBalanceFixture()));
+      }
       if (url.startsWith("/api/wellness-baseline-deviation")) {
         return Promise.resolve(jsonResponse(wellnessBaseline));
       }
@@ -283,7 +288,7 @@ describe("Condition", () => {
     expect(screen.getByText("HRV 夜間")).toBeInTheDocument();
     expect(screen.getByText("負荷 ACWR")).toBeInTheDocument();
 
-    // ③ Five sections, each one reading; the old card wrapper is gone.
+    // ③ Six sections, each one reading; the old card wrapper is gone.
     for (const name of Object.values(SECTION_HEADINGS)) {
       expect(
         await screen.findByRole("heading", { level: 2, name }),

@@ -18,6 +18,7 @@ import {
 } from "./client";
 import {
   fetchBodyCompositionTrend,
+  fetchEnergyBalance,
   fetchFormAnomalyFlags,
   fetchRecoveryStatus,
   fetchRecoveryTrend,
@@ -52,6 +53,7 @@ import type {
   ActivitySummary,
   BodyCompositionTrend,
   DurabilityTrend,
+  EnergyBalance,
   FormAnomalyFlagsResponse,
   GoalResponse,
   MonthPlan,
@@ -381,6 +383,16 @@ export function useBodyCompositionTrend(
   return useQuery({
     queryKey: ["bodyCompositionTrend", weeks],
     queryFn: () => fetchBodyCompositionTrend(weeks),
+  });
+}
+
+/** Logged energy balance over the window ending yesterday (#1439). */
+export function useEnergyBalance(
+  windowDays = 7,
+): UseQueryResult<EnergyBalance, Error> {
+  return useQuery({
+    queryKey: ["energyBalance", windowDays],
+    queryFn: () => fetchEnergyBalance(windowDays),
   });
 }
 

@@ -297,6 +297,78 @@ export interface BodyCompositionTrend {
   lean_pwr: number | null;
 }
 
+// --- Energy balance (Issue #1439, reader #1434) ---
+
+/** One day of logged intake against Garmin expenditure. */
+export interface EnergyBalanceDay {
+  date: string;
+  intake_kcal: number | null;
+  expenditure_kcal: number | null;
+  balance_kcal: number | null;
+  /** no_data / in_progress / pending / not_logged / athlete_reported_incomplete / suspect_low / provisional / settled */
+  intake_status: string;
+  /** no_data / in_progress / unsynced / low_wear / ok */
+  expenditure_status: string;
+  /** Counted in the window mean. */
+  used: boolean;
+  /** Inside the window (today's open day is not). */
+  in_window: boolean;
+  confirmation: { status: string; note: string | null } | null;
+}
+
+export type EnergyWindowStatus = "ok" | "insufficient" | "no_logging";
+
+export interface EnergyBalanceWindow {
+  status: EnergyWindowStatus;
+  paired_days: number;
+  required_days: number;
+  mean_intake_kcal: number | null;
+  mean_expenditure_kcal: number | null;
+  mean_balance_kcal: number | null;
+  provisional_days: number;
+  /** Every window day left out of the mean, with the status that excluded it. */
+  excluded: { date: string; reason: string }[];
+}
+
+export interface EnergyBalanceTarget {
+  weight_mode: string | null;
+  block_id: number | null;
+  crosses_block_boundary: boolean;
+  band_kcal: [number, number] | null;
+  /** deeper_than_target / within_target / shallower_than_target, or null. */
+  verdict: string | null;
+  reason: string | null;
+  basis: string;
+  calibration_status: string;
+}
+
+export interface EnergyBalance {
+  end_date: string;
+  as_of: string;
+  window_days: number;
+  days: EnergyBalanceDay[];
+  window: EnergyBalanceWindow;
+  logging: {
+    first_logged_date: string | null;
+    last_logged_date: string | null;
+    days_since_last_log: number | null;
+    lapsed: boolean;
+  };
+  target: EnergyBalanceTarget;
+  calibration: {
+    /** consistent / logged_deficit_exceeds_weight / logged_deficit_below_weight / insufficient */
+    status: string;
+    reason: string | null;
+    paired_days: number;
+    n_weighins: number;
+  };
+  weight: {
+    recent_median_kg: number | null;
+    n_weighins: number;
+    slope_kg_per_week: number | null;
+  };
+}
+
 // --- Weekly reviews (Issue #283) ---
 
 export interface WeeklyReviewVerdict {
@@ -341,7 +413,21 @@ export interface WeeklyReviewWeightTracking {
   week_classification?: string | null;
   flag?: string | null;
   target_first?: string | null;
+  /**
+   * The week's logged energy balance, written by /weekly-review (#1435). The
+   * skill writes this JSON, so every field is read defensively.
+   */
+  energy?: WeeklyReviewEnergy | null;
   [key: string]: unknown;
+}
+
+export interface WeeklyReviewEnergy {
+  mean_balance_kcal?: unknown;
+  paired_days?: unknown;
+  required_days?: unknown;
+  verdict?: unknown;
+  calibration_status?: unknown;
+  lapsed?: unknown;
 }
 
 /**

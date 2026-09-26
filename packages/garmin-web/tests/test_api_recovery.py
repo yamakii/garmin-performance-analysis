@@ -83,3 +83,26 @@ def test_recovery_status_endpoint_unknown_when_empty(empty_recovery_db_path):
     # No daily_wellness rows -> go-by-feel unknown recommendation.
     assert payload["recommendation"] == "unknown"
     assert payload["date"] is None
+
+
+@pytest.mark.integration
+def test_energy_balance_endpoint_passes_through(energy_balance_db_path):
+    client = TestClient(create_app(db_path=energy_balance_db_path))
+    response = client.get("/api/energy-balance", params={"end_date": "2026-09-25"})
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    window = payload["window"]
+    assert window["status"] == "ok"
+    assert window["paired_days"] == 7
+    assert window["mean_balance_kcal"] == -469
+    assert window["excluded"] == []
+
+    target = payload["target"]
+    assert target["weight_mode"] == "維持"
+    assert target["verdict"] == "deeper_than_target"
+
+    # Only the 7 window days are in the window; 09-26 is still open.
+    in_window = [d["date"] for d in payload["days"] if d["in_window"]]
+    assert in_window == [f"2026-09-{day}" for day in range(19, 26)]
