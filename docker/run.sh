@@ -66,9 +66,16 @@ if [ ! -f "$CLAUDE_DOCKER_HOME/.credentials.json" ]; then
     echo "INFO: first run — log in to Claude once inside the container; it persists" >&2
     echo "      in $CLAUDE_DOCKER_HOME for subsequent runs." >&2
 fi
+# The uv cache lives in a docker NAMED volume so a re-created container rebuilds
+# its venvs from local wheels in seconds instead of re-downloading ~200 MB — a
+# cold download overran the 30 s MCP connect timeout (#1452). Only the cache
+# persists; the venvs under /home/claude/uv-venvs stay ephemeral so they never
+# drift from a rebuilt image. Override the name with UV_CACHE_VOLUME.
+UV_CACHE_VOLUME="${UV_CACHE_VOLUME:-garmin-uv-cache}"
 mounts=(
     -v "$REPO_ROOT:/workspace"
     -v "$CLAUDE_DOCKER_HOME:/home/claude/.claude"
+    -v "$UV_CACHE_VOLUME:/home/claude/.cache/uv"
 )
 
 # Load .env (if present) so its GARMIN_* values feed the resolution below.
