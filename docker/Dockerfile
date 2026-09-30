@@ -93,7 +93,7 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
     else \
         useradd -m -u "${USER_UID}" -g "${USER_GID}" -s /bin/bash claude; \
     fi \
-    && mkdir -p /home/claude/.claude /home/claude/uv-venvs /workspace \
+    && mkdir -p /home/claude/.claude /home/claude/.cache/uv /home/claude/uv-venvs /workspace \
     && chown -R "${USER_UID}:${USER_GID}" /home/claude /workspace
 
 # ---- environment ----
@@ -103,6 +103,10 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # deliberately NO global UV_PROJECT_ENVIRONMENT any more (#1047). UV_PYTHON=3.12
 # resolves to the uv-managed interpreter installed above; UV_PYTHON_DOWNLOADS=never
 # means no managed downloads at runtime (= smaller egress surface).
+# UV_LINK_MODE=copy: ~/.cache/uv is a named volume (docker/run.sh, #1452) and the
+# venvs sit on the overlay, so hardlinks across the two always fail; copy is what
+# uv would fall back to anyway, minus the warning on every sync. The cache dir is
+# pre-created above so a fresh volume is initialised claude-owned, not root.
 # DISABLE_AUTOUPDATER=1: Claude Code is npm-global-installed as root but runs as
 # the non-root `claude` user (cap-drop ALL, no-new-privileges), so the in-place
 # auto-updater can't write the global npm dir and fails on startup. Updating is
@@ -115,6 +119,7 @@ RUN if getent group "${USER_GID}" >/dev/null; then \
 # $CLAUDE_CONFIG_DIR/… so no data moves; the atomic rewrite stays within the mount.
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=3.12 \
+    UV_LINK_MODE=copy \
     PATH=/usr/local/bin:$PATH \
     SHELL=/bin/bash \
     DISABLE_AUTOUPDATER=1 \

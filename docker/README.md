@@ -74,6 +74,7 @@ egress allowlist is in place.
 | `.env` (via `--env-file`) | env vars | — | optional credential source for the MCP servers |
 | `GARMIN_DATA_DIR` / `GARMIN_RESULT_DIR` | mounted + remapped (see below) | rw | only when set; in-repo dirs resolve to `/workspace/<rel>` |
 | `$GARMINTOKENS` (default `~/.garth`) | same abs path | rw | persist garth OAuth token cache across runs (skip repeated logins) |
+| docker named volume `$UV_CACHE_VOLUME` (default `garmin-uv-cache`) | `/home/claude/.cache/uv` | rw | persist the uv wheel cache so a re-created container rebuilds its venvs locally instead of re-downloading them — a cold download overran the 30 s MCP connect timeout (#1452). Venvs under `/home/claude/uv-venvs` stay ephemeral. Trim with `uv cache prune` inside the container; reset with `docker volume rm garmin-uv-cache` |
 
 > The container's `~/.claude` is a **dedicated host directory** (`~/.claude-docker`
 > by default), **not** the host's own `~/.claude`. That keeps its sessions,
