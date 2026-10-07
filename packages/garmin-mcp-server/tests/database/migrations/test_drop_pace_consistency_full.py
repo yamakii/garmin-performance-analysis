@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 34 with the daily_energy + intake_confirmations tables (#1433).
-    assert max(version for version, _, _ in MIGRATIONS) == 34
+    # Head moved to 35 with the activities sensor source columns (#1459).
+    assert max(version for version, _, _ in MIGRATIONS) == 35

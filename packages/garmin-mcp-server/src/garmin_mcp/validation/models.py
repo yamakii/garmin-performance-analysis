@@ -6,6 +6,8 @@ Optional fields accept None (Garmin API frequently omits metrics).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -34,6 +36,8 @@ class ActivityRecord(BaseModel):
     gear_since_date: str | None = None
     gear_retired_date: str | None = None
     base_weight_kg: float | None = Field(default=None, ge=0)
+    dynamics_source: Literal["pod", "wrist"] | None = None
+    hr_source: Literal["chest_strap", "wrist"] | None = None
 
 
 class SplitRecord(BaseModel):

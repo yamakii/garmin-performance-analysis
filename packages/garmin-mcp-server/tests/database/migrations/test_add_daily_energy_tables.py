@@ -56,8 +56,7 @@ def test_add_daily_energy_tables_idempotent() -> None:
 
 @pytest.mark.unit
 def test_registry_has_version_34() -> None:
-    """The energy tables are registered as migration 34, the schema head."""
+    """The energy tables are registered as migration 34."""
     assert (34, "add_daily_energy_tables") in [
         (version, name) for version, name, _ in MIGRATIONS
     ]
-    assert max(version for version, _, _ in MIGRATIONS) == 34

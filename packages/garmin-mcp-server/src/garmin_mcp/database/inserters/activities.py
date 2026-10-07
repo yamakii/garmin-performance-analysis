@@ -7,6 +7,7 @@ Most fields are populated by other inserters; this inserter only handles:
 - Activity metadata (name, timestamps, location) from activity.json
 - Weather data (temperature, humidity, wind) from weather.json
 - Gear data (type, model, nickname, uuid) from gear.json
+- Sensor source (RD Pod / chest strap vs wrist) from activity.json metadataDTO.sensors
 """
 
 import json
@@ -41,6 +42,27 @@ def _gear_date(value: object) -> str | None:
     return value[:10]
 
 
+def classify_sensors(sensors: list[dict] | None) -> tuple[str, str]:
+    """Return (dynamics_source, hr_source) from activity.json metadataDTO.sensors.
+
+    The Running Dynamics Pod reports as ``antplusDeviceType == "RUN"``; a chest
+    strap reports ``HEART_RATE`` over ANT+ (``antplusDeviceType``) or BLE
+    (``bleDeviceType``). Garmin writes ``null`` or ``[]`` when no external
+    sensor was paired, so both mean the watch measured everything itself.
+    """
+    dynamics_source = "wrist"
+    hr_source = "wrist"
+    for sensor in sensors or []:
+        if not isinstance(sensor, dict):
+            continue
+        device_types = {sensor.get("antplusDeviceType"), sensor.get("bleDeviceType")}
+        if "RUN" in device_types:
+            dynamics_source = "pod"
+        if "HEART_RATE" in device_types:
+            hr_source = "chest_strap"
+    return dynamics_source, hr_source
+
+
 def insert_activities(
     activity_id: int,
     date: str,
@@ -57,6 +79,7 @@ def insert_activities(
     - activity.json: activityName, startTimeLocal, startTimeGMT, locationName
     - weather.json: temp, relativeHumidity, windSpeed, windDirectionCompassPoint
     - gear.json: gearTypeName, customMakeModel, displayName, uuid
+    - activity.json metadataDTO.sensors: dynamics_source, hr_source
 
     Args:
         activity_id: Activity ID
@@ -85,6 +108,9 @@ def insert_activities(
         avg_pace_seconds_per_km = None
         avg_heart_rate = None
         max_heart_rate = None
+        # Stay NULL only when activity.json is missing (sensor source unknown)
+        dynamics_source = None
+        hr_source = None
 
         if raw_activity_file:
             raw_activity_path = Path(raw_activity_file)
@@ -107,6 +133,10 @@ def insert_activities(
                     start_time_local_str = summary_dto.get("startTimeLocal")
                     start_time_gmt_str = summary_dto.get("startTimeGMT")
                     location_name = raw_activity.get("locationName")
+                    metadata_dto = raw_activity.get("metadataDTO") or {}
+                    dynamics_source, hr_source = classify_sensors(
+                        metadata_dto.get("sensors")
+                    )
 
                     # Extract basic metrics from summaryDTO
                     distance_meters = summary_dto.get("distance")
@@ -240,6 +270,8 @@ def insert_activities(
                 "gear_since_date": gear_since_date,
                 "gear_retired_date": gear_retired_date,
                 "base_weight_kg": base_weight_kg,
+                "dynamics_source": dynamics_source,
+                "hr_source": hr_source,
             }
         )
 
@@ -270,6 +302,8 @@ def insert_activities(
             gear_since_date,
             gear_retired_date,
             base_weight_kg,
+            dynamics_source,
+            hr_source,
         )
 
         return True
@@ -306,6 +340,8 @@ def _insert_with_connection(
     gear_since_date: str | None,
     gear_retired_date: str | None,
     base_weight_kg: float | None,
+    dynamics_source: str | None,
+    hr_source: str | None,
 ) -> None:
     """Helper function to insert activity data with a given connection."""
     # Schema is created by GarminDBWriter.create_schema()
@@ -338,8 +374,10 @@ def _insert_with_connection(
             gear_status,
             gear_since_date,
             gear_retired_date,
-            base_weight_kg
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            base_weight_kg,
+            dynamics_source,
+            hr_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             activity_id,
@@ -367,5 +405,7 @@ def _insert_with_connection(
             gear_since_date,
             gear_retired_date,
             base_weight_kg,
+            dynamics_source,
+            hr_source,
         ),
     )

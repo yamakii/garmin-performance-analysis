@@ -316,7 +316,9 @@ class GarminDBWriter:
                 gear_status VARCHAR,
                 gear_since_date DATE,
                 gear_retired_date DATE,
-                base_weight_kg DOUBLE
+                base_weight_kg DOUBLE,
+                dynamics_source VARCHAR,
+                hr_source VARCHAR
             )
         """)
 
