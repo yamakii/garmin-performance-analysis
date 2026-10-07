@@ -293,6 +293,13 @@ def _wrap_add_daily_energy_tables(conn: duckdb.DuckDBPyConnection) -> None:
     add_daily_energy_tables(conn)
 
 
+def _wrap_add_sensor_source_columns(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the activities sensor source (pod / chest strap) migration."""
+    from .add_sensor_source_columns import add_sensor_source_columns
+
+    add_sensor_source_columns(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -373,4 +380,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
     (32, "add_prescription_purpose", _wrap_add_prescription_purpose),
     (33, "add_prescription_structure", _wrap_add_prescription_structure),
     (34, "add_daily_energy_tables", _wrap_add_daily_energy_tables),
+    (35, "add_sensor_source_columns", _wrap_add_sensor_source_columns),
 ]
