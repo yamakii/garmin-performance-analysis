@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **76 tools** (74 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **77 tools** (75 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (11)
+- [Athlete](#athlete) (12)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -494,11 +494,23 @@ Fetch scheduled workouts (including adaptive plan workouts) live from the Garmin
 
 CLI: `garmin-db athlete save-profile`
 
-Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version.
+Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. A save is a partial update: keys omitted from the payload keep their stored value, so sending only focus_notes leaves the goals and retrospectives intact. A present key replaces the stored value (goals / retrospectives are fully replaced per user_id; null / [] clears). Each save additionally appends a JSON snapshot of the whole merged profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version. To add to focus_notes, prefer append_focus_notes over resending the whole text.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `profile` | object | **required** | Profile JSON with user_id (default 'default'), current_focus, focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}). |
+| `profile` | object | **required** | Profile JSON with user_id (default 'default'), current_focus, focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}). Every key but user_id is optional: an omitted key keeps its stored value, a present key (even null / []) replaces it. |
+
+### `append_focus_notes`
+
+CLI: `garmin-db athlete append-focus-notes`
+
+Append text to athlete_profile.focus_notes without resending the whole notes. Only focus_notes changes; current_focus, goals and retrospectives are untouched. With section, the text joins the end of that 【section】 (a 。 is added first when needed; no newline, a section stays one line), or a new 【section】text line is created when no heading matches; an ambiguous section (two matching headings) is rejected without writing. Appends a profile version like save_athlete_profile. Returns status, section, section_created, chars_before, chars_after and version_id.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `text` | string | **required** | Text to append to focus_notes (Japanese prose) |
+| `section` | string | optional | Heading name of a 【…】 section, without the brackets (e.g. '効率ベンチマーク'). Omitted: text becomes a new line at the end. Matching heading (【name】 or 【name: …】 at a line start): text is appended to the end of that section. No match: a new 【name】text line is added at the end. |
+| `user_id` | string | optional | Profile owner identifier (default: 'default') |
 
 ### `get_athlete_profile`
 

@@ -735,17 +735,41 @@
   },
   {
     "name": "save_athlete_profile",
-    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. The profile row is upserted on user_id; goals and retrospectives are fully replaced per user_id, so the normalized tables always hold the latest state. Each save additionally appends a JSON snapshot of the whole profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version.",
+    "description": "Save the athlete profile (current focus, race goals, and season retrospectives) as a single object to DuckDB. A save is a partial update: keys omitted from the payload keep their stored value, so sending only focus_notes leaves the goals and retrospectives intact. A present key replaces the stored value (goals / retrospectives are fully replaced per user_id; null / [] clears). Each save additionally appends a JSON snapshot of the whole merged profile as a new version, keeping overwritten content (e.g. the previous focus_notes) recoverable via list_athlete_profile_versions + get_athlete_profile_version. To add to focus_notes, prefer append_focus_notes over resending the whole text.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "profile": {
           "type": "object",
-          "description": "Profile JSON with user_id (default 'default'), current_focus, focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings})."
+          "description": "Profile JSON with user_id (default 'default'), current_focus, focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list of {race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}), and retrospectives (list of {season_label, period_start, period_end, narrative, key_learnings}). Every key but user_id is optional: an omitted key keeps its stored value, a present key (even null / []) replaces it."
         }
       },
       "required": [
         "profile"
+      ]
+    }
+  },
+  {
+    "name": "append_focus_notes",
+    "description": "Append text to athlete_profile.focus_notes without resending the whole notes. Only focus_notes changes; current_focus, goals and retrospectives are untouched. With section, the text joins the end of that 【section】 (a 。 is added first when needed; no newline, a section stays one line), or a new 【section】text line is created when no heading matches; an ambiguous section (two matching headings) is rejected without writing. Appends a profile version like save_athlete_profile. Returns status, section, section_created, chars_before, chars_after and version_id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text to append to focus_notes (Japanese prose)"
+        },
+        "section": {
+          "type": "string",
+          "description": "Heading name of a 【…】 section, without the brackets (e.g. '効率ベンチマーク'). Omitted: text becomes a new line at the end. Matching heading (【name】 or 【name: …】 at a line start): text is appended to the end of that section. No match: a new 【name】text line is added at the end."
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Profile owner identifier (default: 'default')"
+        }
+      },
+      "required": [
+        "text"
       ]
     }
   },
