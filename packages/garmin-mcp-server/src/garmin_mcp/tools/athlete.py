@@ -57,8 +57,29 @@ class SaveAthleteProfileParams(BaseModel):
             "focus_notes, week_start_day (0=Mon..6=Sun, default 0), goals (list "
             "of {race_name, race_date, priority, goal_type, distance_km, "
             "target_time_seconds, status, notes}), and retrospectives (list of "
-            "{season_label, period_start, period_end, narrative, key_learnings})."
+            "{season_label, period_start, period_end, narrative, key_learnings}). "
+            "Every key but user_id is optional: an omitted key keeps its stored "
+            "value, a present key (even null / []) replaces it."
         )
+    )
+
+
+class AppendFocusNotesParams(BaseModel):
+    """Arguments for ``append_focus_notes``."""
+
+    text: str = Field(description="Text to append to focus_notes (Japanese prose)")
+    section: str | None = Field(
+        default=None,
+        description=(
+            "Heading name of a 【…】 section, without the brackets (e.g. "
+            "'効率ベンチマーク'). Omitted: text becomes a new line at the end. "
+            "Matching heading (【name】 or 【name: …】 at a line start): text is "
+            "appended to the end of that section. No match: a new 【name】text "
+            "line is added at the end."
+        ),
+    )
+    user_id: str | None = Field(
+        default=None, description="Profile owner identifier (default: 'default')"
     )
 
 
@@ -224,18 +245,39 @@ class PrefetchWeeklyReviewContextParams(BaseModel):
 
 def _save_athlete_profile(reader: GarminDBReader, p: SaveAthleteProfileParams) -> Any:
     from garmin_mcp.database.inserters.athlete import insert_athlete_profile
+    from garmin_mcp.database.readers.athlete import AthleteReader
 
     try:
         profile = p.profile
+        user_id = profile.get("user_id") or _DEFAULT_USER_ID
         insert_athlete_profile(profile=profile, db_path=str(reader.db_path))
+        # Count what is stored: omitted keys kept their previous rows.
+        saved = AthleteReader(db_path=str(reader.db_path)).get_athlete_profile(
+            user_id=user_id
+        )
         return {
             "status": "saved",
-            "user_id": profile.get("user_id", "default"),
-            "goal_count": len(profile.get("goals") or []),
-            "retrospective_count": len(profile.get("retrospectives") or []),
+            "user_id": user_id,
+            "goal_count": len(saved["goals"]),
+            "retrospective_count": len(saved["retrospectives"]),
         }
     except Exception as e:  # noqa: BLE001
         logger.error(f"Save athlete profile failed: {e}")
+        return {"error": str(e)}
+
+
+def _append_focus_notes(reader: GarminDBReader, p: AppendFocusNotesParams) -> Any:
+    from garmin_mcp.database.inserters.athlete import append_focus_notes
+
+    try:
+        return append_focus_notes(
+            text=p.text,
+            section=p.section,
+            user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
+            db_path=str(reader.db_path),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Append focus notes failed: {e}")
         return {"error": str(e)}
 
 
@@ -391,18 +433,39 @@ ATHLETE_TOOLS: list[ToolDef] = [
         name="save_athlete_profile",
         description=(
             "Save the athlete profile (current focus, race goals, and season "
-            "retrospectives) as a single object to DuckDB. The profile row is "
-            "upserted on user_id; goals and retrospectives are fully replaced per "
-            "user_id, so the normalized tables always hold the latest state. Each "
-            "save additionally appends a JSON snapshot of the whole profile as a "
-            "new version, keeping overwritten content (e.g. the previous "
+            "retrospectives) as a single object to DuckDB. A save is a partial "
+            "update: keys omitted from the payload keep their stored value, so "
+            "sending only focus_notes leaves the goals and retrospectives intact. "
+            "A present key replaces the stored value (goals / retrospectives are "
+            "fully replaced per user_id; null / [] clears). Each save "
+            "additionally appends a JSON snapshot of the whole merged profile as "
+            "a new version, keeping overwritten content (e.g. the previous "
             "focus_notes) recoverable via list_athlete_profile_versions + "
-            "get_athlete_profile_version."
+            "get_athlete_profile_version. To add to focus_notes, prefer "
+            "append_focus_notes over resending the whole text."
         ),
         params=SaveAthleteProfileParams,
         handler=_save_athlete_profile,
         cli_group="athlete",
         cli_name="save-profile",
+    ),
+    ToolDef(
+        name="append_focus_notes",
+        description=(
+            "Append text to athlete_profile.focus_notes without resending the "
+            "whole notes. Only focus_notes changes; current_focus, goals and "
+            "retrospectives are untouched. With section, the text joins the end "
+            "of that 【section】 (a 。 is added first when needed; no newline, a "
+            "section stays one line), or a new 【section】text line is created "
+            "when no heading matches; an ambiguous section (two matching "
+            "headings) is rejected without writing. Appends a profile version "
+            "like save_athlete_profile. Returns status, section, "
+            "section_created, chars_before, chars_after and version_id."
+        ),
+        params=AppendFocusNotesParams,
+        handler=_append_focus_notes,
+        cli_group="athlete",
+        cli_name="append-focus-notes",
     ),
     ToolDef(
         name="get_athlete_profile",

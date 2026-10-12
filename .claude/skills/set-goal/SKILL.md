@@ -12,8 +12,8 @@ description: Interactively register or update the athlete's race goals, current-
 ## 重要事項
 
 - **日本語で対話・出力**する
-- **洗い替え方式**: goals / retrospectives は user_id 単位で**全件まるごと置き換え**られる。更新時は「変更しない項目も含めて全件」を profile に詰めて保存すること（既存の goals/retrospectives を取りこぼすと消える）
-- **profile 行も上書き**: `current_focus` / `focus_notes` / `week_start_day` は渡した値で置き換わり、省略すると NULL / 0 になる。Step 1 で読んだ値を必ず詰め直す（`focus_notes` は長い正本の方針なので、短いメモで置き換えず編集する）
+- **省略したキーは保持、渡したキーは置換**（#1468）: profile dict に**キーが無い**項目（`current_focus` / `focus_notes` / `week_start_day` / `goals` / `retrospectives`）は保存済みの値がそのまま残る。キーを渡すとその値で置き換わり、`null` / `[]` を渡せば消える。goals / retrospectives はキーを渡したときだけ user_id 単位で**全件まるごと置き換え**られるので、渡すなら「変更しない項目も含めて全件」を詰める（1 件だけ渡すと他が消える）
+- **focus_notes に足すだけなら `append_focus_notes` を使う**: `mcp__garmin-db__append_focus_notes(text=..., section="見出し名")` は全文を再送せずに該当セクションの末尾（見出しが無ければ新しい `【見出し】` 行）へ追記し、他の項目には触れない。`focus_notes` は約 1 万字の長い正本なので、既存の記述を書き換える必要があるときだけ `save_athlete_profile` で全文を渡し、短いメモで置き換えず編集する
 - **target_time_seconds は秒の整数**。`4:30:00` のような入力は秒に変換する（4:30:00 → 16200、3:30:00 → 12600、1:45:00 → 6300）
 - **race_date は `YYYY-MM-DD`** 形式
 - **priority**: `A`=本命, `B`=中間, `C`=その他
@@ -149,7 +149,7 @@ mcp__garmin-db__get_athlete_profile()
 mcp__garmin-db__save_athlete_profile(profile=<組み立てた profile dict>)
 ```
 
-profile 行は `user_id` で upsert され、goals / retrospectives は `user_id` 単位で全件置換される。
+profile 行は `user_id` で upsert され、goals / retrospectives はキーを渡したときだけ `user_id` 単位で全件置換される（省略したキーは保存済みの値のまま）。
 
 ### Step 5: 結果の要約表示
 
