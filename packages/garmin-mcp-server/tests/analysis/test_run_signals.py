@@ -21,6 +21,7 @@ from garmin_mcp.analysis.run_signals import (
     REASON_HOT,
     REASON_LOW_JUDGED_SHARE,
     REASON_NO_HR_MODEL,
+    REASON_SENSOR_THIN_BASELINE,
     REASON_SHORT_RUN,
     REASON_THIN_BASELINE,
     build_signals,
@@ -51,6 +52,7 @@ _COEFFS = HeatModelCoefficients(
 _REASON_PARAMS: dict[str, dict[str, Any]] = {
     REASON_SHORT_RUN: {"n": 2, "required": 3},
     REASON_THIN_BASELINE: {"n": 0, "required": 10},
+    REASON_SENSOR_THIN_BASELINE: {"sensor": "ランニングポッド", "n": 3, "required": 10},
     REASON_HOT: {"temp": 31.0},
     REASON_LOW_JUDGED_SHARE: {"pct": 40, "required": 50},
 }
@@ -246,6 +248,64 @@ def test_thin_history_is_not_judged():
     assert gct["reason"] == "比べられる直近のランが 6 本で、判定には 10 本以上が必要"
 
 
+def _stamped(rows: list[dict[str, Any]], source: str) -> list[dict[str, Any]]:
+    """The same rows measured by ``source`` (``activities.dynamics_source``)."""
+    return [{**row, "dynamics_source": source} for row in rows]
+
+
+@pytest.mark.unit
+def test_form_signal_compares_same_dynamics_source_only():
+    """A pod run is never judged against wrist runs (#1470)."""
+    wrist = _stamped(_history(count=30), "wrist")
+    pod = [_run(days_ago, dynamics_source="pod") for days_ago in (31, 32, 33)]
+    today = _run(0, dynamics_source="pod", vo_delta_cm=1.9, vr_delta_pct=20.0)
+
+    signals = build_signals(today, wrist + pod, hr_model=_COEFFS)
+
+    for metric in ("gct", "vo", "vr", "cadence", "power"):
+        signal = _signal(signals, metric)
+        assert signal["status"] == "insufficient", metric
+        assert signal["adverse"] is False, metric
+        assert signal["n"] == 3, metric
+        assert signal["reason_code"] == REASON_SENSOR_THIN_BASELINE, metric
+    assert _signal(signals, "vr")["reason"] == (
+        "ランニングポッドで測った直近のランが 3 本で、判定には 10 本以上が必要"
+        "（別のセンサーで測ったランとは比べない）"
+    )
+    # The cardio signals do not depend on the dynamics sensor.
+    assert _signal(signals, "hr_drift")["n"] == 33
+
+
+@pytest.mark.unit
+def test_form_signal_judged_on_pod_baseline_when_enough():
+    """Twelve pod runs are a baseline of their own; the wrist runs stay out."""
+    pod = _stamped(_history(count=12), "pod")
+    wrist = [
+        _run(days_ago, dynamics_source="wrist", vr_delta_pct=20.0)
+        for days_ago in range(13, 33)
+    ]
+    today = _run(0, dynamics_source="pod")
+
+    vr = _signal(build_signals(today, pod + wrist, hr_model=_COEFFS), "vr")
+
+    assert vr["n"] == 12
+    assert vr["status"] == "within"
+
+
+@pytest.mark.unit
+def test_form_signal_unknown_source_keeps_all_rows():
+    """Without a recorded sensor today is judged against every run, as before."""
+    history = [
+        {**row, "dynamics_source": "pod" if index % 2 else "wrist"}
+        for index, row in enumerate(_history(count=30))
+    ]
+
+    gct = _signal(build_signals(_run(0), history, hr_model=_COEFFS), "gct")
+
+    assert gct["n"] == 30
+    assert gct["status"] == "within"
+
+
 # --------------------------------------------------------------------------- #
 # Cardio signals
 # --------------------------------------------------------------------------- #
@@ -348,7 +408,7 @@ def test_every_reason_code_has_a_japanese_message():
         for name, value in vars(run_signals).items()
         if name.startswith("REASON_") and isinstance(value, str)
     }
-    assert len(codes) == 10
+    assert len(codes) == 11
 
     for code in codes:
         message = run_signals.describe_reason(code, _REASON_PARAMS.get(code))

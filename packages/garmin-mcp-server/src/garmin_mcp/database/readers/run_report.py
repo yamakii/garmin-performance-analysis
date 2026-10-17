@@ -708,6 +708,18 @@ def _fetch_window(
     )
     window_params = [window_start, activity_date]
 
+    # The form signals compare a run only with runs from the same dynamics
+    # sensor (pod / wrist, #1470); a database before #1459 has no column and
+    # every run stays comparable.
+    if _has_column(conn, "activities", "dynamics_source"):
+        for row in conn.execute(
+            f"SELECT activity_id, dynamics_source FROM activities WHERE {in_window}",
+            window_params,
+        ).fetchall():
+            target = runs.get(int(row[0]))
+            if target is not None:
+                target["dynamics_source"] = row[1]
+
     if "form_evaluations" in tables:
         for row in conn.execute(
             f"""
