@@ -36,7 +36,7 @@ from typing import Any
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.database.readers.trends_narration import TrendNarrationReader
-from garmin_mcp.utils.week import get_week_start_day, week_start
+from garmin_mcp.utils.week import get_week_start_day, week_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,13 @@ def find_pending_trend_period(
     ``lookback_weeks`` most-recently-completed weeks oldest-first and returns the
     first one with no ``trend_analyses`` row keyed by ``(granularity,
     period_start)``. Scanning a window (rather than only the week that just
-    ended) means a week missed on its Monday — e.g. because the weekly review ran
-    on a Sunday, when the only completed week is already narrated — is still
-    backfilled later (issue #1025). ``lookback_weeks=1`` reproduces the previous
-    single-week behaviour. Returns ``None`` when every scanned week is narrated
+    ended) means a missed week is still backfilled later (issue #1025).
+    ``lookback_weeks=1`` reproduces the previous single-week behaviour.
+
+    When ``today`` is the last day of its week, that week already counts as
+    completed (issue #1473), so the Sunday weekly review narrates the week it
+    just closed instead of leaving it for the next run. A run logged later that
+    same day is then not in the narration. Returns ``None`` when every scanned week is narrated
     (idempotent — a repeat catch-up must not re-fire narration for a period
     already narrated).
 
@@ -106,11 +109,17 @@ def find_pending_trend_period(
     with get_connection(resolved_path) as conn:
         start_day = get_week_start_day(conn, user_id)
 
-    current_week_start = week_start(today, start_day)
+    current_week_start, current_week_end = week_bounds(today, start_day)
     reader = TrendNarrationReader(resolved_path)
 
-    # Oldest first: offset N weeks back .. 1 week back (the week that just ended).
-    for offset in range(max(1, lookback_weeks), 0, -1):
+    # On the week's last day the week counts as completed, matching the
+    # weekly-review smart default (issue #1473): the Sunday review would
+    # otherwise always leave the week it just closed for the following run.
+    newest_offset = 0 if today == current_week_end else 1
+    lookback = max(1, lookback_weeks)
+
+    # Oldest first, ending on the newest completed week.
+    for offset in range(newest_offset + lookback - 1, newest_offset - 1, -1):
         period_start = current_week_start - timedelta(days=7 * offset)
         existing = reader.get_trend_analysis(granularity, str(period_start), user_id)
         if existing is None:
