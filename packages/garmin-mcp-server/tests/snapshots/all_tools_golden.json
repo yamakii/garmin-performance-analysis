@@ -1219,7 +1219,7 @@
   },
   {
     "name": "get_pending_trend_period",
-    "description": "Read-only check for a completed week that still lacks a longitudinal trend narration (trend_analyses row). Scans the lookback_weeks (default 4) most-recently-completed weeks relative to end_date (default today), oldest first, using the athlete's configured week-start day, and returns {granularity, period_start, period_end} for the first week with no narration, or null when all of them are narrated. Unlike catch_up_ingest's trend_pending field, this runs no ingest and is not gated on ingest success, so a caller (e.g. the weekly-review skill) can trigger trend-narration for the returned period even in a session that did not run catch-up.",
+    "description": "Read-only check for a completed week that still lacks a longitudinal trend narration (trend_analyses row). Scans the lookback_weeks (default 4) most-recently-completed weeks relative to end_date (default today), oldest first, using the athlete's configured week-start day; when end_date is the last day of its week, that week already counts as completed. Returns {granularity, period_start, period_end} for the first week with no narration, or null when all of them are narrated. Unlike catch_up_ingest's trend_pending field, this runs no ingest and is not gated on ingest success, so a caller (e.g. the weekly-review skill) can trigger trend-narration for the returned period even in a session that did not run catch-up.",
     "inputSchema": {
       "type": "object",
       "properties": {
