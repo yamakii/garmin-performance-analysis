@@ -275,9 +275,13 @@ runs, because a run mean is naturally far less variable than one split.
 `analysis/run_moments.py` detects the turning points deterministically (2–5 per
 run) so the LLM selects and explains, but cannot invent one: `ceiling_touch`,
 `self_correction`, `fade`, `walk_break`, `strong_finish`, `surge`, `climb`,
-`start` (plus `steady` for an uneventful run), in that priority order — a
-kilometre matching several rules gets the single highest-priority kind, and the
-same order decides which scenes survive the cap. Fragments below the shared
+`start` (plus `steady` for an uneventful run, and for any stretch of 3+
+kilometres between turning points that none of them covers, #1485), in that
+priority order — a kilometre matching several rules gets the single
+highest-priority kind, and the same order decides which scenes survive the cap.
+The partial final lap run past a watch workout's end joins the last step but is
+never judged for a scene, and step scenes that are the session's structure
+(`main`, `warmup`, `cooldown`) never count as a recurrence. Fragments below the shared
 `MIN_SPLIT_KM` are dropped before anything is measured, and the median every
 rule is measured against is taken over running splits only, so walk breaks do
 not raise the bar that would expose them. `detect_recurrence` then reports the

@@ -253,7 +253,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
-                "run gets exactly one item on the 'steady' scene. Refer to a "
+                "run gets exactly one item on the 'steady' scene. A 'steady' "
+                "scene between turning points is the body of the run where "
+                "nothing turned -- say what held there (pace, hr_range), it is "
+                "not filler. Refer to a "
                 "scene by its label_ja and by nothing else -- never by "
                 "split_from / split_to, and never by an 'N km 目' worked out "
                 "from a lap number. A unit='km' label is a stretch of road "
