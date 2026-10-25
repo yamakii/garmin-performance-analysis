@@ -106,6 +106,30 @@ def test_long_free_run_after_workout_stays_separate() -> None:
 
 
 @pytest.mark.unit
+def test_partial_tail_after_workout_joins_step() -> None:
+    """10/21: a 178 s / 0.44 km lap run past the 60-minute workout (#1485).
+
+    It is the run's partial final lap, so it joins the step and is never
+    judged: no 本編 step scene, and no surge drawn from its faster pace.
+    """
+    splits = [
+        *(_indexed(split, 0) for split in _rows([(420, 140, 146, 178, 2)] * 8)),
+        _indexed(_split(9, 400, 143, 148, distance_km=0.444), None, duration_s=178.0),
+    ]
+
+    steps = build_steps(splits)
+
+    assert len(steps) == 1
+    assert (steps[0]["split_from"], steps[0]["split_to"]) == (1, 9)
+    assert steps[0]["distance_km"] == pytest.approx(8.444)
+    moments = detect_moments(splits, hr_ceiling=150)
+    assert all(m["kind"] not in {"main", "surge"} for m in moments)
+    assert max(m["km_to"] for m in moments) <= 8.0
+    flow = build_flow(splits)
+    assert flow["segments"][-1]["end_km"] == pytest.approx(8.444)
+
+
+@pytest.mark.unit
 def test_step_index_change_still_breaks_step() -> None:
     """Two present, different indices still start a new step (#1297)."""
     splits = [

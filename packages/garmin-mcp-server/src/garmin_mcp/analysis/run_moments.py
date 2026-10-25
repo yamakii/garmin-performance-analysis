@@ -63,6 +63,11 @@ correction the earlier cuts needed once they met real activities (#1261, #1268):
   measured against is taken over *running* splits only
   (``MAX_RUNNING_PACE_S_PER_KM``); a run with several walk breaks would
   otherwise raise its own bar and hide those very breaks.
+* **The body of the run is a scene too** (#1485). A stretch of
+  ``STEADY_GAP_MIN_SPLITS`` or more that no turning point covers becomes a
+  ``steady`` scene, so one surge at km 2 no longer leaves the other 7 km
+  unnarrated. The partial lap run past a watch workout's end is the opposite:
+  it belongs to the last step but is never judged for a scene.
 * Every threshold is a module-level constant so tests (and future calibration)
   can override it without touching the rules.
 """
@@ -95,7 +100,11 @@ _JOG_ROLES: frozenset[str] = frozenset({"warmup", "run", "cooldown"})
 # Scene kinds that never make a recurrence: they describe the run's shape, not
 # something that keeps happening to the athlete. Strides are *prescribed*, so
 # "strides again at km 5" is the plan being followed, not a habit (#1297).
-_NON_RECURRING_KINDS: frozenset[str] = frozenset({"start", "steady", "strides"})
+# The bookend and main step scenes are the session's structure, at the same
+# place on every run by construction (#1485).
+_NON_RECURRING_KINDS: frozenset[str] = frozenset(
+    {"start", "steady", "strides", "main", "warmup", "cooldown"}
+)
 
 # A step long enough to be narrated kilometre by kilometre instead of as one
 # block: three splits that are not fragments.
@@ -106,6 +115,13 @@ LONG_STEP_MIN_SPLITS = 3
 # joins the step next to it; a longer one is running of its own (#1324).
 # Observed tails: 43 s / 0.118 km, 36 s / 0.071 km, 2 s / 0.006 km.
 UNINDEXED_EDGE_MAX_S = 60.0
+
+# The run's *final* lap, unindexed after an indexed one and shorter than one
+# auto-lap, is the athlete rounding off past the workout's end, however long
+# it took (#1485): observed 72-328 s / 0.17-0.73 km on every timed easy run.
+# It joins the step before it and is not judged for scenes -- the run the
+# prescription covered ended with the workout.
+UNINDEXED_TAIL_MAX_KM = 1.0
 
 # A rep session needs at least this many ``run`` steps alternating with at
 # least this many ``recovery`` steps. Below that the run is a plain run with
@@ -189,6 +205,11 @@ STRONG_FINISH_HR_PERCENTILE = 90.0
 # are dropped by :data:`_PRIORITY`.
 MAX_PER_KIND = 2
 MAX_MOMENTS = 5
+
+# A stretch of at least this many splits that no turning point covers is a
+# ``steady`` scene of its own (#1485): one surge at km 2 used to leave the
+# other 7 km of an easy run with nothing said about them.
+STEADY_GAP_MIN_SPLITS = 3
 
 # --- Recurrence -------------------------------------------------------------
 
@@ -571,6 +592,7 @@ def _steps(positioned: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     the first stride, and only the watch's step index tells them apart. Runs
     without a structured workout carry no index, so nothing changes for them.
     """
+    positioned = _mark_after_workout_tail(positioned)
     groups: list[list[dict[str, Any]]] = []
     for row in positioned:
         if groups and _same_step(groups[-1][-1], row):
@@ -591,7 +613,8 @@ def _same_step(previous: Mapping[str, Any], row: Mapping[str, Any]) -> bool:
     the stop button carries none, and splitting on it turned a one-step run
     into 本編 + 本編 over a 2-43 s tail (#1324). A long one is running the
     workout did not cover (a jog home after the cool-down), so it stays
-    separate rather than padding the last step.
+    separate rather than padding the last step -- unless it is the run's
+    partial final lap (:func:`_mark_after_workout_tail`, #1485).
     """
     if previous["role"] != row["role"]:
         return False
@@ -602,8 +625,25 @@ def _same_step(previous: Mapping[str, Any], row: Mapping[str, Any]) -> bool:
     if before is None:
         return _is_short_unindexed(previous)
     if after is None:
-        return _is_short_unindexed(row)
+        return bool(row.get("after_workout")) or _is_short_unindexed(row)
     return bool(before == after)
+
+
+def _mark_after_workout_tail(
+    positioned: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Copies of the rows, the final one flagged ``after_workout`` if it is the
+    partial lap run past the watch workout's end (``UNINDEXED_TAIL_MAX_KM``)."""
+    rows = [dict(row) for row in positioned]
+    if len(rows) >= 2:
+        last, before = rows[-1], rows[-2]
+        if (
+            last.get("workout_step_index") is None
+            and before.get("workout_step_index") is not None
+            and last["distance_km"] < UNINDEXED_TAIL_MAX_KM
+        ):
+            last["after_workout"] = True
+    return rows
 
 
 def _is_short_unindexed(row: Mapping[str, Any]) -> bool:
@@ -640,7 +680,11 @@ def _step(rows: list[dict[str, Any]], number: int) -> dict[str, Any]:
         "pace_s_per_km": _round(duration / distance) if distance > 0 else None,
         "avg_hr": _weighted_hr(rows),
         "max_hr": _max_hr(rows),
-        "is_long": sum(1 for row in rows if row["distance_km"] >= MIN_SPLIT_KM)
+        "is_long": sum(
+            1
+            for row in rows
+            if row["distance_km"] >= MIN_SPLIT_KM and not row.get("after_workout")
+        )
         >= LONG_STEP_MIN_SPLITS,
         "rows": rows,
     }
@@ -1054,8 +1098,11 @@ def _km_scenes(
     if not any(kind != "start" for kind, _ in candidates):
         return [_steady_scene(step, valid, run_median, prefix)]
 
+    gaps = _steady_gaps(valid, candidates)
     candidates = _cap_per_kind(candidates, valid)
     candidates = _cap_total(candidates, valid)
+    room = MAX_MOMENTS - len(candidates)
+    candidates = [*candidates, *gaps[:room]]
 
     corrections = _corrections(valid)
     return [
@@ -1075,8 +1122,11 @@ def _km_scenes(
 
 
 def _valid_splits(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Drop GPS fragments and rows without a usable pace, keeping input order."""
-    return [dict(row) for row in rows if _is_drawable(row)]
+    """Drop GPS fragments, rows without a usable pace and the lap run past the
+    workout's end (#1485), keeping input order."""
+    return [
+        dict(row) for row in rows if _is_drawable(row) and not row.get("after_workout")
+    ]
 
 
 def _run_median_pace(valid: Sequence[Mapping[str, Any]]) -> float:
@@ -1410,6 +1460,30 @@ def _resolve_overlaps(
     return kept
 
 
+def _steady_gaps(
+    valid: Sequence[Mapping[str, Any]], candidates: Sequence[_Candidate]
+) -> list[_Candidate]:
+    """The stretches no turning point covers, long enough to be a scene.
+
+    Turning points alone left the body of a run unnarrated whenever it had any
+    turning point at all (#1485); what held between them is part of the story.
+    They only fill the slots the turning points leave free, longest first: on
+    a marathon with five turning points the 5-7 km surge that pushed HR to the
+    ceiling says more than the four calm kilometres before it.
+    """
+    covered = {i for _, members in candidates for i in members}
+    gaps: list[_Candidate] = []
+    current: list[int] = []
+    for i in range(len(valid) + 1):
+        if i < len(valid) and i not in covered:
+            current.append(i)
+            continue
+        if len(current) >= STEADY_GAP_MIN_SPLITS:
+            gaps.append(("steady", current))
+        current = []
+    return sorted(gaps, key=lambda gap: (-len(gap[1]), gap[1][0]))
+
+
 def _longest_block(members: Sequence[int]) -> list[int]:
     """The longest run of consecutive indices (earliest on a tie).
 
@@ -1618,6 +1692,9 @@ def _facts(
         ]
         if gains:
             facts["elevation_gain_m"] = _round(sum(gains))
+    elif kind == "steady":
+        if hrs:
+            facts["hr_range"] = [_round(min(hrs)), _round(max(hrs))]
     elif kind in {"fade", "breakdown"}:
         if paces:
             facts["pace_delta_s_per_km"] = _round(median(paces) - first_third_median)
