@@ -1355,14 +1355,18 @@ def _plan_block(
             )
         )
     else:
+        # The zone-refined family, as the verdict compares it (#1490).
+        intensity_actual = _intensity_label(
+            today.get("intensity_category") or today.get("training_type")
+        )
+        if verdict.get("intensity_by_steps"):
+            intensity_actual = f"{intensity_actual}（ステップで判定）"
         checks.append(
             _check(
                 "intensity",
                 "強度",
                 _target_intensity_label(prescription.get("session_type")),
-                _intensity_label(
-                    today.get("training_type") or today.get("intensity_category")
-                ),
+                intensity_actual,
                 "intensity_class" in on_plan,
                 severity=severity.get("intensity_class"),
             )
@@ -1377,6 +1381,7 @@ def _plan_block(
                     actual,
                     "volume" in on_plan,
                     severity=severity.get("volume"),
+                    judged=bool(verdict.get("volume_judged", True)),
                 )
             )
         checks.extend(_axis_row(axis) for axis in axes or ())
@@ -1865,21 +1870,29 @@ def _check(
     on_plan: bool,
     *,
     severity: int | None = None,
+    judged: bool = True,
 ) -> dict[str, Any]:
     """One verdict-judged row of the plan card (intensity / volume / rest).
 
     Same shape as :func:`_axis_row`. ``severity`` is the verdict's own for
-    the axis; without it an off-plan row is a 🟡.
+    the axis; without it an off-plan row is a 🟡. A row the verdict did not
+    judge (``judged=False``: the volume of a run whose intensity class
+    differed) is ``insufficient`` with ``-``, not a deviation (#1490).
     """
-    level = severity if severity is not None else (0 if on_plan else 1)
+    if not judged:
+        status, symbol = "insufficient", "-"
+    else:
+        level = severity if severity is not None else (0 if on_plan else 1)
+        status = "on_plan" if on_plan else "off_plan"
+        symbol = verdict_symbol(level)
     return {
         "axis": axis,
         "label_ja": label_ja,
         "target": target,
         "actual": actual,
-        "status": "on_plan" if on_plan else "off_plan",
-        "on_plan": bool(on_plan),
-        "verdict": verdict_symbol(level),
+        "status": status,
+        "on_plan": bool(on_plan) and judged,
+        "verdict": symbol,
         "segments": [],
     }
 
@@ -2163,6 +2176,7 @@ def _actual(today: dict[str, Any]) -> dict[str, Any]:
         "duration_min": _as_float(today.get("duration_min")),
         "avg_hr": _as_float(today.get("avg_hr")),
         "training_type": today.get("training_type"),
+        "intensity_category": today.get("intensity_category"),
     }
 
 
