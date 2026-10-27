@@ -997,6 +997,11 @@ _INTENSITY_CLASS_LABEL_JA: dict[int, str] = {
     4: "レース",
 }
 
+#: Plan-check axes that judge the intensity a step asked for (``hr_band``,
+#: ``hr_band_2`` ...). Once one of them is judged, a lower intensity class read
+#: off the whole run no longer counts as a deviation (#1490).
+_STEP_INTENSITY_AXES: tuple[str, ...] = ("hr_band", "pace_band", "stages")
+
 #: The ordinal that marks a rest prescription (running it at all is a deviation).
 REST_INTENSITY_CLASS = 0
 
@@ -1339,7 +1344,12 @@ def compute_prescription_verdict(
         shortfall (Issue #1086). With ``axes`` the dict also carries
         ``axis_severity`` -- ``{axis: 0 | 1 | 2}`` for ``intensity_class``,
         ``volume`` (when judged) and every axis -- so each plan-card row can
-        show its own symbol.
+        show its own symbol. Outside a rest day it also carries
+        ``volume_judged`` (``False`` when the class differed or no target
+        applied, so the card does not show an unjudged row as a deviation) and
+        ``intensity_by_steps`` (a judged ``hr_band`` / ``pace_band`` /
+        ``stages`` axis stood in for a lower class read off the whole run,
+        #1490).
     """
     if not prescription:
         return None
@@ -1347,7 +1357,18 @@ def compute_prescription_verdict(
     session_type = prescription.get("session_type")
     title = str(prescription.get("title") or session_type or "処方")
     prescribed_class = intensity_class(session_type)
-    actual_class = intensity_class(actual.get("training_type"))
+    # The zone-refined family, not Garmin's Training Effect label: the label
+    # names the run's main *benefit*, so a 2 x 10 min cruise came out
+    # ``aerobic_base`` and read as an easy run on a threshold day (#1490).
+    # ``moderate`` / ``unknown`` have no class, so they are not compared.
+    actual_name = actual.get("intensity_category") or actual.get("training_type")
+    actual_class = intensity_class(actual_name)
+    # Bands the steps asked for already judge the intensity of each step, so
+    # a lower class read off the whole run does not override them (#1490).
+    intensity_by_steps = any(
+        axis.axis.startswith(_STEP_INTENSITY_AXES) and axis.status != "insufficient"
+        for axis in axes or ()
+    )
     distance_km = _as_float(actual.get("distance_km"))
     duration_min = _as_float(actual.get("duration_min"))
     avg_hr = _as_float(jog_avg_hr)
@@ -1388,15 +1409,15 @@ def compute_prescription_verdict(
             severity = 2
             reasons.append(
                 f"処方は{_class_label(prescribed_class, session_type)}ですが、"
-                f"実施は{_class_label(actual_class, actual.get('training_type'))}で"
+                f"実施は{_class_label(actual_class, actual_name)}で"
                 "処方より高い強度になりました。"
             )
-        elif actual_class < prescribed_class:
+        elif actual_class < prescribed_class and not intensity_by_steps:
             class_mismatch = True
             severity = max(severity, 1)
             reasons.append(
                 f"処方は{_class_label(prescribed_class, session_type)}ですが、"
-                f"実施は{_class_label(actual_class, actual.get('training_type'))}で"
+                f"実施は{_class_label(actual_class, actual_name)}で"
                 "強度を下げています。"
             )
 
@@ -1449,6 +1470,7 @@ def compute_prescription_verdict(
             intensity_severity=intensity_severity,
             volume=volume,
             volume_on_plan=volume_on_plan,
+            intensity_by_steps=intensity_by_steps and not class_mismatch,
         )
 
     # 4. HR ceiling: a guard, judged on the time spent above it (#1357); the
@@ -1505,6 +1527,8 @@ def compute_prescription_verdict(
         "prescription_title": title,
         "reasons": reasons,
         "on_plan": on_plan,
+        "volume_judged": volume is not None,
+        "intensity_by_steps": False,
     }
 
 
@@ -1517,6 +1541,7 @@ def _verdict_from_axes(
     intensity_severity: int,
     volume: tuple[float, str, float, float] | None,
     volume_on_plan: bool,
+    intensity_by_steps: bool,
 ) -> dict[str, Any]:
     """The verdict as the worst of intensity, volume and the judged axes.
 
@@ -1561,6 +1586,8 @@ def _verdict_from_axes(
         "reasons": reasons,
         "on_plan": on_plan,
         "axis_severity": axis_severity,
+        "volume_judged": volume is not None,
+        "intensity_by_steps": intensity_by_steps,
     }
 
 
