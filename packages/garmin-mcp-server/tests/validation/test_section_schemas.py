@@ -107,6 +107,35 @@ def test_run_note_rejects_bad_evidence_pattern():
 
 
 @pytest.mark.unit
+def test_run_note_note_accepts_also():
+    """One note may cover several outliers that share a cause (#1492)."""
+    note = {
+        "signal": "vo",
+        "also": ["vr"],
+        "text": "上下動と上下動比はペースを落とした走りに伴うものです。",
+    }
+
+    valid, errors = validate_section_data("run_note", _run_note_payload(notes=[note]))
+
+    assert valid is True
+    assert errors == []
+
+
+@pytest.mark.unit
+def test_run_note_note_rejects_bad_also_name():
+    note = {
+        "signal": "vo",
+        "also": ["VR!"],
+        "text": "上下動と上下動比はペースを落とした走りに伴うものです。",
+    }
+
+    valid, errors = validate_section_data("run_note", _run_note_payload(notes=[note]))
+
+    assert valid is False
+    assert any("also" in e for e in errors)
+
+
+@pytest.mark.unit
 def test_validate_section_json_accepts_run_note():
     """The MCP-facing validator knows the new section type."""
     valid, errors = validate_section_data("run_note", _run_note_payload())
