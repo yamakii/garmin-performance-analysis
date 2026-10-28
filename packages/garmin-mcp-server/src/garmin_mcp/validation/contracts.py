@@ -79,8 +79,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "notes": {
                 "type": "array",
                 "description": (
-                    "Only for adverse out-of-range signals, <= 2 sentences each: "
-                    "{signal, text}"
+                    "Only for adverse out-of-range signals, <= 3 items of "
+                    "<= 2 sentences each: {signal, also?, text}. 'also' lists "
+                    "further adverse outliers the same explanation covers"
                 ),
             },
             "question": {
@@ -249,9 +250,12 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 ),
             },
             "notes": (
-                "Write one note for every adverse out-of-range signal and for no "
-                "other signal. Attribute the cause in the order intensity -> "
-                "terrain -> weather + start time -> recovery -> form"
+                "Explain every adverse out-of-range signal exactly once and no "
+                "other signal. Signals that share one cause (e.g. vo and vr) go "
+                "in one note: the first as 'signal', the rest in 'also'; group "
+                "this way whenever there are more outliers than the 3-note cap. "
+                "Attribute the cause in the order intensity -> terrain -> "
+                "weather + start time -> recovery -> form"
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
