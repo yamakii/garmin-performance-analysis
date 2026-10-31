@@ -96,6 +96,7 @@ from garmin_mcp.analysis.run_moments import (
     relabel_aligned_splits,
     series_strides_scene,
     with_series_strides,
+    without_kinds,
 )
 from garmin_mcp.analysis.run_policy import apply_policy
 from garmin_mcp.analysis.run_purpose import resolve_purpose
@@ -129,6 +130,9 @@ _VERDICT_LABELS: dict[str, str] = {
     "🟡": "一部ずれ",
     "🔴": "ずれあり",
 }
+
+# Scene kinds an easy-purpose run does not tell (#1496).
+_EASY_UNTOLD_KINDS: frozenset[str] = frozenset({"surge"})
 
 # Headline label when the day carried no prescription at all.
 NO_PLAN_LABEL = "処方なし"
@@ -471,6 +475,16 @@ class RunReportReader(BaseDBReader):
                 for run in reversed(family_previous)
             ],
         )
+        # Easy running is governed by its HR ceiling with the pace left to the
+        # conditions, so a kilometre a few seconds faster than the median is
+        # not a finding (#1496): it is the warm-up kilometre setting the
+        # median. A pickup that mattered crossed the ceiling and is told as a
+        # ceiling_touch. Detection stays purpose-blind; only the telling drops it.
+        if purpose.id in EASY_PURPOSES:
+            judged_moments = without_kinds(judged_moments, _EASY_UNTOLD_KINDS)
+            recurrence = [
+                row for row in recurrence if row.get("kind") not in _EASY_UNTOLD_KINDS
+            ]
 
         next_run_target = self._next_run_target(
             activity_id, today, zone_rows, prescription, outcome
