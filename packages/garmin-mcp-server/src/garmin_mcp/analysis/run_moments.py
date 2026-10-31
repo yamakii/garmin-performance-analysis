@@ -454,6 +454,179 @@ def detect_moments(
     return _number(scenes)
 
 
+# A scene that spends at least this share of its own time inside a series
+# strides block is that block told from the laps, and gives way to it.
+SERIES_OVERLAP_SHARE = 0.5
+
+# HR after the last stride is read over this long a jog.
+_LAST_JOG_S = 60.0
+
+
+def series_strides_scene(
+    reps: Sequence[Any],
+    splits: Sequence[Mapping[str, Any]],
+    samples: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """A ``strides`` scene for strides found in the time series (#1494).
+
+    The laps of a free run do not mark its strides, so :func:`detect_moments`
+    tells them as part of whatever step the laps form. This builds the scene
+    :func:`_strides_scene` would have built had the laps marked them, with the
+    same facts, read off the samples: ``reps``, ``fastest_pace_s_per_km`` /
+    ``median_pace_s_per_km`` (each stride's average at stride speed),
+    ``median_cadence_spm``, ``peak_hr`` (strides and their jogs) and
+    ``hr_at_next_start``; plus ``source = "series"``.
+
+    Args:
+        reps: ``analysis.series_strides.StrideRep`` items, in run order.
+        splits: The run's laps, for the scene's kilometres and lap span.
+        samples: The run's time series (``timestamp_s``, ``heart_rate``,
+            ``cadence``).
+
+    Returns:
+        The scene (``id`` assigned by :func:`with_series_strides`), or ``None``
+        without reps or laps.
+    """
+    positioned = _positioned_splits(splits)
+    if not reps or not positioned:
+        return None
+    steps = _steps(positioned)
+    t_from = float(reps[0].t_from_s)
+    t_to = float(reps[-1].t_to_s)
+    jog_ends = [
+        float(rep.t_to_s)
+        + (
+            float(rep.recovery_after_s)
+            if rep.recovery_after_s is not None
+            else _LAST_JOG_S
+        )
+        for rep in reps
+    ]
+
+    paces = [float(rep.avg_pace_s_per_km) for rep in reps]
+    cadences = [
+        mean_cadence
+        for rep in reps
+        if (mean_cadence := _sample_mean(samples, "cadence", rep.t_from_s, rep.t_to_s))
+        is not None
+    ]
+    peak_hr = _sample_max(samples, "heart_rate", t_from, jog_ends[-1])
+    facts: dict[str, Any] = {
+        "reps": len(reps),
+        "fastest_pace_s_per_km": _round(min(paces)),
+        "median_pace_s_per_km": _round(median(paces)),
+    }
+    if cadences:
+        facts["median_cadence_spm"] = _round(median(cadences))
+    if peak_hr is not None:
+        facts["peak_hr"] = _round(peak_hr)
+    facts["hr_at_next_start"] = [
+        (
+            None
+            if (hr := _sample_mean(samples, "heart_rate", rep.t_to_s, end)) is None
+            else _round(hr)
+        )
+        for rep, end in zip(reps, jog_ends, strict=True)
+    ]
+    facts["source"] = "series"
+
+    first_lap = _row_at(positioned, t_from)
+    last_lap = _row_at(positioned, t_to)
+    step = next((s for s in steps if s["start_s"] <= t_from < s["end_s"]), steps[-1])
+    return _assemble_scene(
+        "strides",
+        unit="step",
+        label_ja=f"流し（{len(reps)}本）",
+        step_id=str(step["id"]),
+        rep_no=None,
+        km_from=_km_at(positioned, t_from),
+        km_to=_km_at(positioned, t_to),
+        t_from_s=_round1(t_from),
+        t_to_s=_round1(t_to),
+        split_from=int(_as_float(first_lap.get("split_index")) or 1),
+        split_to=int(_as_float(last_lap.get("split_index")) or len(positioned)),
+        facts=facts,
+    )
+
+
+def with_series_strides(
+    moments: Sequence[Mapping[str, Any]], scene: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """``moments`` with a series strides scene in place of what it covers.
+
+    A scene spending ``SERIES_OVERLAP_SHARE`` or more of its time inside the
+    strides block is the block told from the laps -- the generic ``main``
+    step a free run's strides were merged into -- and is dropped. The rest are
+    kept, ordered in time and renumbered, capped at ``MAX_MOMENTS``.
+    """
+    t_from = float(scene["t_from_s"])
+    t_to = float(scene["t_to_s"])
+    kept = [
+        dict(moment)
+        for moment in moments
+        if _overlap_share(moment, t_from, t_to) < SERIES_OVERLAP_SHARE
+    ]
+    scenes = sorted(
+        [*kept, dict(scene)],
+        key=lambda item: (float(item["t_from_s"]), float(item["t_to_s"])),
+    )
+    if len(scenes) > MAX_MOMENTS:
+        scenes = _cap_scenes(scenes)
+        scenes.sort(key=lambda item: (float(item["t_from_s"]), float(item["t_to_s"])))
+    return _number(scenes)
+
+
+def _overlap_share(moment: Mapping[str, Any], t_from: float, t_to: float) -> float:
+    """Share of ``moment``'s own time inside ``[t_from, t_to)``."""
+    start = _as_float(moment.get("t_from_s"))
+    end = _as_float(moment.get("t_to_s"))
+    if start is None or end is None or end <= start:
+        return 0.0
+    return max(0.0, min(end, t_to) - max(start, t_from)) / (end - start)
+
+
+def _row_at(positioned: Sequence[Mapping[str, Any]], t: float) -> Mapping[str, Any]:
+    """The lap running at elapsed second ``t`` (the last one past the end)."""
+    for row in positioned:
+        if float(row["start_s"]) <= t < float(row["end_s"]):
+            return row
+    return positioned[-1]
+
+
+def _km_at(positioned: Sequence[Mapping[str, Any]], t: float) -> float | int:
+    """Distance into the run at second ``t``, interpolated inside its lap."""
+    row = _row_at(positioned, t)
+    start_s, end_s = float(row["start_s"]), float(row["end_s"])
+    share = 0.0 if end_s <= start_s else min(1.0, (t - start_s) / (end_s - start_s))
+    km = float(row["start_km"]) + share * float(row["distance_km"])
+    return _round3(km)
+
+
+def _sample_values(
+    samples: Sequence[Mapping[str, Any]], key: str, start: float, end: float
+) -> list[float]:
+    return [
+        value
+        for sample in samples
+        if start <= float(sample["timestamp_s"]) < end
+        and (value := _as_float(sample.get(key))) is not None
+    ]
+
+
+def _sample_mean(
+    samples: Sequence[Mapping[str, Any]], key: str, start: float, end: float
+) -> float | None:
+    values = _sample_values(samples, key, start, end)
+    return sum(values) / len(values) if values else None
+
+
+def _sample_max(
+    samples: Sequence[Mapping[str, Any]], key: str, start: float, end: float
+) -> float | None:
+    values = _sample_values(samples, key, start, end)
+    return max(values) if values else None
+
+
 def detect_recurrence(
     today: Sequence[Mapping[str, Any]],
     previous_runs: Sequence[Mapping[str, Any]],

@@ -179,7 +179,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "plan.strides": (
                 "the strides row of report.plan.checks -- strides run against the "
                 "prescribed reps ('4本'); present only when the prescription "
-                "carries strides"
+                "carries strides, or when strides a recent day asked for and no "
+                "run did were carried over to this run (label '流し（M/Dから持ち越し）', "
+                "plan.title names them too). Strides are counted from the laps, "
+                "or from the time series when the laps do not mark them (the "
+                "strides scene then carries facts.source = 'series')"
             ),
             "plan.continuity": (
                 "the continuity row of report.plan.checks -- whether the run "

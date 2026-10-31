@@ -81,7 +81,11 @@ from garmin_mcp.analysis.plan_axes import (
     AxisStatus,
     evaluate_structure_axes,
 )
-from garmin_mcp.analysis.prescription_shape import BOOKENDED_TYPES, expected_minutes
+from garmin_mcp.analysis.prescription_shape import (
+    BOOKENDED_TYPES,
+    expected_minutes,
+    strides_block_seconds,
+)
 from garmin_mcp.analysis.purpose_outcome import Outcome
 from garmin_mcp.analysis.purpose_outcome import evaluate as evaluate_outcome
 from garmin_mcp.analysis.run_moments import (
@@ -90,9 +94,12 @@ from garmin_mcp.analysis.run_moments import (
     detect_moments,
     detect_recurrence,
     relabel_aligned_splits,
+    series_strides_scene,
+    with_series_strides,
 )
 from garmin_mcp.analysis.run_policy import apply_policy
 from garmin_mcp.analysis.run_purpose import resolve_purpose
+from garmin_mcp.analysis.series_strides import StrideRep, detect_series_strides
 from garmin_mcp.analysis.workout_alignment import Alignment, align_segments
 from garmin_mcp.analysis.workout_structure import (
     Structure,
@@ -302,6 +309,24 @@ class RunReportReader(BaseDBReader):
             identity = _fetch_run_identity(conn, tables, activity_id, activity_date)
 
         prescription = self._load_prescription(activity_date)
+        # Strides a recent day asked for and no run has done yet (#1494) are
+        # read as part of today's plan.
+        if (
+            prescription is not None
+            and not _prescribed_strides(prescription)
+            and _structure_strides(
+                prescription.get("structure"), prescription.get("session_type")
+            )
+            is None
+        ):
+            with self._get_connection() as conn:
+                carried = carried_strides(
+                    conn,
+                    activity_date,
+                    week_start=str(prescription.get("week_start_date") or ""),
+                )
+            if carried is not None:
+                prescription = _with_carried_strides(prescription, carried)
         hr_ceiling_bpm = _as_int(prescription.get("hr_high")) if prescription else None
 
         # What each step asked for (#1406): the stored structure, or the one
@@ -322,9 +347,21 @@ class RunReportReader(BaseDBReader):
             else today_splits
         )
 
+        # Strides the laps do not mark, read off the time series (#1494).
+        series_reps = (
+            detect_series_strides(hr_samples)
+            if hr_samples and not _has_stride_laps(told_splits)
+            else []
+        )
+
         # Which seconds are steady running (#1313): the ceiling is judged on
         # them, and the form signals are not judged when too few are left.
-        steady = steady_mask(hr_samples, today_splits) if hr_samples else []
+        # Series strides and their jogs are effort windows like stride laps.
+        steady = (
+            steady_mask(hr_samples, [*today_splits, *_effort_windows(series_reps)])
+            if hr_samples
+            else []
+        )
         shares = {
             "hr": judged_share(hr_samples, steady) if hr_samples else None,
             "form": (
@@ -365,6 +402,13 @@ class RunReportReader(BaseDBReader):
                 prescription=prescription,
                 breakdown_from_km=outcome.breakdown_from_km,
             )
+        series_scene = (
+            series_strides_scene(series_reps, told_splits, hr_samples)
+            if series_reps
+            else None
+        )
+        if series_scene is not None:
+            told_moments = with_series_strides(told_moments, series_scene)
         # With a prescription, delivering its purpose is an axis of the plan
         # (#1353), so the verdict is judged once the outcome is known.
         # The ceiling is judged on the steady time above it (#1357); the card
@@ -390,6 +434,7 @@ class RunReportReader(BaseDBReader):
                 outcome_scoped=outcome_scope is not None,
                 hr_ceiling=hr_ceiling,
                 ceiling_avg_hr=jog_avg_hr,
+                series_strides=len(series_reps),
             )
             if prescription is not None and not _is_rest(prescription)
             else None
@@ -1131,6 +1176,7 @@ _SAMPLE_COLUMNS: tuple[str, ...] = (
     "heart_rate",
     "speed",
     "cadence",
+    "power",
     "sum_moving_duration",
     "sum_elapsed_duration",
     "sum_duration",
@@ -1603,6 +1649,7 @@ def _plan_axes(
     outcome_scoped: bool,
     hr_ceiling: Mapping[str, Any] | None,
     ceiling_avg_hr: float | None,
+    series_strides: int = 0,
 ) -> list[AxisResult]:
     """The plan-check axes beyond intensity and volume (#1406).
 
@@ -1616,34 +1663,64 @@ def _plan_axes(
     (``outcome_scoped``), ``continuity`` is that outcome -- the same reading
     ``plan_axes`` makes, placed on the whole run's distance -- so the plan row
     and the breakdown scene tell the same kilometre.
+
+    Strides carried over from an earlier day (#1494) add a ``strides`` axis
+    to either kind of row, counted from the laps or, when the laps do not
+    mark them, from the time series (``series_strides``).
     """
+    done = _count_strides(splits) or series_strides
     if _is_legacy_steady(prescription):
-        return _legacy_axes(
+        axes = _legacy_axes(
             prescription,
             today,
             splits=splits,
             outcome=outcome,
             hr_ceiling=hr_ceiling,
             ceiling_avg_hr=ceiling_avg_hr,
+            strides_done=done,
         )
-    if structure is None or alignment is None:
-        return []
-    axes = evaluate_structure_axes(
-        structure,
-        alignment,
-        splits=splits,
-        samples=samples,
-        steady=steady if samples else None,
-        purpose=purpose,
-    )
-    return [
-        (
-            _continuity_axis(outcome)
-            if axis.axis == "continuity" and outcome is not None and outcome_scoped
-            else axis
+    elif structure is None or alignment is None:
+        axes = []
+    else:
+        axes = [
+            (
+                _continuity_axis(outcome)
+                if axis.axis == "continuity" and outcome is not None and outcome_scoped
+                else axis
+            )
+            for axis in evaluate_structure_axes(
+                structure,
+                alignment,
+                splits=splits,
+                samples=samples,
+                steady=steady if samples else None,
+                purpose=purpose,
+            )
+        ]
+        # A strides block whose laps cannot be aligned is still countable in
+        # the time series: "0 of 4" is a finding, "insufficient" is not.
+        planned = _structure_strides(
+            prescription.get("structure"), prescription.get("session_type")
         )
-        for axis in axes
-    ]
+        if planned is not None and samples:
+            axes = [
+                (
+                    _strides_axis(_as_int(planned.get("reps")) or 0, done)
+                    if axis.axis == "strides" and axis.status == "insufficient"
+                    else axis
+                )
+                for axis in axes
+            ]
+    carried = prescription.get("strides_carried")
+    if isinstance(carried, Mapping) and not any(a.axis == "strides" for a in axes):
+        axes.append(
+            _strides_axis(
+                _as_int(carried.get("reps")) or 0,
+                done,
+                label_ja=f"流し（{_month_day(carried['carried_from'])}から持ち越し）",
+            )
+        )
+    return axes
 
 
 def _legacy_axes(
@@ -1654,6 +1731,7 @@ def _legacy_axes(
     outcome: Outcome | None,
     hr_ceiling: Mapping[str, Any] | None,
     ceiling_avg_hr: float | None,
+    strides_done: int,
 ) -> list[AxisResult]:
     """The axes a legacy easy / long / recovery row has always been read on.
 
@@ -1687,8 +1765,9 @@ def _legacy_axes(
         )
     if outcome is not None:
         axes.append(_continuity_axis(outcome))
-    if _prescribed_strides(dict(prescription)) is not None:
-        axes.append(_strides_axis(prescription, splits))
+    strides = _prescribed_strides(dict(prescription))
+    if strides is not None:
+        axes.append(_strides_axis(_as_int(strides.get("reps")) or 0, strides_done))
     return axes
 
 
@@ -1721,30 +1800,204 @@ def _prescribed_strides(prescription: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _strides_axis(
-    prescription: Mapping[str, Any], splits: Sequence[Mapping[str, Any]]
+    reps: int, done: int, *, label_ja: str = "ウインドスプリント"
 ) -> AxisResult:
-    """The legacy ``strides`` axis: stride laps run against the reps (#1297).
+    """The ``strides`` axis: strides run against the reps (#1297).
 
-    ``target`` / ``actual`` read ``"4本"``. The status is ``short`` when some
-    but not all strides were run and ``missing`` when none were -- both a 🟡
-    deviation that feeds the verdict (#1406), never 🔴, the same rule
-    ``plan_axes`` applies to reps.
+    ``done`` counts the stride laps, or the time-series strides when the laps
+    mark none (#1494). ``target`` / ``actual`` read ``"4本"``. The status is
+    ``short`` when some but not all strides were run and ``missing`` when none
+    were -- both a 🟡 deviation that feeds the verdict (#1406), never 🔴, the
+    same rule ``plan_axes`` applies to reps.
     """
-    strides = _prescribed_strides(dict(prescription)) or {}
-    reps = _as_int(strides.get("reps")) or 0
-    done = _count_strides(splits)
     status: AxisStatus = (
         "on_plan" if done >= reps else "short" if done > 0 else "missing"
     )
     return AxisResult(
         axis="strides",
-        label_ja="ウインドスプリント",
+        label_ja=label_ja,
         target=f"{reps}本",
         actual=f"{done}本",
         status=status,
         severity=0 if status == "on_plan" else 1,
         segments=(),
     )
+
+
+def _effort_windows(reps: Sequence[StrideRep]) -> list[dict[str, Any]]:
+    """Series strides and their jogs as the effort laps ``steady_mask`` reads."""
+    windows: list[dict[str, Any]] = []
+    for rep in reps:
+        windows.append(
+            {"role_phase": "stride", "start_s": rep.t_from_s, "end_s": rep.t_to_s}
+        )
+        if rep.recovery_after_s:
+            windows.append(
+                {
+                    "role_phase": "recovery",
+                    "start_s": rep.t_to_s,
+                    "end_s": rep.t_to_s + rep.recovery_after_s,
+                }
+            )
+    return windows
+
+
+# How many days back a prescribed set of strides that no run did may still be
+# what today's strides answer (#1494): "yesterday's strides, after today's jog".
+CARRY_LOOKBACK_DAYS = 2
+
+
+def carried_strides(
+    conn: Any,
+    activity_date: str,
+    *,
+    week_start: str,
+    lookback_days: int = CARRY_LOOKBACK_DAYS,
+) -> dict[str, Any] | None:
+    """Strides an earlier day of the week asked for and no run has done yet.
+
+    Moving a missed set of strides to the next run is decided in conversation
+    and never written down, yet it is what that run answers (#1494). The day
+    is found in the plan itself: the latest-batch prescription of the same
+    week, at most ``lookback_days`` before ``activity_date``, that asked for
+    strides (the ``strides`` add-on or an easy stride-group structure), when
+    no run from that day up to yesterday did any -- neither stride laps nor
+    strides in the time series.
+
+    Returns:
+        ``{"reps", "run_seconds", "recovery_seconds", "carried_from"}`` for
+        the nearest such day, or ``None``.
+    """
+    tables = _existing_tables(conn)
+    if not week_start or not {"weekly_prescriptions", "activities"} <= tables:
+        return None
+    rows = conn.execute(
+        """
+        SELECT CAST(date AS VARCHAR), strides, structure, session_type
+        FROM weekly_prescriptions p
+        WHERE CAST(week_start_date AS VARCHAR) = ?
+          AND date BETWEEN CAST(? AS DATE) AND CAST(? AS DATE)
+          AND batch_id = (
+              SELECT MAX(batch_id) FROM weekly_prescriptions q
+              WHERE q.week_start_date = p.week_start_date
+                AND q.user_id = p.user_id
+          )
+        ORDER BY date DESC
+        """,
+        [
+            week_start,
+            _shift_days(activity_date, -lookback_days),
+            _shift_days(activity_date, -1),
+        ],
+    ).fetchall()
+    for day, strides_raw, structure_raw, session_type in rows:
+        spec = _prescribed_strides({"strides": strides_raw}) or _structure_strides(
+            structure_raw, session_type
+        )
+        if spec is None:
+            continue
+        if _strides_run_between(conn, tables, str(day), activity_date):
+            return None
+        return {
+            "reps": _as_int(spec.get("reps")) or 0,
+            "run_seconds": spec.get("run_seconds"),
+            "recovery_seconds": spec.get("recovery_seconds"),
+            "carried_from": str(day),
+        }
+    return None
+
+
+def _structure_strides(raw: Any, session_type: Any) -> dict[str, Any] | None:
+    """An easy row's stride group as a strides spec, ``None`` when it has none."""
+    if str(session_type or "").strip().lower() in BOOKENDED_TYPES:
+        return None
+    structure = raw
+    if isinstance(raw, str):
+        try:
+            structure = json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(structure, list):
+        return None
+    for item in structure:
+        if not isinstance(item, Mapping) or not item.get("repeat_count"):
+            continue
+        steps = [step for step in item.get("steps") or [] if isinstance(step, Mapping)]
+        work = [s for s in steps if s.get("step_type") == "run"]
+        rest = [s for s in steps if s.get("step_type") in {"recovery", "rest"}]
+        work_s = [_step_seconds(step) for step in work]
+        if not work or any(s is None or s > STRIDES_MAX_WORK_S for s in work_s):
+            continue
+        return {
+            "reps": _as_int(item.get("repeat_count")),
+            "run_seconds": work_s[0],
+            "recovery_seconds": _step_seconds(rest[0]) if rest else None,
+        }
+    return None
+
+
+def _strides_run_between(
+    conn: Any, tables: set[str], from_date: str, before_date: str
+) -> bool:
+    """Whether a run on ``from_date`` .. the day before ``before_date`` did strides."""
+    ids = [
+        int(row[0])
+        for row in conn.execute(
+            """
+            SELECT activity_id FROM activities
+            WHERE activity_date >= CAST(? AS DATE)
+              AND activity_date < CAST(? AS DATE)
+            """,
+            [from_date, before_date],
+        ).fetchall()
+    ]
+    for activity_id in ids:
+        if "splits" in tables and _has_column(conn, "splits", "role_phase"):
+            laps = conn.execute(
+                "SELECT COUNT(*) FROM splits WHERE activity_id = ? "
+                "AND lower(role_phase) = 'stride'",
+                [activity_id],
+            ).fetchone()
+            if laps and laps[0]:
+                return True
+        if "time_series_metrics" in tables and detect_series_strides(
+            _fetch_hr_samples(conn, activity_id)
+        ):
+            return True
+    return False
+
+
+def _with_carried_strides(
+    prescription: Mapping[str, Any], carried: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Today's prescription with the carried-over strides laid on top (#1494).
+
+    The title names them, the volume target grows by the strides block, and
+    ``strides_carried`` makes :func:`_plan_axes` judge them. The ``strides``
+    add-on itself is left alone, so the stored structure the laps are aligned
+    to is unchanged.
+    """
+    out = dict(prescription)
+    block_min = strides_block_seconds(carried) / 60.0
+    target = _as_float(out.get("target_minutes"))
+    if target is not None:
+        out["target_minutes"] = round(target + block_min)
+    title = str(out.get("title") or "")
+    out["title"] = (
+        f"{title}＋流し{carried['reps']}本"
+        f"（{_month_day(str(carried['carried_from']))}から持ち越し）"
+    )
+    out["strides_carried"] = dict(carried)
+    return out
+
+
+def _month_day(day: str) -> str:
+    """``"2026-10-30"`` -> ``"10/30"``."""
+    try:
+        parsed = date.fromisoformat(day[:10])
+    except ValueError:
+        return day
+    return f"{parsed.month}/{parsed.day}"
 
 
 def _count_strides(splits: Sequence[Mapping[str, Any]]) -> int:
