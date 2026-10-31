@@ -14,7 +14,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status")
 ```
 
 ## Step 1: 今朝の wellness と前日の収支を取り込む（必須・単独ステップ）
@@ -84,6 +84,7 @@ wellness 取り込みの直後に、**質問を 1 つだけ**します（増や�
 4. **暑熱期（気温 28℃ 以上が見込まれる時期）**: HR 上限（ceiling）で管理し、ペースは結果として扱う。HR floor や「涼しい朝に効率テスト」を提案しない
 5. **ユーザーが感触・案を先に述べているとき**は、まず質問の意図（何を決めたいのか）を捉えて冒頭で一文にして受け止め、それをデータで確認する。相手の案に寄せた結論を先に決めない。「ご理解と一致 / ここが違います」のような判定ラベルや否定の宣言は付けず、データで見えたことを事実として述べ、食い違う点は根拠付きの補足として加える（`.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions）
 6. **数値の出典を明記**（例: 「HRV 71ms、30 日平均 63±5」）。ゾーン境界は Garmin native zones（`get_heart_rate_zones_detail` 等）のみ。計算式は使わない
+7. **セッションの一部を別の日へ移すと決めたら処方行に書き残す**（例:「昨日できなかった流しを今日のジョグの後に入れる」）。会話で決めただけだと、ランの分析はそれを処方として読めない（#1494）。移す先の行を `update_prescription_status(prescription_id=<移す先>, status=<今の status のまま>, structure=<移した部分を足した step 構造>)` で書き換える（版の更新は不要）。移した元の行は消化していなければ `skipped` にする。前日に処方された流しを翌日に回すだけなら、分析が自動で持ち越しとして読むので書き換えは省いてよい（2 日より前の日から移す、本数を変える、流し以外を移すときは必ず書く）
 
 ## Step 4: 回答フォーマット
 
