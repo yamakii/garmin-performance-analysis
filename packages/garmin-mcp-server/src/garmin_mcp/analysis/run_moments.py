@@ -576,6 +576,15 @@ def with_series_strides(
     return _number(scenes)
 
 
+def without_kinds(
+    moments: Sequence[Mapping[str, Any]], kinds: frozenset[str]
+) -> list[dict[str, Any]]:
+    """``moments`` without the scenes of ``kinds``, renumbered ``m1..mN``."""
+    return _number(
+        [dict(moment) for moment in moments if moment.get("kind") not in kinds]
+    )
+
+
 def _overlap_share(moment: Mapping[str, Any], t_from: float, t_to: float) -> float:
     """Share of ``moment``'s own time inside ``[t_from, t_to)``."""
     start = _as_float(moment.get("t_from_s"))
