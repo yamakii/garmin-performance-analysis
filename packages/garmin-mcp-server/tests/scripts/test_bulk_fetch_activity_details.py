@@ -264,7 +264,7 @@ class TestActivityDetailsFetcherIntegration:
         mock_client = Mock()
 
         def mock_get_details(activity_id, maxchart=2000):
-            if activity_id == 22222:
+            if activity_id == "22222":  # garminconnect 0.3.20 takes activity_id as str
                 raise Exception("Network error")
             return {"activityId": activity_id}
 

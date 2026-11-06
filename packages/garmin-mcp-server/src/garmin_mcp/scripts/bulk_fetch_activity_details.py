@@ -117,7 +117,7 @@ class ActivityDetailsFetcher:
         try:
             # Fetch from API
             client = GarminIngestWorker.get_garmin_client()
-            activity_data = client.get_activity_details(activity_id, maxchart=2000)
+            activity_data = client.get_activity_details(str(activity_id), maxchart=2000)
 
             # Save to file
             with open(details_file, "w", encoding="utf-8") as f:
