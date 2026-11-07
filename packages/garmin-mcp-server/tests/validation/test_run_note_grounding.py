@@ -323,6 +323,86 @@ def test_adverse_signal_without_note_is_rejected():
     assert "gct" in reason
 
 
+def _adverse(*metrics: str) -> list[dict[str, Any]]:
+    """Signals that are all outside their normal range and adverse."""
+    return [{"metric": m, "status": "outside", "adverse": True} for m in metrics]
+
+
+_NOTE_TEXT = "ペースを落とした走りに伴うものと見られます。"
+
+
+@pytest.mark.unit
+def test_note_also_covers_adverse_signal():
+    """A note's ``also`` explains the outliers it lists (#1492)."""
+    report = _report(signals=_adverse("vo", "vr"))
+    data = _note_data(notes=[{"signal": "vo", "also": ["vr"], "text": _NOTE_TEXT}])
+
+    assert check_run_note_grounding(data, report) == (True, None)
+
+
+@pytest.mark.unit
+def test_four_adverse_signals_fit_in_three_notes():
+    """Four outliers fit the 3-note cap once vo and vr share a note (2026-10-28)."""
+    report = _report(signals=_adverse("gct", "vo", "vr", "cadence"))
+    data = _note_data(
+        notes=[
+            {"signal": "gct", "text": _NOTE_TEXT},
+            {"signal": "vo", "also": ["vr"], "text": _NOTE_TEXT},
+            {"signal": "cadence", "text": _NOTE_TEXT},
+        ]
+    )
+
+    assert check_run_note_grounding(data, report) == (True, None)
+
+
+@pytest.mark.unit
+def test_note_also_on_within_signal_is_rejected():
+    report = _report(
+        signals=[
+            *_adverse("vo"),
+            {"metric": "hr_drift", "status": "within", "adverse": False},
+        ]
+    )
+    data = _note_data(
+        notes=[{"signal": "vo", "also": ["hr_drift"], "text": _NOTE_TEXT}]
+    )
+
+    ok, reason = check_run_note_grounding(data, report)
+
+    assert ok is False
+    assert reason is not None
+    assert "hr_drift" in reason
+
+
+@pytest.mark.unit
+def test_note_also_unknown_signal_is_rejected():
+    report = _report(signals=_adverse("vo"))
+    data = _note_data(notes=[{"signal": "vo", "also": ["xyz"], "text": _NOTE_TEXT}])
+
+    ok, reason = check_run_note_grounding(data, report)
+
+    assert ok is False
+    assert reason is not None
+    assert "xyz" in reason
+
+
+@pytest.mark.unit
+def test_signal_noted_twice_is_rejected():
+    report = _report(signals=_adverse("vo", "vr"))
+    data = _note_data(
+        notes=[
+            {"signal": "vo", "also": ["vr"], "text": _NOTE_TEXT},
+            {"signal": "vr", "text": _NOTE_TEXT},
+        ]
+    )
+
+    ok, reason = check_run_note_grounding(data, report)
+
+    assert ok is False
+    assert reason is not None
+    assert "vr" in reason
+
+
 @pytest.mark.unit
 def test_note_on_within_signal_is_rejected():
     """Notes exist only for adverse outliers, not for normal values."""

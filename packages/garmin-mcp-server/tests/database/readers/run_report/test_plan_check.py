@@ -164,3 +164,43 @@ def test_plan_card_volume_pct_matches_verdict(reader_db_path: Path) -> None:
     assert volume["target"] == "35分"
     assert volume["actual"] == "35分（100%）"
     assert volume["on_plan"] is True
+
+
+@pytest.mark.integration
+def test_plan_card_unjudged_volume_is_insufficient(reader_db_path: Path) -> None:
+    """An easy run on a threshold day: volume is not compared, so not a miss (#1490).
+
+    The verdict skips volume when the class differs; the card showed that
+    unjudged row as a 🟡 deviation at 100% of plan.
+    """
+    _seed_history(reader_db_path)
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        avg_hr=140,
+        distance_km=6.5,
+        duration_s=35 * 60,
+        training_type="aerobic_base",
+    )
+    _seed_prescription(
+        reader_db_path,
+        on_date=TODAY,
+        session_type="threshold",
+        title="閾値 20分",
+        target_km=None,
+        target_minutes=20,
+        hr_low=None,
+        hr_high=None,
+    )
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    checks = {c["axis"]: c for c in report["plan"]["checks"]}
+    assert checks["intensity"]["status"] == "off_plan"
+    assert checks["intensity"]["actual"] == "イージー"
+    volume = checks["volume"]
+    assert volume["status"] == "insufficient"
+    assert volume["verdict"] == "-"
+    assert volume["on_plan"] is False

@@ -183,6 +183,78 @@ def test_uneventful_run_yields_single_steady_moment() -> None:
 
 
 @pytest.mark.unit
+def test_uncovered_middle_becomes_steady_scene() -> None:
+    """10/21: a surge at km 2 must not leave km 2-9 unnarrated (#1485)."""
+    splits = [
+        _split(1, 427, 126, 138),
+        _split(2, 405, 139, 142),
+        *(
+            _split(i, 420, hr, hr + 3)
+            for i, hr in enumerate((140, 142, 145, 144, 146, 146, 147), start=3)
+        ),
+    ]
+
+    moments = detect_moments(splits, hr_ceiling=150)
+
+    assert [(m["kind"], m["km_from"], m["km_to"]) for m in moments] == [
+        ("start", 0, 1),
+        ("surge", 1, 2),
+        ("steady", 2, 9),
+    ]
+    assert moments[2]["facts"]["hr_range"] == [140, 147]
+    assert moments[2]["facts"]["pace_s_per_km"] == 420
+
+
+@pytest.mark.unit
+def test_steady_gap_never_displaces_a_turning_point() -> None:
+    """10/11: with every slot taken, the 5-7 km surge outranks calm km 1-5."""
+    splits = _rows(
+        [
+            (420, 140, 145, 178, 2),
+            (431, 141, 145, 178, 2),
+            (431, 142, 146, 178, 2),
+            (431, 142, 146, 178, 2),
+            (431, 143, 147, 178, 2),
+            (414, 148, 149, 178, 2),
+            (414, 148, 149, 178, 2),
+            *[(426, 151, 155, 178, 2)] * 6,
+            (431, 140, 145, 178, 20),
+            (650, 138, 142, 120, 2),
+            (431, 140, 145, 178, 2),
+            (431, 151, 155, 178, 2),
+            (431, 151, 155, 178, 2),
+            (480, 143, 147, 176, 2),
+            (490, 144, 148, 176, 2),
+        ]
+    )
+
+    moments = detect_moments(splits, hr_ceiling=150)
+
+    kinds = [m["kind"] for m in moments]
+    assert len(moments) == 5
+    assert "surge" in kinds
+    assert "steady" not in kinds
+
+
+@pytest.mark.unit
+def test_short_gap_is_not_steady() -> None:
+    """Two kilometres between turning points are not a scene of their own."""
+    splits = [
+        _split(1, 420, 135, 140),
+        _split(2, 405, 138, 142),
+        _split(3, 420, 139, 142),
+        _split(4, 420, 140, 143),
+        _split(5, 405, 141, 144),
+        _split(6, 420, 141, 144),
+    ]
+
+    moments = detect_moments(splits, hr_ceiling=150)
+
+    assert "surge" in {m["kind"] for m in moments}
+    assert "steady" not in {m["kind"] for m in moments}
+
+
+@pytest.mark.unit
 def test_fragment_splits_are_ignored() -> None:
     """A 14 m manual-lap fragment at 6:05/km must not invent a scene.
 
@@ -268,6 +340,19 @@ def test_moments_json_serialisable() -> None:
 
 
 # --- detect_recurrence ------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("kind", ["main", "warmup", "cooldown"])
+def test_structural_step_scenes_do_not_recur(kind: str) -> None:
+    """A step scene is the session's shape, not a habit (#1485)."""
+    scene = {"kind": kind, "unit": "step", "rep_no": None, "km_from": 8.6}
+    previous = [
+        {"activity_date": date, "moments": [dict(scene)]}
+        for date in ("2026-10-20", "2026-10-18", "2026-10-17")
+    ]
+
+    assert detect_recurrence([{"id": "m3", **scene}], previous) == []
 
 
 @pytest.mark.unit
