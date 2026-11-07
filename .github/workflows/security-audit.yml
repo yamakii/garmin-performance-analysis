@@ -40,10 +40,16 @@ jobs:
           uv export --frozen --no-hashes --all-packages --no-emit-workspace \
             --format requirements-txt -o requirements-audit.txt
 
-      - name: pip-audit
+      - name: pip-audit (PyPI advisory DB)
         # --no-deps: audit exactly the locked set, do not re-resolve.
         # --strict: fail on packages pip-audit cannot look up, not just on vulns.
         run: uvx pip-audit -r requirements-audit.txt --no-deps --strict --desc on
+
+      - name: pip-audit (OSV)
+        # OSV also carries the GitHub Advisory Database (GHSA ids). The PyPI
+        # service alone stayed green for a month while Dependabot had 13 open
+        # filelock alerts (#1502), so both services are consulted.
+        run: uvx pip-audit -r requirements-audit.txt --no-deps --strict --desc on --vulnerability-service osv
 
   npm-audit:
     runs-on: ubuntu-latest
