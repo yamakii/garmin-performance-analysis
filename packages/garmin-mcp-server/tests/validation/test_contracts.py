@@ -267,6 +267,19 @@ def test_contract_fast_start_under_ceiling_neutral():
 
 
 @pytest.mark.unit
+def test_contract_ceiling_touch_attribution():
+    """A ceiling touch is blamed on the start only when the start ran hot (#1517)."""
+    import json
+
+    text = json.dumps(get_contract("run_note"), ensure_ascii=False)
+
+    assert "only when the opening stretch's HR was already near the ceiling" in text
+    assert "segments after corrected_at_km" in text
+    assert "the start was not the cause" in text
+    assert "never 'ease off earlier'" in text
+
+
+@pytest.mark.unit
 def test_contract_good_points_rules():
     """good_points is 0-3 with gated evidence, and invented causes are banned (#1329)."""
     contract = get_contract("run_note")
