@@ -310,6 +310,14 @@ class RunReportReader(BaseDBReader):
                 )
                 for run in family_previous
             }
+            # Each previous run is judged against the ceiling it was run under
+            # (#1515): a temporarily lowered ceiling today must not turn the
+            # runs before it into "touched the ceiling" too.
+            previous_ceilings = _fetch_previous_ceilings(
+                conn,
+                tables,
+                [str(run["activity_date"]) for run in family_previous],
+            )
             identity = _fetch_run_identity(conn, tables, activity_id, activity_date)
 
         prescription = self._load_prescription(activity_date)
@@ -464,15 +472,17 @@ class RunReportReader(BaseDBReader):
             [
                 {
                     "activity_date": str(run["activity_date"]),
-                    # Previous runs are judged against *today's* ceiling: the
-                    # family's prescribed ceiling is stable, and loading each
-                    # run's own prescription would reintroduce a per-run loop.
+                    # A prescribed previous run is judged against its own
+                    # ceiling (#1515); an unprescribed one has no ceiling of
+                    # its own and keeps today's, as before.
                     "moments": detect_moments(
                         _steady_splits(
                             splits_by_id.get(int(run["activity_id"]), []),
                             previous_samples.get(int(run["activity_id"]), []),
                         ),
-                        hr_ceiling=hr_ceiling_bpm,
+                        hr_ceiling=previous_ceilings.get(
+                            str(run["activity_date"]), hr_ceiling_bpm
+                        ),
                     ),
                 }
                 for run in reversed(family_previous)
@@ -1063,6 +1073,49 @@ def _fetch_elevation(conn: Any, activity_id: int) -> dict[str, float | None]:
         "distance_km": _as_float(row[1]),
         "max_split_change_m": _as_float(row[2]),
     }
+
+
+def _fetch_previous_ceilings(
+    conn: Any, tables: set[str], dates: list[str], user_id: str = "default"
+) -> dict[str, int]:
+    """The prescribed HR ceiling of each recurrence look-back day, in one query.
+
+    Each day reads the latest batch of the week it belongs to (the plan
+    reader's canonical-batch semantics), and the row the run answered is
+    picked with :func:`select_prescription_for_run`, so a 補強 row on the
+    same day does not lend its (absent) ceiling. Days with no prescription,
+    or whose row carries no ``hr_high``, are left out.
+    """
+    if not dates or "weekly_prescriptions" not in tables:
+        return {}
+    placeholders = ", ".join("?" for _ in dates)
+    rows = conn.execute(
+        f"""
+        SELECT CAST(date AS VARCHAR), session_type, hr_high
+        FROM weekly_prescriptions p
+        WHERE user_id = ?
+          AND CAST(date AS VARCHAR) IN ({placeholders})
+          AND batch_id = (
+              SELECT MAX(batch_id) FROM weekly_prescriptions q
+              WHERE q.week_start_date = p.week_start_date
+                AND q.user_id = p.user_id
+          )
+        ORDER BY date, prescription_id
+        """,
+        [user_id, *dates],
+    ).fetchall()
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for day, session_type, hr_high in rows:
+        by_date.setdefault(str(day), []).append(
+            {"session_type": session_type, "hr_high": hr_high}
+        )
+    ceilings: dict[str, int] = {}
+    for day, day_rows in by_date.items():
+        chosen = select_prescription_for_run(day_rows)
+        ceiling = _as_int(chosen.get("hr_high")) if chosen else None
+        if ceiling is not None:
+            ceilings[day] = ceiling
+    return ceilings
 
 
 def _fetch_splits(
