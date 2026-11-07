@@ -42,6 +42,29 @@ _BODY_REGIONS = Literal[
     "other",
 ]
 
+# What an athlete-stated activity fact is about (issue #1520). Closed so a
+# reader can match on kind; anything else goes under "other" with a value.
+_CONTEXT_KINDS = Literal[
+    "commute",
+    "load",
+    "strides_carried",
+    "walk_reason",
+    "apparel",
+    "sensor_mount",
+    "other",
+]
+
+# Where an athlete-specific coaching rule applies. "all" rules are returned for
+# every scope filter (issue #1520).
+_RULE_SCOPES = Literal[
+    "all",
+    "conversation",
+    "run_note",
+    "checkin",
+    "debrief",
+    "planning",
+]
+
 
 # ----------------------------------------------------------------------------
 # Params models
@@ -219,6 +242,104 @@ class SaveIntakeConfirmationParams(BaseModel):
     note: str | None = Field(
         default=None, description="Free-form note in the athlete's own words"
     )
+
+
+class SaveActivityContextParams(BaseModel):
+    """Arguments for ``save_activity_context``."""
+
+    activity_id: int = Field(description="The activity the fact is about")
+    kind: _CONTEXT_KINDS = Field(
+        description=(
+            "What the fact is about: commute, load (carried weight), "
+            "strides_carried (strides done the day before), walk_reason, "
+            "apparel, sensor_mount, other"
+        )
+    )
+    value: str | None = Field(
+        default=None,
+        description="Short free value, e.g. 'running backpack'",
+    )
+    load_kg: float | None = Field(
+        default=None,
+        ge=0,
+        le=30,
+        description="Carried load in kg (only for kind='load', 0-30)",
+    )
+    source: Literal["athlete_stated", "inferred"] = Field(
+        default="athlete_stated",
+        description=(
+            "athlete_stated: the athlete said it; inferred: read from the "
+            "conversation without being said outright"
+        ),
+    )
+    note: str | None = Field(
+        default=None, description="Free-form note in the athlete's own words"
+    )
+    user_id: str = Field(
+        default=_DEFAULT_USER_ID, description="Profile owner identifier"
+    )
+
+
+class GetActivityContextParams(BaseModel):
+    """Arguments for ``get_activity_context``."""
+
+    activity_ids: list[int] | None = Field(
+        default=None, description="Activities to read; omit for every activity"
+    )
+    start_date: str | None = Field(
+        default=None,
+        description="Range start on activity_date, inclusive (YYYY-MM-DD)",
+    )
+    end_date: str | None = Field(
+        default=None,
+        description="Range end on activity_date, inclusive (YYYY-MM-DD)",
+    )
+
+
+class SaveCoachingRuleParams(BaseModel):
+    """Arguments for ``save_coaching_rule``."""
+
+    scope: _RULE_SCOPES = Field(
+        description=(
+            "Where the rule applies: all, conversation, run_note, checkin, "
+            "debrief, planning"
+        )
+    )
+    rule_text: str = Field(
+        min_length=1,
+        max_length=400,
+        description="The rule, written as an instruction (1-400 chars)",
+    )
+    rationale: str | None = Field(
+        default=None,
+        description=(
+            "Why the rule exists (incident summary); background only, never "
+            "shown as advice"
+        ),
+    )
+    origin_date: str | None = Field(
+        default=None, description="Date of the incident behind it (YYYY-MM-DD)"
+    )
+
+
+class GetCoachingRulesParams(BaseModel):
+    """Arguments for ``get_coaching_rules``."""
+
+    scopes: list[_RULE_SCOPES] | None = Field(
+        default=None,
+        description=(
+            "Scopes to read; 'all' rules are always included. Omit for every " "scope"
+        ),
+    )
+    include_inactive: bool = Field(
+        default=False, description="Also return deactivated rules"
+    )
+
+
+class DeactivateCoachingRuleParams(BaseModel):
+    """Arguments for ``deactivate_coaching_rule``."""
+
+    rule_id: int = Field(description="rule_id from get_coaching_rules")
 
 
 class PrefetchWeeklyReviewContextParams(BaseModel):
@@ -412,6 +533,77 @@ def _save_intake_confirmation(
         return {"saved": True, **saved}
     except Exception as e:  # noqa: BLE001
         logger.error(f"Save intake confirmation failed: {e}")
+        return {"error": str(e)}
+
+
+def _save_activity_context(reader: GarminDBReader, p: SaveActivityContextParams) -> Any:
+    from garmin_mcp.database.inserters.athlete import insert_activity_context
+
+    try:
+        context_id = insert_activity_context(
+            row=p.model_dump(), db_path=str(reader.db_path)
+        )
+        return {
+            "status": "saved",
+            "context_id": context_id,
+            "activity_id": p.activity_id,
+            "kind": p.kind,
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Save activity context failed: {e}")
+        return {"error": str(e)}
+
+
+def _get_activity_context(reader: GarminDBReader, p: GetActivityContextParams) -> Any:
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        return AthleteReader(db_path=str(reader.db_path)).get_activity_context(
+            activity_ids=p.activity_ids,
+            start_date=p.start_date,
+            end_date=p.end_date,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get activity context failed: {e}")
+        return {"error": str(e)}
+
+
+def _save_coaching_rule(reader: GarminDBReader, p: SaveCoachingRuleParams) -> Any:
+    from garmin_mcp.database.inserters.athlete import insert_coaching_rule
+
+    try:
+        rule_id = insert_coaching_rule(row=p.model_dump(), db_path=str(reader.db_path))
+        return {"status": "saved", "rule_id": rule_id, "scope": p.scope}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Save coaching rule failed: {e}")
+        return {"error": str(e)}
+
+
+def _get_coaching_rules(reader: GarminDBReader, p: GetCoachingRulesParams) -> Any:
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        return AthleteReader(db_path=str(reader.db_path)).get_coaching_rules(
+            scopes=list(p.scopes) if p.scopes is not None else None,
+            include_inactive=p.include_inactive,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get coaching rules failed: {e}")
+        return {"error": str(e)}
+
+
+def _deactivate_coaching_rule(
+    reader: GarminDBReader, p: DeactivateCoachingRuleParams
+) -> Any:
+    from garmin_mcp.database.inserters.athlete import deactivate_coaching_rule
+
+    try:
+        found = deactivate_coaching_rule(rule_id=p.rule_id, db_path=str(reader.db_path))
+        if not found:
+            return {"error": f"coaching rule {p.rule_id} not found"}
+        return {"status": "deactivated", "rule_id": p.rule_id}
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Deactivate coaching rule failed: {e}")
         return {"error": str(e)}
 
 
@@ -612,6 +804,86 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_save_intake_confirmation,
         cli_group="athlete",
         cli_name="save-intake-confirmation",
+    ),
+    ToolDef(
+        name="save_activity_context",
+        description=(
+            "Record one fact the athlete stated about an activity: a commute "
+            "run, the load carried (load_kg), strides carried over from the "
+            "previous day, why they walked, apparel or sensor mounting. Write "
+            "it silently when the athlete states the fact in conversation; "
+            "never ask them to keep a log. Rows are append-only and stay in "
+            "the local DB only; a later save for the same (activity_id, kind) "
+            "supersedes the earlier one on read. Returns {status, context_id, "
+            "activity_id, kind}."
+        ),
+        params=SaveActivityContextParams,
+        handler=_save_activity_context,
+        cli_group="athlete",
+        cli_name="save-activity-context",
+    ),
+    ToolDef(
+        name="get_activity_context",
+        description=(
+            "Get the athlete-stated facts about activities (commute, load, "
+            "strides_carried, walk_reason, apparel, sensor_mount, other), the "
+            "newest row per (activity_id, kind), filtered by activity_ids "
+            "and/or an activity_date range. Each row carries activity_date, "
+            "kind, value, load_kg, source (athlete_stated / inferred) and "
+            "note. Returns an empty list when nothing was recorded."
+        ),
+        params=GetActivityContextParams,
+        handler=_get_activity_context,
+        cli_group="athlete",
+        cli_name="get-activity-context",
+    ),
+    ToolDef(
+        name="save_coaching_rule",
+        description=(
+            "Store a coaching rule that applies only to this athlete (a "
+            "preference, a correction, an incident-derived read) in the local "
+            "DB. coaching_rules holds athlete-specific rules that must not be "
+            "written into the repository (rules, agents, skills or code). "
+            "Write it silently when the athlete states or corrects something; "
+            "never ask them to keep a log. scope picks where it applies (all / "
+            "conversation / run_note / checkin / debrief / planning); "
+            "rule_text is the instruction (1-400 chars), rationale the "
+            "background (never shown as advice). Returns {status, rule_id, "
+            "scope}."
+        ),
+        params=SaveCoachingRuleParams,
+        handler=_save_coaching_rule,
+        cli_group="athlete",
+        cli_name="save-coaching-rule",
+    ),
+    ToolDef(
+        name="get_coaching_rules",
+        description=(
+            "Get the athlete-specific coaching rules stored in the local DB "
+            "(coaching_rules: rules that must not be written into the "
+            "repository). With scopes, rules of those scopes plus every "
+            "scope='all' rule are returned; deactivated rules are hidden "
+            "unless include_inactive. Each row carries rule_id, scope, "
+            "rule_text, rationale, origin_date, active, created_at and "
+            "deactivated_at. Returns an empty list when none are stored."
+        ),
+        params=GetCoachingRulesParams,
+        handler=_get_coaching_rules,
+        cli_group="athlete",
+        cli_name="get-coaching-rules",
+    ),
+    ToolDef(
+        name="deactivate_coaching_rule",
+        description=(
+            "Retire an athlete-specific coaching rule: sets active=false and "
+            "deactivated_at, keeping the row as history (readable via "
+            "get_coaching_rules include_inactive). Returns {status, rule_id}, "
+            "or {error} for an unknown rule_id."
+        ),
+        params=DeactivateCoachingRuleParams,
+        handler=_deactivate_coaching_rule,
+        cli_group="athlete",
+        cli_name="deactivate-coaching-rule",
     ),
     ToolDef(
         name="prefetch_weekly_review_context",

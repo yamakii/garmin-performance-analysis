@@ -1,9 +1,9 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.13
-**Last Updated**: 2026-09-22
+**Version**: 2.16
+**Last Updated**: 2026-11-07
 **Database**: `garmin_performance.duckdb`
-**Total Tables**: 28 domain tables (+ `schema_version` migration bookkeeping)
+**Total Tables**: 32 domain tables (+ `schema_version` migration bookkeeping)
 
 This document provides comprehensive schema documentation for all DuckDB tables in the Garmin performance analysis system. Every column name, type, and primary key below is verified against the live schema (`PRAGMA table_info`). Where prose describes derived/calculated logic, that logic lives in the inserters / form-baseline modules and is documented here because it is not otherwise discoverable from the column definitions.
 
@@ -20,9 +20,12 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > A drift test (`tests/scripts/test_generate_schema_doc.py`) fails CI if a schema change
 > lands without regenerating.
 
-> **Schema bookkeeping**: a 31st table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
+> **Schema bookkeeping**: a 33rd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.16 (2026-11-07)
+- **`activity_context` and `coaching_rules` tables added** (migration `add_activity_context_and_coaching_rules`, version 36; also created in `_ensure_tables()`). Facts the athlete states about a run (commute, carried load, carried-over strides, walk reasons, apparel, sensor mounting) and coaching rules that apply only to this athlete had no home except the public repository's rules and memory. Both are append-only athlete input kept in the local DB only, written by `save_activity_context` / `save_coaching_rule` and read by `get_activity_context` / `get_coaching_rules`; `deactivate_coaching_rule` retires a rule without deleting it (issue #1520, Epic #1519).
 
 ### Version 2.15 (2026-09-26)
 - **`daily_energy` and `intake_confirmations` tables added** (migration `add_daily_energy_tables`, version 34; also created in `_ensure_tables()`). The daily user summary's intake (MyFitnessPal via Garmin) and expenditure fields had no home, and a single fetch cannot tell a partial or still-edited day from a real one. `daily_energy` stores them per date with `coverage_seconds`, first / latest fetch times and `post_close_revisions` (intake changes after the day had closed); each date is re-fetched until it is 7 days old. `intake_confirmations` holds the athlete's confirmation that a day's log is complete; it is athlete input and is lost if the DB is regenerated from raw files (issue #1433, Epic #1432).
@@ -82,7 +85,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ---
 
-## Table of Contents (30 domain tables by category)
+## Table of Contents (32 domain tables by category)
 
 | # | Table | Category | Primary Key | Row scale |
 |---|-------|----------|-------------|-----------|
@@ -116,6 +119,8 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | 30 | [athlete_symptoms](#30-athlete_symptoms) | Athlete | `symptom_id` | per reported niggle/day |
 | 31 | [daily_energy](#31-daily_energy) | Physiology | `date` | daily |
 | 32 | [intake_confirmations](#32-intake_confirmations) | Athlete | `(user_id, date)` | per confirmed day |
+| 33 | [activity_context](#33-activity_context) | Athlete | `context_id` | per stated activity fact |
+| 34 | [coaching_rules](#34-coaching_rules) | Athlete | `rule_id` | per athlete-specific rule |
 
 ---
 
@@ -1170,13 +1175,65 @@ Rows of the five section types written before the run note — `split`, `phase`,
 
 ---
 
+## 33. activity_context
+
+**Purpose**: Per-activity facts the athlete states in conversation (commute run, carried load, strides carried over from the previous day, why they walked, apparel, sensor mounting)
+**Primary Key**: `context_id` (from `activity_context_seq`)
+**Source**: Athlete input (not API-derived), written by `save_activity_context`
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:activity_context -->
+| Column | Type |
+|--------|------|
+| context_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| activity_id | BIGINT |
+| kind | VARCHAR |
+| value | VARCHAR |
+| load_kg | DOUBLE |
+| source | VARCHAR |
+| note | VARCHAR |
+| created_at | TIMESTAMP |
+<!-- END GENERATED: schema:activity_context -->
+
+**Units & notes**: `kind` is one of `commute` / `load` / `strides_carried` / `walk_reason` / `apparel` / `sensor_mount` / `other`; `load_kg` is the carried weight in kg (only for `kind='load'`, 0-30); `source` is `athlete_stated` (default) or `inferred`. Rows are **append-only**: `get_activity_context` returns the newest row per `(activity_id, kind)` and joins `activity_date` from `activities`. Athlete input that **cannot be re-fetched**, and it stays in the local DB only so nothing athlete-specific enters the repository (issue #1520).
+
+---
+
+## 34. coaching_rules
+
+**Purpose**: Coaching rules that apply only to this athlete (preferences, corrections, incident-derived reads)
+**Primary Key**: `rule_id` (from `coaching_rules_seq`)
+**Source**: Athlete input (not API-derived), written by `save_coaching_rule`
+
+### Schema
+
+<!-- BEGIN GENERATED: schema:coaching_rules -->
+| Column | Type |
+|--------|------|
+| rule_id (PK) | INTEGER |
+| user_id | VARCHAR |
+| scope | VARCHAR |
+| rule_text | VARCHAR |
+| rationale | VARCHAR |
+| origin_date | DATE |
+| active | BOOLEAN |
+| created_at | TIMESTAMP |
+| deactivated_at | TIMESTAMP |
+<!-- END GENERATED: schema:coaching_rules -->
+
+**Units & notes**: `scope` is one of `all` / `conversation` / `run_note` / `checkin` / `debrief` / `planning`; a scope filter in `get_coaching_rules` always includes the `all` rules. `rule_text` is the instruction (1-400 chars); `rationale` is the background (incident summary) and is never shown as advice. Rows are append-only except that `deactivate_coaching_rule` sets `active = false` and `deactivated_at`; inactive rules are hidden unless `include_inactive`. These rules are athlete-specific and **must not be written into the repository's rules or code** (issue #1520).
+
+---
+
 ## Indexes & Constraints Summary
 
 - **No FOREIGN KEY constraints** anywhere (removed 2025-11-01, migration `remove_fk_constraints`). Referential integrity is enforced by the ingest pipeline.
 - UNIQUE: `idx_body_composition_date` on `body_composition(date)`; `idx_activity_section` on `section_analyses(activity_id, section_type)`.
 - Composite PKs: `splits(activity_id, split_index)`, `time_series_metrics(activity_id, seq_no)`, `heart_rate_zones(activity_id, zone_number)`.
 - Secondary indexes on `time_series_metrics`: `idx_time_series_activity(activity_id)`, `idx_time_series_timestamp(activity_id, timestamp_s)`.
-- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), `sync_runs` (`seq_sync_runs_id`), `athlete_symptoms` (`athlete_symptoms_seq`, also the column DEFAULT), and analysis `run_id` allocation (`seq_analysis_run_id`, whose advance is persisted by the `analysis_runs` INSERT — issue #819).
+- Sequences back the surrogate keys for `form_evaluations` (`form_evaluations_seq`), `form_baseline_history` (`form_baseline_history_seq`), `section_analyses` (`seq_section_analyses_id`), `sync_runs` (`seq_sync_runs_id`), `athlete_symptoms` (`athlete_symptoms_seq`, also the column DEFAULT), `activity_context` (`activity_context_seq`), `coaching_rules` (`coaching_rules_seq`), and analysis `run_id` allocation (`seq_analysis_run_id`, whose advance is persisted by the `analysis_runs` INSERT — issue #819).
 
 ---
 

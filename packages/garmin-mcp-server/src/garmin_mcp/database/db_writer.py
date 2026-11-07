@@ -10,6 +10,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from garmin_mcp.database.connection import get_db_path, get_write_connection
+from garmin_mcp.database.migrations.add_activity_context_and_coaching_rules import (
+    add_activity_context_and_coaching_rules,
+)
 from garmin_mcp.database.migrations.add_daily_energy_tables import (
     DAILY_ENERGY_DDL,
     INTAKE_CONFIRMATIONS_DDL,
@@ -270,6 +273,8 @@ class GarminDBWriter:
         - athlete_symptoms: Pain / niggle log (one row per date + body region)
         - daily_energy: Daily intake / expenditure facts (issue #1433)
         - intake_confirmations: Athlete confirmation of a day's intake log
+        - activity_context: Athlete-stated per-activity facts (issue #1520)
+        - coaching_rules: Athlete-specific coaching rules (issue #1520)
 
         Tables owned exclusively by migrations (NOT created here):
         - athlete_profile / athlete_goals / season_retrospectives /
@@ -774,6 +779,10 @@ class GarminDBWriter:
             # migrations/add_daily_energy_tables.py, issue #1433).
             conn.execute(DAILY_ENERGY_DDL)
             conn.execute(INTAKE_CONFIRMATIONS_DDL)
+
+            # Create activity_context + coaching_rules (same DDL as
+            # migrations/add_activity_context_and_coaching_rules.py, #1520).
+            add_activity_context_and_coaching_rules(conn)
 
             # Create indexes for time_series_metrics
             conn.execute(
