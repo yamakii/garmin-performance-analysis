@@ -214,6 +214,7 @@ function StepList({
             : "md:pb-1 md:pr-3";
         return (
           <li
+            // eslint-disable-next-line react-x/no-array-index-key
             key={`${segment.segment_id}-${index}`}
             className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-baseline gap-x-2 md:contents"
           >
