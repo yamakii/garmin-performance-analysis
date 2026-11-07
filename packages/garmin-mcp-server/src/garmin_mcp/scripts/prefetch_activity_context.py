@@ -24,7 +24,9 @@ Output (JSON to stdout):
       "prescription_for_run": {...}|null,  # the row the run is judged against
       "week_position": {...}|null,   # where the day sits in the training week
       "previous_same_type": {...}|null,  # last same-type run within 21 days
+                                         # + comparability {excluded_metrics, reasons}
       "vs_previous": {...}|null,     # deterministic deltas against it
+                                     # (incomparable metrics dropped, #1523)
       "morning_wellness": {...}|null     # readiness / RHR / HRV / sleep + z
     }
 
@@ -66,6 +68,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
 
+from garmin_mcp.analysis.comparability import assess, drop_excluded, load_profiles
 from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     compute_week_position,
@@ -218,6 +221,16 @@ def _fetch_previous_same_type(
     }
 
 
+def _fetch_comparability_profiles(
+    db_path_str: str, activity_ids: list[int]
+) -> dict[int, dict[str, Any]]:
+    """Sensors and stated load of each run (``analysis.comparability``)."""
+    with get_connection(db_path_str) as conn:
+        return load_profiles(
+            lambda sql, params: conn.execute(sql, params).fetchall(), activity_ids
+        )
+
+
 def _fetch_decoupling_pct(db_path_str: str, activity_id: int) -> float | None:
     """Cardiac decoupling (%) for one activity, or ``None`` when uncomputable."""
     from garmin_mcp.database.readers.durability import DurabilityReader
@@ -366,8 +379,27 @@ def _collect_prescription_layer(
         previous["decoupling_pct"] = _safe(
             lambda: _fetch_decoupling_pct(db_path_str, previous["activity_id"])
         )
+    vs_previous = _safe(lambda: compute_vs_previous(current_metrics, previous))
+    if previous is not None:
+        # Another sensor or a stated load on either run (#1523): the
+        # affected deltas are dropped and both blocks say why.
+        profiles = (
+            _safe(
+                lambda: _fetch_comparability_profiles(
+                    db_path_str, [activity_id, int(previous["activity_id"])]
+                )
+            )
+            or {}
+        )
+        comparability = assess(
+            profiles.get(int(activity_id), {}),
+            profiles.get(int(previous["activity_id"]), {}),
+        )
+        previous["comparability"] = comparability.to_dict()
+        if vs_previous is not None:
+            vs_previous = drop_excluded(vs_previous, comparability)
     layer["previous_same_type"] = previous
-    layer["vs_previous"] = _safe(lambda: compute_vs_previous(current_metrics, previous))
+    layer["vs_previous"] = vs_previous
 
     layer["morning_wellness"] = _safe(
         lambda: _fetch_morning_wellness(db_path_str, activity_date)

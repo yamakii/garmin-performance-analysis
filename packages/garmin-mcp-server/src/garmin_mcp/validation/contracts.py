@@ -283,6 +283,16 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "asks the athlete to change it. Never ask a question the "
                 "athlete_context already answers"
             ),
+            # Measured the same way, run under the same load (#1523).
+            "comparability": (
+                "An incomparable comparison is never cited: a metric listed in "
+                "vs_previous.comparability.excluded_metrics (or a "
+                "similar_workouts / previous_same_type entry's) was measured by "
+                "another sensor or under another load and is not compared. A "
+                "derived metric (report.provenance device_derived / computed, "
+                "e.g. stride_length_cm, or GCT / VO without a pod) is never "
+                "cited as confirmation of the inputs it is derived from"
+            ),
             "coaching_rules": (
                 "context.coaching_rules are the athlete's own standing rules "
                 "for the coach review (scopes all / run_note). Apply each "

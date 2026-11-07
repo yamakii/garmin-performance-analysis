@@ -24,6 +24,8 @@ time, judged share
 run purpose                ``analysis.run_purpose`` (``resolve_purpose``)
 scene verdict per purpose  ``analysis.run_policy`` (``apply_policy``)
 delta chips, next target   ``analysis.derivations`` (``compute_vs_previous`` …)
+comparable pair, metric    ``analysis.comparability`` (``assess``,
+provenance                 ``provenance_map``)
 intensity family           ``database.inserters.hr_efficiency``
 expected HR                ``rag.queries.heat_adjustment.HeatAdjustmentModel``
 which splits count          ``form_baseline.split_filter``
@@ -53,6 +55,12 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from garmin_mcp.analysis.comparability import (
+    assess,
+    drop_excluded,
+    load_profiles,
+    provenance_map,
+)
 from garmin_mcp.analysis.derivations import (
     REST_INTENSITY_CLASS,
     compute_next_run_target,
@@ -259,7 +267,11 @@ class RunReportReader(BaseDBReader):
             ``flow``, ``recurrence``, ``phases``, ``conditions``,
             ``athlete_context`` (stated circumstances + a read-time commute
             guess, see :func:`collect_athlete_context`),
-            ``vs_previous``, ``next_run_target`` and ``next_session`` (see the
+            ``vs_previous`` (with ``comparability = {"excluded_metrics",
+            "reasons"}``, the incomparable deltas dropped, #1523),
+            ``sensors`` (``{"dynamics_source", "hr_source"}``), ``provenance``
+            (``{metric: "measured" | "device_derived" | "computed"}``),
+            ``next_run_target`` and ``next_session`` (see the
             module docstring for who computes what). Every value is
             JSON-serialisable without a custom encoder.
         """
@@ -289,10 +301,14 @@ class RunReportReader(BaseDBReader):
                 _fetch_elevation(conn, activity_id) if "splits" in tables else {}
             )
 
+            # The scenes are read off heart rate, so a previous run whose HR is
+            # not comparable with today's (another HR sensor, a stated load)
+            # is left out of the look-back rather than counted (#1523).
             family_previous = [
                 run
                 for run in history
                 if run.get("intensity_category") == today.get("intensity_category")
+                and assess(today, run).hr_comparable
             ][-RECURRENCE_LOOKBACK:]
             split_ids = [
                 activity_id,
@@ -535,6 +551,14 @@ class RunReportReader(BaseDBReader):
             # commute explains its signals before form is blamed.
             "athlete_context": collect_athlete_context(str(self.db_path), activity_id),
             "vs_previous": _vs_previous(today, history),
+            # Which sensors measured the run, and how each metric came to be
+            # (#1523): a device-derived number confirms nothing about the
+            # inputs it was derived from.
+            "sensors": {
+                "dynamics_source": today.get("dynamics_source"),
+                "hr_source": today.get("hr_source"),
+            },
+            "provenance": provenance_map(today.get("dynamics_source")),
             "next_run_target": next_run_target,
             "next_session": self._next_session(activity_date, next_run_target),
         }
@@ -786,16 +810,13 @@ def _fetch_window(
     window_params = [window_start, activity_date]
 
     # The form signals compare a run only with runs from the same dynamics
-    # sensor (pod / wrist, #1470); a database before #1459 has no column and
-    # every run stays comparable.
-    if _has_column(conn, "activities", "dynamics_source"):
-        for row in conn.execute(
-            f"SELECT activity_id, dynamics_source FROM activities WHERE {in_window}",
-            window_params,
-        ).fetchall():
-            target = runs.get(int(row[0]))
-            if target is not None:
-                target["dynamics_source"] = row[1]
+    # sensor (pod / wrist, #1470), and every run-to-run comparison checks the
+    # HR sensor and the stated load too (#1523). A database before #1459 /
+    # #1520 has no column / table and every run stays comparable.
+    for activity_id, profile in load_profiles(
+        lambda sql, params: conn.execute(sql, params).fetchall(), runs
+    ).items():
+        runs[activity_id].update(profile)
 
     if "form_evaluations" in tables:
         for row in conn.execute(
@@ -2448,7 +2469,11 @@ def _classify_terrain(
 def _vs_previous(
     today: dict[str, Any], history: list[dict[str, Any]]
 ) -> dict[str, Any] | None:
-    """Delta chips against the previous run of the same intensity family."""
+    """Delta chips against the previous run of the same intensity family.
+
+    A metric the pair cannot be compared on (another sensor, a stated load,
+    #1523) is dropped, and ``comparability`` says which and why.
+    """
     family = today.get("intensity_category")
     previous = next(
         (run for run in reversed(history) if run.get("intensity_category") == family),
@@ -2456,7 +2481,10 @@ def _vs_previous(
     )
     if previous is None:
         return None
-    return compute_vs_previous(_comparable(today), _comparable(previous))
+    deltas = compute_vs_previous(_comparable(today), _comparable(previous))
+    if deltas is None:
+        return None
+    return drop_excluded(deltas, assess(today, previous))
 
 
 def _comparable(run: dict[str, Any]) -> dict[str, Any]:

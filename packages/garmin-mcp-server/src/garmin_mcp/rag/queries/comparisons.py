@@ -8,6 +8,7 @@ calculate similarity scores, and generate performance comparison insights.
 import logging
 from typing import Any
 
+from garmin_mcp.analysis.comparability import assess, load_profiles
 from garmin_mcp.database.db_reader import GarminDBReader
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,7 @@ class WorkoutComparator:
         date_range: tuple[str, str] | None = None,
         limit: int = 10,
         target_pace_override: float | None = None,
+        same_sensor_only: bool = False,
     ) -> dict[str, Any]:
         """Find similar past workouts based on pace and distance.
 
@@ -160,6 +162,9 @@ class WorkoutComparator:
             date_range: Optional (start_date, end_date) tuple in YYYY-MM-DD format
             limit: Maximum number of results to return
             target_pace_override: Optional pace override (for main-set/work pace comparison)
+            same_sensor_only: Drop candidates measured by another dynamics or
+                HR sensor than the target (#1523). Without it they are kept
+                and their ``comparability`` says what may not be compared.
 
         Returns:
             Dict with similar workouts:
@@ -180,7 +185,9 @@ class WorkoutComparator:
                         "similarity_score": float,
                         "pace_diff": float,
                         "hr_diff": float,
-                        "interpretation": str
+                        "interpretation": str,
+                        "comparability": {"excluded_metrics": [...],
+                                          "reasons": [...]}
                     }
                 ],
             }
@@ -301,9 +308,18 @@ class WorkoutComparator:
         try:
             results = self._execute_query(query, params)
 
+            # Which sensors measured each run and what load it carried
+            # (#1523): a pair measured differently is annotated, not
+            # compared silently.
+            profiles = self._load_profiles([activity_id, *(row[0] for row in results)])
+            target_profile = profiles.get(int(activity_id), {})
+
             # Convert to dict format and classify each candidate
             similar_activities = []
             for row in results:
+                comparability = assess(target_profile, profiles.get(int(row[0]), {}))
+                if same_sensor_only and not comparability.sensors_match:
+                    continue
                 candidate = {
                     "activity_id": row[0],
                     # DuckDB DATE columns return datetime.date; convert to str so
@@ -365,6 +381,7 @@ class WorkoutComparator:
                         "interpretation": self._generate_interpretation(
                             pace_diff, hr_diff, temp_diff
                         ),
+                        "comparability": comparability.to_dict(),
                     }
                 )
 
@@ -379,6 +396,24 @@ class WorkoutComparator:
                 "target_activity": target,
                 "similar_activities": [],
             }
+
+    def _load_profiles(self, activity_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Comparability profiles of the runs, or none when they cannot be read.
+
+        A database without the sensor columns / ``activity_context`` leaves
+        every run comparable, and so does a read failure: the annotation is
+        never a reason to lose the comparison itself.
+        """
+        try:
+            return load_profiles(
+                lambda sql, params: self.db_reader.execute_read_query(
+                    sql, tuple(params)
+                ),
+                activity_ids,
+            )
+        except Exception as e:
+            logger.warning(f"Could not read comparability profiles: {e}")
+            return {}
 
     def _get_target_activity(self, activity_id: int) -> dict[str, Any] | None:
         """Get target activity data from database.
