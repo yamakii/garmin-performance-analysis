@@ -294,3 +294,20 @@ def test_contract_good_points_rules():
     assert any("seconds_over > 0" in line for line in contract["instructions"])
     # A run far over its ceiling cannot praise keeping it (#1332).
     assert any("pct_over > 5" in line for line in contract["instructions"])
+
+
+@pytest.mark.unit
+def test_contract_mentions_athlete_context_attribution():
+    """A stated circumstance is a cause right after terrain (#1522)."""
+    contract = get_contract("run_note")
+
+    context_keys = contract["evidence_keys"]["context.<field>"]
+    assert "athlete_context" in context_keys
+    assert "prescription_for_run" in context_keys
+    assert "ladder_step" not in context_keys
+
+    order = "intensity -> terrain -> athlete_context"
+    assert order in contract["prose_roles"]["causality"]
+    assert order in contract["evaluation_policy"]["notes"]
+    assert "never a growth point" in contract["evaluation_policy"]["athlete_context"]
+    assert "instruction" in contract["evaluation_policy"]["coaching_rules"]

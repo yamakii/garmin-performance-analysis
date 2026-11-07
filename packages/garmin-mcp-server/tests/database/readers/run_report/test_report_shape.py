@@ -55,6 +55,7 @@ def test_run_report_shape_and_json(reader_db_path: Path) -> None:
         "recurrence",
         "phases",
         "conditions",
+        "athlete_context",
         "vs_previous",
         "next_run_target",
         "next_session",

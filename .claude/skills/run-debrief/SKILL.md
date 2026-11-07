@@ -1,6 +1,6 @@
 ---
 name: run-debrief
-description: Post-run coaching debrief for one activity — diagnoses why a run felt harder than the HR suggests, why form (GCT / cadence / vertical oscillation) slipped, or why a specific split degraded, attributing causes in a fixed order (intensity → terrain → weather + start time → recovery → form) before answering. Use when the user asks about how a completed run went (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の上下動は他の日と比べてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
+description: Post-run coaching debrief for one activity — diagnoses why a run felt harder than the HR suggests, why form (GCT / cadence / vertical oscillation) slipped, or why a specific split degraded, attributing causes in a fixed order (intensity → terrain → stated circumstances → weather + start time → recovery → form) before answering. Use when the user asks about how a completed run went (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の上下動は他の日と比べてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
 argument-hint: [YYYY-MM-DD]
 ---
 
@@ -14,10 +14,23 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends")
+ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
 ```
 
 `get_activity_by_date(date=<対象日>)` で activity_id を取り、同日に複数アクティビティ（ラン＋補強）があればランを選びます。
+
+同じターンで、走者がこのランについて**すでに述べた事情**と**この走者専用のルール**を読みます:
+
+```
+mcp__garmin-db__get_activity_context(activity_ids=[<対象ラン>])
+mcp__garmin-db__get_coaching_rules(scopes=["debrief", "conversation"])   # scope=all も常に含まれる
+```
+
+- `rule_text` は指示としてこの手順と併せて適用します（`rationale` は背景で、回答に引用しません）。
+- **context がすでに答えていることを質問しない**（荷物・通勤・前日の流しなどを申告済みなら、それを前提に話す）。
+- 会話の中で走者がこのランの事情（荷物 何 kg、通勤ラン、前日の流しの持ち越し、歩いた理由、ウェア、センサーの付け方）を
+  述べたら、確認を取らずに `save_activity_context(activity_id, kind, value?, load_kg?, note?)` で保存し、
+  回答に「（記録しました: 3 kg の荷物あり）」のような一行だけを添えます。保存してよいかは聞きません。
 
 ## Step 1: まず run report を 1 本読む（必須・ここから始める）
 
@@ -35,6 +48,7 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 | `signals` | 指標ごとの today / expected / `normal_low`〜`normal_high`（本人の通常の範囲）/ `z` / `status`（within・edge・outside・insufficient）/ `adverse` / `streak` / `n` / `reason` |
 | `moments` + `recurrence` | ランの転換点（2〜5 場面、`km_from`〜`km_to` と根拠）と、同種ランで同じ km に繰り返し出ている場面 |
 | `phases` / `zones` / `conditions` | warmup・run・recovery・cooldown のペースと HR、HR ゾーン配分、気温・湿度・風・地形・獲得標高 |
+| `athlete_context` | 走者が申告した事情（`items[]` の `kind` / `value` / `load_kg`）と、申告が無いときだけ付く通勤ランの推定 `inferred.commute`（平日 17 時以降・スタートとゴールが離れている。推定なのでぼかして伝える） |
 | `vs_previous` / `next_run_target` | 直近の同種ランとの差分、次回の目標値 |
 
 判定の起点は 2 つだけです: **処方と実際のずれ**（`plan`）と、**本人の通常の範囲から外れているか**（`signals`）。
@@ -55,9 +69,10 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 
 1. **強度差**: 比較対象ランとのペース差・平均 HR 差・HR drift。20 s/km 速く HR +2〜3 bpm 高ければ、まず強度差で疲労を説明する
 2. **地形**: `get_splits_elevation` で該当 split の獲得/損失標高。登坂 +10 m 超の split のペース低下・GCT 悪化は地形が主因。暑熱・耐久の判定は **同一地形（平坦同士・登坂同士）の HR 比較**で行う
-3. **気象 ＋ 開始時刻**: `get_weather_data` の気温・湿度・風と、アクティビティの開始時刻（早朝/日中）。記録気温は開始時点のスナップショットなので、2 時間超のランでは終盤はさらに高いと扱う（下限値）。30℃ 超では decoupling を耐久性の判定に使わない（thermal drift で汚染）
-4. **回復**: `get_recovery_status` / `get_wellness_baseline_deviation` の当日朝の値。睡眠不足・HRV 割れがあれば GCT・ケイデンスの鈍化と結び付けて説明できる
-5. **フォーム固有**: 上記で説明が付かない残差のみをフォームの問題として扱う
+3. **申告された事情**: `athlete_context`（report と `get_activity_context`）の荷物・通勤・前日の流しの持ち越し。荷物を背負った通勤ランのケイデンス低下・心拍ドリフトは事情で説明し、フォームや体力の変化として読まない。事情は原因の説明であって改善点ではない（荷物を減らす提案をしない）
+4. **気象 ＋ 開始時刻**: `get_weather_data` の気温・湿度・風と、アクティビティの開始時刻（早朝/日中）。記録気温は開始時点のスナップショットなので、2 時間超のランでは終盤はさらに高いと扱う（下限値）。30℃ 超では decoupling を耐久性の判定に使わない（thermal drift で汚染）
+5. **回復**: `get_recovery_status` / `get_wellness_baseline_deviation` の当日朝の値。睡眠不足・HRV 割れがあれば GCT・ケイデンスの鈍化と結び付けて説明できる
+6. **フォーム固有**: 上記で説明が付かない残差のみをフォームの問題として扱う
 
 ## Step 4: 指標の読み方（星ではなく本人の通常の範囲で見る）
 
@@ -74,4 +89,4 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 - 根拠は小さな表（区間 / 標高 / ペース / HR / GCT など、論点に必要な列だけ）
 - ユーザーが先に仮説・感触を述べている場合、まず **質問の意図を捉えて冒頭で一文にして受け止め**、その仮説に寄せずデータで確認する。一致/不一致のラベルや否定の宣言は付けず、データで見えたことを事実として述べ、食い違う点は根拠付きの補足として加える（`.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions）
 - 次回に向けた提案は 1 つ。目的を達しているランに「失敗」「成功条件」の言葉を使わない（維持目標・改善余地として述べる）
-- 質問が「保存分析をやり直したい」に及ぶ場合は `/analyze-activity <date>` を案内する（このスキルは DuckDB に書かない）
+- 質問が「保存分析をやり直したい」に及ぶ場合は `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは、走者が述べた事情の `save_activity_context` だけ）

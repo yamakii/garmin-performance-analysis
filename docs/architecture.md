@@ -293,8 +293,9 @@ runs.
 `run_note` is the one LLM-written section. A sentence stays only if deleting it
 loses something a figure or table cannot give — **six roles**: *meaning* (what
 the run was for and whether it served that), *causality* (a signal tied to its
-likely cause in the order intensity → terrain → weather + start time → recovery
-→ form, saying so when the cause is uncertain), *flow* (scene by scene, not
+likely cause in the order intensity → terrain → stated athlete context (load,
+commute, carried-over strides) → weather + start time → recovery → form, saying
+so when the cause is uncertain), *flow* (scene by scene, not
 kilometre by kilometre), *weighting* (what matters and what to ignore today),
 *next action* (持ち越す 1 点 — one of today's good / growth points turned into
 one behaviour cue, its evidence key in `next_challenge_evidence`; no numbers but

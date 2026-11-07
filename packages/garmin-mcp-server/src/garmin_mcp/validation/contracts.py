@@ -101,8 +101,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "causality": (
                 "Connect a signal to its most likely cause in the attribution "
-                "order intensity -> terrain -> weather + start time -> recovery "
-                "-> form, and say when the cause is uncertain"
+                "order intensity -> terrain -> athlete_context (stated load, "
+                "commute, carried-over strides) -> weather + start time -> "
+                "recovery -> form, and say when the cause is uncertain"
             ),
             "flow": (
                 "Narrate how the run unfolded scene by scene (the moments), "
@@ -199,8 +200,15 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
             "conditions.<field>": "a field of report.conditions",
             "context.<field>": (
-                "one of week_position / ladder_step / prescription / "
-                "morning_wellness / gear / similar_workouts"
+                "one of week_position / prescription_for_run / "
+                "morning_wellness / gear / similar_workouts / athlete_context. "
+                "athlete_context is what the athlete said about this run "
+                "(items[] of {kind, value, load_kg, source, note}: load, "
+                "commute, strides_carried, walk_reason, apparel, sensor_mount) "
+                "plus inferred.commute, a read-time guess (weekday evening "
+                "start, start and end far apart) present only when no commute "
+                "was stated -- hedge an inferred commute, never state it as "
+                "fact"
             ),
         },
         "evaluation_policy": {
@@ -259,7 +267,29 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "in one note: the first as 'signal', the rest in 'also'; group "
                 "this way whenever there are more outliers than the 3-note cap. "
                 "Attribute the cause in the order intensity -> terrain -> "
-                "weather + start time -> recovery -> form"
+                "athlete_context -> weather + start time -> recovery -> form"
+            ),
+            # What the athlete told the coach (#1522). A loaded commute run
+            # read as a normal run looks like a form or fitness change.
+            "athlete_context": (
+                "context.athlete_context (also report.athlete_context) is the "
+                "athlete's own word on the run. A stated load, commute or "
+                "carried-over strides comes right after terrain in the "
+                "attribution order: when it explains an adverse outlier (a "
+                "backpack lowering cadence and raising HR drift), say so in "
+                "the note and stop there -- do not read the signal as a form "
+                "or fitness change. A stated circumstance explains an outside "
+                "signal but is never a growth point, and a growth point never "
+                "asks the athlete to change it. Never ask a question the "
+                "athlete_context already answers"
+            ),
+            "coaching_rules": (
+                "context.coaching_rules are the athlete's own standing rules "
+                "for the coach review (scopes all / run_note). Apply each "
+                "rule_text as an instruction alongside this contract; the "
+                "rationale is background, never advice to quote. A rule never "
+                "overrides the grounding gate or never_write. Rules are not "
+                "evidence keys"
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
@@ -378,6 +408,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "were judged on only part of the run, say the verdict covers that "
             "part",
             "Write a note for every adverse out-of-range signal and for no other",
+            "Read context.athlete_context before blaming form: a stated load / "
+            "commute / carried-over strides explains a signal (cite "
+            "context.athlete_context) and is never a growth point; an "
+            "inferred commute is hedged",
+            "Apply every context.coaching_rules rule_text as an instruction",
             "Write next_challenge as ONE point carried over from today: one of "
             "good_points / growth_points turned into one behaviour cue, with "
             "that point's evidence key in next_challenge_evidence; no named "

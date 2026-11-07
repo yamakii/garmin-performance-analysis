@@ -222,6 +222,8 @@ class TestPrefetchActivityContext:
             "similar_workouts",
             "gear",
             "long_run_gate",
+            "athlete_context",
+            "coaching_rules",
         }
         result = prefetch_activity_context(12345)
         assert read_keys <= set(result)
@@ -442,6 +444,8 @@ class TestBuildRunNoteContext:
             "similar_workouts",
             "gear",
             "long_run_gate",
+            "athlete_context",
+            "coaching_rules",
         }
         # Row bookkeeping stays out; the coaching fields stay in.
         assert out["prescription_for_run"] == {
@@ -475,3 +479,73 @@ class TestBuildRunNoteContext:
     def test_build_run_note_context_returns_none_for_an_error_bundle(self) -> None:
         assert build_run_note_context({"error": "Activity 1 not found"}) is None
         assert build_run_note_context(None) is None
+
+    def test_build_run_note_context_carries_athlete_context_and_rules(self) -> None:
+        """The stated load and only the all / run_note rules reach the agent (#1522)."""
+        athlete_context = {
+            "items": [
+                {
+                    "kind": "load",
+                    "value": "running backpack",
+                    "load_kg": 3.0,
+                    "source": "athlete_stated",
+                    "note": None,
+                }
+            ],
+            "inferred": {"commute": True},
+            "load_kg": 3.0,
+        }
+        rules = [
+            {
+                "rule_id": 1,
+                "user_id": "default",
+                "scope": "all",
+                "rule_text": "Read a loaded run as loaded, not as a form change.",
+                "rationale": "2026-10-30 backpack run",
+                "active": True,
+                "created_at": "2026-11-07 12:00:00",
+            },
+            {
+                "rule_id": 2,
+                "user_id": "default",
+                "scope": "run_note",
+                "rule_text": "Name the stated load before any form signal.",
+                "rationale": None,
+                "active": True,
+                "created_at": "2026-11-07 12:00:00",
+            },
+            {
+                "rule_id": 3,
+                "user_id": "default",
+                "scope": "checkin",
+                "rule_text": "Ask about the legs before the plan.",
+                "rationale": None,
+                "active": True,
+                "created_at": "2026-11-07 12:00:00",
+            },
+        ]
+        bundle = {
+            **_BUNDLE,
+            "athlete_context": athlete_context,
+            "coaching_rules": rules,
+        }
+
+        out = build_run_note_context(bundle)
+
+        assert out is not None
+        assert out["athlete_context"] == athlete_context
+        assert [rule["rule_id"] for rule in out["coaching_rules"]] == [1, 2]
+        assert out["coaching_rules"][0] == {
+            "rule_id": 1,
+            "scope": "all",
+            "rule_text": "Read a loaded run as loaded, not as a form change.",
+            "rationale": "2026-10-30 backpack run",
+        }
+
+    def test_build_run_note_context_rules_empty_without_rules(self) -> None:
+        """A bundle without rules (older DB, failed read) gives an empty list."""
+        out = build_run_note_context({**_BUNDLE, "coaching_rules": None})
+
+        assert out is not None
+        assert out["coaching_rules"] == []
+        assert out["athlete_context"] is None

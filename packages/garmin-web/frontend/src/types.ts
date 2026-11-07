@@ -866,10 +866,29 @@ export interface RunReport {
   recurrence: RunRecurrence[];
   phases: RunPhaseRow[];
   conditions: RunConditions;
+  /** What the athlete said about the run (#1522); absent before that build. */
+  athlete_context?: RunAthleteContext | null;
   vs_previous: Record<string, unknown> | null;
   next_run_target: Record<string, unknown> | null;
   /** Null only when the report was served by a build older than #1273. */
   next_session: NextSession | null;
+}
+
+/** One athlete-stated fact about the run (activity_context, #1520). */
+export interface RunAthleteContextItem {
+  kind: string;
+  value: string | null;
+  load_kg: number | null;
+  source: string | null;
+  note: string | null;
+}
+
+/** Stated circumstances plus the read-time commute guess (#1522). */
+export interface RunAthleteContext {
+  items: RunAthleteContextItem[];
+  /** Null when the athlete stated whether it was a commute. */
+  inferred: { commute: boolean } | null;
+  load_kg: number | null;
 }
 
 // --- The coach's note: the one LLM-written section (#1251) ---

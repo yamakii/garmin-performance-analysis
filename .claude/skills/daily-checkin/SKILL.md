@@ -14,7 +14,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
 ```
 
 ## Step 1: 今朝の wellness と前日の収支を取り込む（必須・単独ステップ）
@@ -61,8 +61,15 @@ wellness 取り込みの直後に、**質問を 1 つだけ**します（増や�
 | `get_weekly_review` | `week_start_date=<今週の開始日>`（引数なしだと最新週＝翌週分のレビューが返りうる） | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
 | `get_symptom_status` | `date=<対象日>` | 症状ルールの判定（`flag` / `flagged_regions` / `asked_today` / `clear_today` / `reason_ja`）。Step 1b の記録が反映された状態で読む |
 | `get_energy_balance` | `end_date=<前日>` | 前日の収支（`days[]` のうち `date=<前日>` の行の `balance_kcal` / `intake_status`）と 7 日平均（`window.status` / `window.mean_balance_kcal`）。Step 4 の 1 行にだけ使う |
+| `get_activity_context` | `activity_ids=[<前日のラン>]` | 走者が前日のランについて述べた事情（荷物・通勤・前日の流しの持ち越しなど）。`get_run_report` の `athlete_context` と同じ中身（前日のランが無ければ省略） |
+| `get_coaching_rules` | `scopes=["checkin", "conversation"]` | この走者専用のルール（scope `all` も常に含まれる）。各 `rule_text` を指示としてこの手順と併せて適用する。`rationale` は背景で、回答に引用しない |
 
 **前日のランは `get_run_report` の `headline` で一言に要約する**（例:「昨日は処方どおり、指摘なし」「昨日は一部ずれ、心拍が想定より高め」）。
+前日のランに荷物・通勤などの事情が申告されている（または `athlete_context.inferred.commute` が立っている）ときは、
+その adverse フラグを事情で読み、体力やフォームの変化として今日の強度に反映しません（推定の通勤はぼかして伝える）。
+**事情がすでに記録されていることを質問しない**。会話の中で走者がランの事情（荷物 何 kg、通勤ラン、流しの持ち越し、
+歩いた理由など）を述べたら、確認を取らずに `save_activity_context(activity_id, kind, value?, load_kg?, note?)` で保存し、
+回答に「（記録しました: 前日は 3 kg の荷物あり）」の一行だけを添えます（Step 1b の 1 問の制限は変わりません）。
 通常の範囲の内側（`within` / `edge`）の指標は今日の判断材料にしません。星評価・保存分析の散文は使わず、
 `streak`（数ラン続く傾き）が立っているときだけ今日の強度に反映します。
 

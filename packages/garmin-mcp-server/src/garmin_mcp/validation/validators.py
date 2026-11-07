@@ -18,15 +18,18 @@ from garmin_mcp.validation.models import ActivityRecord, SplitRecord
 # ``context.<field>`` is the one evidence prefix that does not resolve against
 # the run report, because the prefetch CONTEXT is not part of it. The allowed
 # fields are therefore fixed here rather than looked up, so an agent cannot
-# invent a context key to justify a claim.
+# invent a context key to justify a claim. Each name is a key the run-note
+# CONTEXT (``build_run_note_context``) actually emits; a test keeps them in step.
+# ``athlete_context`` (#1522) is what the athlete said about the run -- like
+# every context key it explains a signal but is never a growth point.
 CONTEXT_EVIDENCE_KEYS: frozenset[str] = frozenset(
     {
         "week_position",
-        "ladder_step",
-        "prescription",
+        "prescription_for_run",
         "morning_wellness",
         "gear",
         "similar_workouts",
+        "athlete_context",
     }
 )
 

@@ -50,7 +50,7 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from garmin_mcp.analysis.derivations import (
@@ -257,6 +257,8 @@ class RunReportReader(BaseDBReader):
             ``moments`` (each with ``policy = {"verdict", "reason"}`` judged
             against the purpose),
             ``flow``, ``recurrence``, ``phases``, ``conditions``,
+            ``athlete_context`` (stated circumstances + a read-time commute
+            guess, see :func:`collect_athlete_context`),
             ``vs_previous``, ``next_run_target`` and ``next_session`` (see the
             module docstring for who computes what). Every value is
             JSON-serialisable without a custom encoder.
@@ -529,6 +531,9 @@ class RunReportReader(BaseDBReader):
             "recurrence": recurrence,
             "phases": _phases(today),
             "conditions": _conditions(today, elevation),
+            # What the athlete said about the run (#1522): a stated load or
+            # commute explains its signals before form is blamed.
+            "athlete_context": collect_athlete_context(str(self.db_path), activity_id),
             "vs_previous": _vs_previous(today, history),
             "next_run_target": next_run_target,
             "next_session": self._next_session(activity_date, next_run_target),
@@ -2328,6 +2333,98 @@ def _conditions(
         "terrain": _classify_terrain(gain_per_km, elevation.get("max_split_change_m")),
         "elevation_gain_m": None if gain is None else round(gain, 1),
     }
+
+
+def collect_athlete_context(db_path: str, activity_id: int) -> dict[str, Any]:
+    """What the athlete said about this run, plus a read-time commute guess.
+
+    The stated rows come from ``activity_context`` (newest per kind, #1520).
+    When none of them is a ``commute`` row, the run is read for a commute
+    (``analysis.commute.infer_commute``: weekday evening start, start and end
+    points far apart) from ``activities.start_time_local`` and the first / last
+    GPS fix of ``time_series_metrics``. The guess is never written back.
+
+    A database without the I1 tables, the start time or the GPS columns
+    degrades to no items / no load and an inferred ``False`` -- never raises.
+
+    Args:
+        db_path: DuckDB path.
+        activity_id: The run.
+
+    Returns:
+        ``{"items": [{"kind", "value", "load_kg", "source", "note"}],
+        "inferred": {"commute": bool} | None, "load_kg": float | None}`` --
+        ``inferred`` is ``None`` when a commute row is stated.
+    """
+    from garmin_mcp.database.readers.athlete import AthleteReader
+
+    try:
+        rows = AthleteReader(db_path).get_activity_context(activity_ids=[activity_id])
+    except Exception as exc:  # pragma: no cover - degraded DB only
+        logger.debug("activity_context unavailable for %s: %s", activity_id, exc)
+        rows = []
+    items = [
+        {
+            "kind": row.get("kind"),
+            "value": row.get("value"),
+            "load_kg": _as_float(row.get("load_kg")),
+            "source": row.get("source"),
+            "note": row.get("note"),
+        }
+        for row in rows
+    ]
+    load_kg = next(
+        (
+            item["load_kg"]
+            for item in items
+            if item["kind"] == "load" and item["load_kg"] is not None
+        ),
+        None,
+    )
+    stated_commute = any(item["kind"] == "commute" for item in items)
+    inferred = (
+        None if stated_commute else {"commute": _infer_commute(db_path, activity_id)}
+    )
+    return {"items": items, "inferred": inferred, "load_kg": load_kg}
+
+
+def _infer_commute(db_path: str, activity_id: int) -> bool:
+    """Read the commute guess off the start time and the first / last GPS fix."""
+    from garmin_mcp.analysis.commute import infer_commute
+    from garmin_mcp.database.connection import get_connection
+
+    try:
+        with get_connection(db_path) as conn:
+            if not _has_column(conn, "activities", "start_time_local"):
+                return False
+            row = conn.execute(
+                "SELECT start_time_local FROM activities WHERE activity_id = ?",
+                [activity_id],
+            ).fetchone()
+            start_time = row[0] if row else None
+            if not isinstance(start_time, datetime):
+                return False
+            columns = _table_columns(conn, "time_series_metrics")
+            if not {"latitude", "longitude", "timestamp_s"} <= columns:
+                return False
+            ends = [
+                conn.execute(
+                    "SELECT latitude, longitude FROM time_series_metrics "
+                    "WHERE activity_id = ? AND latitude IS NOT NULL "
+                    "AND longitude IS NOT NULL "
+                    f"ORDER BY timestamp_s {order} LIMIT 1",
+                    [activity_id],
+                ).fetchone()
+                for order in ("ASC", "DESC")
+            ]
+    except Exception as exc:  # pragma: no cover - degraded DB only
+        logger.debug("commute inference unavailable for %s: %s", activity_id, exc)
+        return False
+    start, end = (
+        (float(point[0]), float(point[1])) if point is not None else None
+        for point in ends
+    )
+    return infer_commute(start_time, start, end)
 
 
 def _classify_terrain(
