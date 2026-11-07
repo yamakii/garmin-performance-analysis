@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
@@ -30,9 +30,17 @@ class TimelineItem(BaseModel):
 
 
 class SignalNote(BaseModel):
-    """A short explanation of one adverse out-of-range signal."""
+    """A short explanation of one adverse out-of-range signal.
+
+    ``also`` names further adverse outliers the same explanation covers
+    (e.g. ``vr`` riding on ``vo``), so a run with more outliers than the
+    note cap can still explain each one exactly once (#1492).
+    """
 
     signal: str = Field(pattern=r"^[a-z0-9_]+$")
+    also: list[Annotated[str, Field(pattern=r"^[a-z0-9_]+$")]] = Field(
+        default_factory=list, max_length=3
+    )
     text: str = Field(min_length=8, max_length=300)
 
 

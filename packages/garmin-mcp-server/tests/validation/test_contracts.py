@@ -23,6 +23,22 @@ def test_contract_registry_is_run_note_only():
 
 
 @pytest.mark.unit
+def test_contract_notes_allow_grouping():
+    """The contract tells the agent how to fit outliers into 3 notes (#1492).
+
+    The merge gate wants every adverse outlier explained exactly once and the
+    schema caps notes at 3; without ``also`` in the contract the agent merges
+    signals into prose the gate cannot see and the run_note is rejected.
+    """
+    contract = get_contract("run_note")
+
+    assert "also" in contract["required_fields"]["notes"]["description"]
+    policy = contract["evaluation_policy"]["notes"]
+    assert "also" in policy
+    assert "exactly once" in policy
+
+
+@pytest.mark.unit
 def test_get_contract_unknown_type():
     with pytest.raises(ValueError, match="Unknown section_type"):
         get_contract("unknown")

@@ -127,7 +127,7 @@ def detect_events(
     events: list[Event] = []
     events.extend(_flag_runs(samples, _stop_flags(samples), STOP_MIN_S, "stop"))
     events.extend(_pause_events(samples))
-    events.extend(_flag_runs(samples, _burst_flags(samples), BURST_MIN_S, "burst"))
+    events.extend(_flag_runs(samples, burst_flags(samples), BURST_MIN_S, "burst"))
     events.extend(_effort_laps(splits))
     events.sort(key=lambda event: (event.start_s, event.end_s))
     return events
@@ -149,7 +149,7 @@ def _stop_flags(samples: Sequence[Mapping[str, Any]]) -> list[bool]:
     return flags
 
 
-def _burst_flags(samples: Sequence[Mapping[str, Any]]) -> list[bool]:
+def burst_flags(samples: Sequence[Mapping[str, Any]]) -> list[bool]:
     """Per sample: stride cadence, or well above the previous 120 s of pace."""
     flags: list[bool] = []
     window: deque[tuple[float, float]] = deque()

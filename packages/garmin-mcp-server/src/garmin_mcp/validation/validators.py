@@ -373,8 +373,9 @@ def check_run_note_grounding(
        point (#1358);
     4. a ``timeline`` item names an unknown moment, or there are more timeline
        items than the report has moments (an invented scene);
-    5. a note explains a signal that is not an adverse outlier, or an adverse
-       outlier is left without a note;
+    5. a note explains (via ``signal`` or ``also``) a signal that is not an
+       adverse outlier, an adverse outlier is left without a note, or one
+       signal is explained twice (#1492);
     6. a list exceeds (or falls short of) its documented item count.
 
     Args:
@@ -459,17 +460,21 @@ def check_run_note_grounding(
     for note in analysis_data.get("notes") or []:
         if not isinstance(note, Mapping):
             return False, f"notes items must be objects, got {note!r}"
-        name = str(note.get("signal"))
-        signal = signals.get(name)
-        if signal is None:
-            return False, f"note signal '{name}' is not a signal of this run"
-        if not _is_adverse_outlier(signal):
-            return False, (
-                f"note signal '{name}' has status={signal.get('status')!r} "
-                f"adverse={signal.get('adverse')!r}; notes exist only for signals "
-                "that are outside their normal range and adverse"
-            )
-        noted.add(name)
+        # One note may cover several outliers that share a cause (#1492).
+        names = [str(note.get("signal"))] + [str(n) for n in note.get("also") or []]
+        for name in names:
+            signal = signals.get(name)
+            if signal is None:
+                return False, f"note signal '{name}' is not a signal of this run"
+            if not _is_adverse_outlier(signal):
+                return False, (
+                    f"note signal '{name}' has status={signal.get('status')!r} "
+                    f"adverse={signal.get('adverse')!r}; notes exist only for "
+                    "signals that are outside their normal range and adverse"
+                )
+            if name in noted:
+                return False, f"signal '{name}' is explained by more than one note"
+            noted.add(name)
 
     for metric, signal in signals.items():
         if _is_adverse_outlier(signal) and metric not in noted:

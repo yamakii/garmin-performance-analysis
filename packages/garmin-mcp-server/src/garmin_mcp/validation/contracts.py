@@ -79,8 +79,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "notes": {
                 "type": "array",
                 "description": (
-                    "Only for adverse out-of-range signals, <= 2 sentences each: "
-                    "{signal, text}"
+                    "Only for adverse out-of-range signals, <= 3 items of "
+                    "<= 2 sentences each: {signal, also?, text}. 'also' lists "
+                    "further adverse outliers the same explanation covers"
                 ),
             },
             "question": {
@@ -165,7 +166,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "pace_band, reps / reps_2 ..., strides, continuity (or rest). "
                 "Each row carries status on_plan / off_plan / short / missing "
                 "/ insufficient; insufficient means the laps could not be "
-                "matched to the steps and the axis was not judged -- neither "
+                "matched to the steps (or, for volume, that the intensity "
+                "class differed so the volume was not compared) and the axis "
+                "was not judged -- neither "
                 "a strength nor a growth point. "
                 "hr_ceiling is judged on the steady time above the ceiling "
                 "(plan.hr_ceiling.seconds_over / pct_over), not the average: "
@@ -176,7 +179,11 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "plan.strides": (
                 "the strides row of report.plan.checks -- strides run against the "
                 "prescribed reps ('4本'); present only when the prescription "
-                "carries strides"
+                "carries strides, or when strides a recent day asked for and no "
+                "run did were carried over to this run (label '流し（M/Dから持ち越し）', "
+                "plan.title names them too). Strides are counted from the laps, "
+                "or from the time series when the laps do not mark them (the "
+                "strides scene then carries facts.source = 'series')"
             ),
             "plan.continuity": (
                 "the continuity row of report.plan.checks -- whether the run "
@@ -247,13 +254,19 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 ),
             },
             "notes": (
-                "Write one note for every adverse out-of-range signal and for no "
-                "other signal. Attribute the cause in the order intensity -> "
-                "terrain -> weather + start time -> recovery -> form"
+                "Explain every adverse out-of-range signal exactly once and no "
+                "other signal. Signals that share one cause (e.g. vo and vr) go "
+                "in one note: the first as 'signal', the rest in 'also'; group "
+                "this way whenever there are more outliers than the 3-note cap. "
+                "Attribute the cause in the order intensity -> terrain -> "
+                "weather + start time -> recovery -> form"
             ),
             "timeline": (
                 "One item per scene in report.moments, in order; an uneventful "
-                "run gets exactly one item on the 'steady' scene. Refer to a "
+                "run gets exactly one item on the 'steady' scene. A 'steady' "
+                "scene between turning points is the body of the run where "
+                "nothing turned -- say what held there (pace, hr_range), it is "
+                "not filler. Refer to a "
                 "scene by its label_ja and by nothing else -- never by "
                 "split_from / split_to, and never by an 'N km 目' worked out "
                 "from a lap number. A unit='km' label is a stretch of road "
@@ -262,7 +275,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "start / fast_start / surge / ceiling_touch / walk_break / "
                 "climb / fade / strong_finish / progression / steady for "
                 "unit='km' scenes, and warmup / rep / rest / main / cooldown / "
-                "work_set / strides for unit='step' scenes. A strides scene "
+                "work_set / strides for unit='step' scenes. An easy / "
+                "long_easy / recovery run never carries a surge scene: its "
+                "pace is left to the conditions, and a pickup that mattered "
+                "crossed the ceiling (ceiling_touch). A strides scene "
                 "('流し（4本）') is the whole set of strides and their jogs -- "
                 "narrate it as one item (see evaluation_policy.strides). On a "
                 "rep session "

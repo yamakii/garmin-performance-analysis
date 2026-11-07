@@ -64,7 +64,7 @@ model: opus
 | `next_challenge` | 文字列 10-120字 / 1文 | **持ち越す1点**（§6）。今日の伸ばせる点か良かった点の1つを行動の一文にする。数値は処方の値の引用（「150 bpm を超えないように」）だけ |
 | `next_challenge_evidence` | 文字列 | `next_challenge` が持ち越した点の `evidence` キー。**今日の `good_points` / `growth_points` のどれかの `evidence` と一致**させる（merge ゲートが検証する） |
 | `timeline` | 1-5件 `{moment_id, text}` | 各1-2文。`moment_id` は `REPORT.moments` の id のみ。本文でシーンを指すときは `label_ja` を使う |
-| `notes` | 0-3件 `{signal, text}` | **adverse かつ範囲外**のシグナル1つにつき1件。それ以外には書かない |
+| `notes` | 0-3件 `{signal, also?, text}` | **adverse かつ範囲外**のシグナルをどれも1回ずつ説明する。同じ原因のものは1件にまとめて `also` に並べる（§7）。それ以外には書かない |
 | `question` | 文字列（省略可, 160字以内） | 最大1つ。聞く必要がないときは**キーごと省略**する |
 
 ## 4. Grounding（merge 時に機械的に検証される — 落ちたら登録されない）
@@ -289,8 +289,12 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
 
 ## 7. Notes（不利な外れ値の説明）
 
-- `REPORT.signals` のうち **`status: "outside"` かつ `adverse: true`** のもの**1つにつき1件**。
+- `REPORT.signals` のうち **`status: "outside"` かつ `adverse: true`** のものを、**どれも1回ずつ**説明する。
   それ以外のシグナルには書かない（書くと拒否される）。逆に、該当シグナルを説明せず放置しても拒否される。
+- **同じ原因で説明できるシグナルは1件にまとめる**。先頭を `signal`、残りを `also` に並べる
+  （例: 上下動と上下動比 → `{"signal": "vo", "also": ["vr"], "text": "上下動と上下動比が大きめに出たのは…"}`）。
+  notes は最大3件なので、該当シグナルが4つ以上あるときは必ずまとめる。本文で触れるだけでは
+  説明したことにならない（`signal` か `also` に名前が無いと拒否される）。同じシグナルを2件で説明しても拒否される。
 - 原因の帰属順は **intensity → terrain → weather + start time → recovery → form**。
   上位で説明がつくならそこで止める。
 - **筋・腱など身体内部の因果を断定しない**（「ハムストリングスが疲労していたため」等は書かない）。

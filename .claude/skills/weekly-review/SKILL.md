@@ -500,9 +500,11 @@ mcp__garmin-db__get_pending_trend_period(end_date=today)
 Workflow(name="trend-narration", args=pending)
 ```
 
-`trend-narration` は prefetch＋narrate → proofread → save で縦断トレンドを生成し DuckDB の `trend_analyses` に保存します（`saved=true` で成功）。ローカル cron の `scheduled_sync` は pending を検出するだけで LLM ナレーション生成はできないため、weekly-review 実行がこの生成トリガーを兼ねます。日曜実行では直前完了週が既に生成済みで `null` になることが多い一方、4週遡及するので前々週以前の取りこぼしはここで拾えます。複数週が未生成なら古い順に1週ずつ埋まるので、必要なら次回以降の実行で残りが生成されます。
+`trend-narration` は prefetch＋narrate → proofread → save で縦断トレンドを生成し DuckDB の `trend_analyses` に保存します（`saved=true` で成功）。ローカル cron の `scheduled_sync` は pending を検出するだけで LLM ナレーション生成はできないため、weekly-review 実行がこの生成トリガーを兼ねます。
 
-**完了報告**: 保存完了をユーザーに報告してください。どの対象週 W のプランをどの実績週 W-1 で評価したかと、**構造化保存した処方の件数**（`save_weekly_prescriptions` の `count`）を一言添え、レビューは **Web で参照可能**（一覧は週ごと最新版、詳細ページで同一週の過去版を切り替えて閲覧）になる旨も添えてください。同じ W で再実行した場合は新しい版が追記された旨も伝えてください。`trend-narration` を起動した場合は、どの期間（`period_start`〜`period_end`）のトレンドを自動生成したか（`saved` の成否）も完了報告に含めてください。
+**未生成週が無くなるまで繰り返す**: Workflow はバックグラウンドで走るので、完了通知を待って `saved` を確かめてから `get_pending_trend_period(end_date=today)` をもう一度呼び、`null` になるまで「起動 → 完了待ち → 再問い合わせ」を古い順に繰り返します。1回で1週だけ埋めて終えると、積み残しの古い週を埋めるたびに直前の完了週が次回へ回り、生成が恒常的に1週遅れる（2026-10-12 の実行は 9/28 週だけを埋め、完了済みの 10/5〜10/11 週が次のレビューまで未生成のまま残った）。停止条件: `null` が返る / `saved` が true でない / 直前に起動したのと同じ期間が再び返る（保存失敗の空回りを防ぐ）/ 起動が4回に達した（走査範囲の4完了週ぶん）。`saved` が true でない、または同じ期間が再び返ったときは、その期間と理由を完了報告に書き、自動リトライはしません。
+
+**完了報告**: 保存完了をユーザーに報告してください。どの対象週 W のプランをどの実績週 W-1 で評価したかと、**構造化保存した処方の件数**（`save_weekly_prescriptions` の `count`）を一言添え、レビューは **Web で参照可能**（一覧は週ごと最新版、詳細ページで同一週の過去版を切り替えて閲覧）になる旨も添えてください。同じ W で再実行した場合は新しい版が追記された旨も伝えてください。`trend-narration` を起動した場合は、生成した全期間（`period_start`〜`period_end`）とそれぞれの `saved` の成否も完了報告に含めてください。
 
 ## 重要事項
 

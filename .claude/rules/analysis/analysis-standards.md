@@ -59,3 +59,8 @@ Consolidated reference for all analysis rules.
 - **プランを改訂するときは必ず版をペアで更新**: 新しいレビュー版（`save_weekly_review`、`review_data.revision_note` に理由）→ その `review_id` で `save_weekly_prescriptions` の順。処方だけの再保存は拒否される。Garmin 登録済みの行は、時計に送る中身（タイトルとステップ）が変わらなければ新しい版に登録が引き継がれる（#1447）。`save_weekly_prescriptions` の返り値 `needs_reregistration` に挙がった行（中身が変わった行）だけ `schedule_weekly_prescriptions(dry_run=False)` で作り直す（Garmin への書き込みなので実行前にユーザーに確認）
 - **読む側の版チェック**: 処方行の `review_id` とレビューの `review_id` が一致しないときは**処方が正**。そのレビューの日別の言及は使わない
 - **Garmin カレンダー**: `[MCP]` 項目はこちらの処方の写し（正本は処方行）、`fbtAdaptiveWorkout` は参考情報にとどめる
+
+## 7. 過去の経緯を今の判断の根拠にするとき
+
+- **プロフィールの散文は仮説**: `retrospectives` / `focus_notes` にある過去の型（故障パターン等）を今の判断の理由に使う前に、その型の成立条件が今も当てはまるかを `export` の集計で確かめてから答える。散文の言い換えは確認ではない（2026-10-19: 去年の故障パターンを未確認のまま繰り返し持ち出した。実際は去年7-9月のロングは0本で土台が別物だった）
+- **比較は同じ基準で**: 同じ暦期間か同じイベント前の同じ長さで並べ、基準を明示し、予定値は実績と分ける。週量平均だけでなく型が依存する条件（ロング本数・最長・直前の途切れ・レース後の伸び）を並べる

@@ -102,6 +102,48 @@ def test_pending_uses_week_start_day(initialized_db_path: Path) -> None:
     assert start.toordinal() + 7 <= TODAY.toordinal() < start.toordinal() + 14
 
 
+# 2026-10-18 is a Sunday: the last day of a Monday-start week (issue #1473).
+LAST_DAY = date(2026, 10, 18)
+
+
+@pytest.mark.integration
+def test_pending_includes_current_week_on_last_day(initialized_db_path: Path) -> None:
+    """On the week's last day the week containing today counts as completed."""
+    result = find_pending_trend_period(
+        str(initialized_db_path), LAST_DAY, lookback_weeks=1
+    )
+
+    assert result == {
+        "granularity": "week",
+        "period_start": "2026-10-12",
+        "period_end": "2026-10-18",
+    }
+
+
+@pytest.mark.integration
+def test_pending_excludes_current_week_before_last_day(
+    initialized_db_path: Path,
+) -> None:
+    """Any earlier day of the week keeps the week containing today open."""
+    result = find_pending_trend_period(
+        str(initialized_db_path), date(2026, 10, 17), lookback_weeks=1
+    )
+
+    assert result is not None
+    assert result["period_start"] == "2026-10-05"
+
+
+@pytest.mark.integration
+def test_pending_last_day_scans_lookback_completed_weeks(
+    initialized_db_path: Path,
+) -> None:
+    """The window still holds lookback_weeks weeks, ending on today's week."""
+    result = find_pending_trend_period(str(initialized_db_path), LAST_DAY)
+
+    assert result is not None
+    assert result["period_start"] == "2026-09-21"
+
+
 _ALL_OK = {
     "running": {"activities_ingested": 1},
     "weight": {"days_ingested": 0},

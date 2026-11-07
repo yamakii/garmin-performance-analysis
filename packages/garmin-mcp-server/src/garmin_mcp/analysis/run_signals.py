@@ -21,8 +21,11 @@ signal               judged value                              bad side
 ``hr_drift``         ``hr_drift_percentage``                   higher
 ===================  ========================================  =============
 
-The four form metrics are already pace-corrected, so their baseline is every
-prior run. The two cardio signals are not comparable across sessions -- an
+The four form metrics and power are already pace-corrected, so their baseline
+is every prior run measured by today's dynamics sensor (``dynamics_source``):
+a pod and the wrist read the same stride on different scales, and a pod run
+judged against a wrist history is "outside" on every metric (#1470). The two
+cardio signals are not comparable across sessions -- an
 interval session's drift says nothing about an easy run's -- so their baseline
 is restricted to the **same intensity family**, which is what turned a useless
 -13 %...+22 % drift band into -1 %...+10 % on the real history.
@@ -46,7 +49,7 @@ cm, %, spm, bpm) rather than in z or deviation-%, so a page can print
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -86,6 +89,13 @@ REASON_NO_HR_MODEL = "no_hr_model"
 REASON_NO_HR_INPUTS = "no_hr_inputs"
 REASON_HOT = "drift_in_heat"
 REASON_LOW_JUDGED_SHARE = "low_judged_share"
+REASON_SENSOR_THIN_BASELINE = "sensor_thin_baseline"
+
+#: How each ``activities.dynamics_source`` is named to the reader. A pod and
+#: the wrist measure the form metrics on different scales (wrist GCT is a
+#: function of cadence and pace, the pod measures contact), so a form signal is
+#: only ever judged against runs from today's sensor (#1470).
+_SENSOR_LABELS_JA = {"pod": "ランニングポッド", "wrist": "手首"}
 
 #: Below this share of steady running (outside stops, pauses, bursts and
 #: effort laps) a run's form averages describe its interruptions rather than
@@ -114,6 +124,10 @@ REASON_MESSAGES_JA: dict[str, str] = {
     ),
     REASON_TODAY_MISSING: "このランにはこの値の記録がない",
     REASON_THIN_BASELINE: "比べられる直近のランが {n} 本で、判定には {required} 本以上が必要",
+    REASON_SENSOR_THIN_BASELINE: (
+        "{sensor}で測った直近のランが {n} 本で、判定には {required} 本以上が必要"
+        "（別のセンサーで測ったランとは比べない）"
+    ),
     REASON_NO_SPREAD: "直近のランの値がほぼ同じで、比べられる幅が作れない",
 }
 
@@ -245,9 +259,10 @@ def build_signals(
         ``within`` / ``edge`` / ``outside`` / ``insufficient``.
     """
     prior = _window(today, history)
+    form_prior = _same_sensor(today, prior)
 
-    signals = [_form_signal(spec, today, prior) for spec in _FORM_SPECS]
-    signals.append(_power_signal(today, prior))
+    signals = [_form_signal(spec, today, form_prior) for spec in _FORM_SPECS]
+    signals.append(_power_signal(today, form_prior))
     signals.append(_hr_vs_expected_signal(today, prior, hr_model))
     signals.append(_hr_drift_signal(today, prior))
     return signals
@@ -285,7 +300,10 @@ def _form_signal(
 
     eligible = [row for row in prior if _eligibility_reason(row, spec.metric) is None]
     series = [_form_deviation_pct(row, spec) for row in eligible]
-    band = compute_band(series, deviation, higher_is_worse=spec.higher_is_worse)
+    band = _sensor_band(
+        today,
+        compute_band(series, deviation, higher_is_worse=spec.higher_is_worse),
+    )
 
     # Without the model expectation the band cannot be expressed in ms / cm, so
     # it falls back to the deviation-% it was built in.
@@ -334,8 +352,11 @@ def _power_signal(
         )
 
     eligible = [row for row in prior if _eligibility_reason(row, "power") is None]
-    band = compute_band(
-        [_power_pct(row) for row in eligible], value, higher_is_worse=False
+    band = _sensor_band(
+        today,
+        compute_band(
+            [_power_pct(row) for row in eligible], value, higher_is_worse=False
+        ),
     )
     return _assemble(
         metric="power",
@@ -654,6 +675,35 @@ def _eligibility_reason(row: Mapping[str, Any], metric: str) -> _Reason | None:
     if row.get(f"{metric}_extrapolated") or row.get("extrapolated"):
         return _Reason(REASON_EXTRAPOLATED)
     return None
+
+
+def _same_sensor(
+    today: Mapping[str, Any], prior: Sequence[Mapping[str, Any]]
+) -> list[Mapping[str, Any]]:
+    """The prior runs whose form metrics came from today's dynamics sensor.
+
+    A run with no recorded ``dynamics_source`` keeps every prior row, so a
+    caller that does not hand the column over judges as before.
+    """
+    source = today.get("dynamics_source")
+    if source is None:
+        return list(prior)
+    return [row for row in prior if row.get("dynamics_source") == source]
+
+
+def _sensor_band(today: Mapping[str, Any], band: Band) -> Band:
+    """Name today's sensor when the same-sensor baseline is what ran thin."""
+    source = today.get("dynamics_source")
+    if band.reason != REASON_THIN_BASELINE or source is None:
+        return band
+    return replace(
+        band,
+        reason=REASON_SENSOR_THIN_BASELINE,
+        reason_params={
+            **band.reason_params,
+            "sensor": _SENSOR_LABELS_JA.get(str(source), str(source)),
+        },
+    )
 
 
 def _same_family(row: Mapping[str, Any], today: Mapping[str, Any]) -> bool:

@@ -710,7 +710,8 @@ Rows of the five section types written before the run note — `split`, `phase`,
 
 **Purpose**: Athlete's current training focus (read by `/plan-training` and `/weekly-review`; written by `/set-goal`)
 **Primary Key**: `user_id`
-**Source**: `save_athlete_profile` / `/set-goal`. Owned by migration `add_athlete_tables` (version 7); `week_start_day` added by migration `add_week_start_day` (version 12).
+**Source**: `save_athlete_profile` / `/set-goal`, and `append_focus_notes` (writes `focus_notes` only). Owned by migration `add_athlete_tables` (version 7); `week_start_day` added by migration `add_week_start_day` (version 12).
+**Write semantics**: `save_athlete_profile` is a partial update — a key omitted from the payload keeps its stored value, a present key (even `null` / `[]`) replaces it; `athlete_goals` / `season_retrospectives` are DELETE→INSERTed per `user_id` only when their key is present. `append_focus_notes` appends to the end of `focus_notes` or of one line-start `【heading】` section without resending the whole text (issue #1468).
 
 ### Schema
 
@@ -973,9 +974,9 @@ Rows of the five section types written before the run note — `split`, `phase`,
 
 ## 26. athlete_profile_versions
 
-**Purpose**: Append-only history of the athlete profile. `save_athlete_profile` overwrites the canonical state across `athlete_profile` / `athlete_goals` / `season_retrospectives`, so long-form content (notably `focus_notes`) used to be lost on every save. Each save now also appends a JSON snapshot of the whole profile here, keeping prior versions recoverable (issue #934).
+**Purpose**: Append-only history of the athlete profile. `save_athlete_profile` overwrites the canonical state across `athlete_profile` / `athlete_goals` / `season_retrospectives`, so long-form content (notably `focus_notes`) used to be lost on every save. Each save now also appends a JSON snapshot of the whole profile here, keeping prior versions recoverable (issue #934). Since issue #1468 the snapshot is the merged profile (stored values for keys the payload omitted), so a partial save or an `append_focus_notes` call still records the full goals / retrospectives.
 **Primary Key**: `version_id` (from `seq_athlete_profile_versions_id`)
-**Source**: `save_athlete_profile` (`database/inserters/athlete.py`), inside the same write transaction as the canonical upsert. Owned by migration `add_athlete_profile_versions` (version 21), which also seeds the profile that existed at migration time as the first version.
+**Source**: `save_athlete_profile` and `append_focus_notes` (`database/inserters/athlete.py`), inside the same write transaction as the canonical upsert. Owned by migration `add_athlete_profile_versions` (version 21), which also seeds the profile that existed at migration time as the first version.
 
 ### Schema
 

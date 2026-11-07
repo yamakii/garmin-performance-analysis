@@ -2,7 +2,7 @@
 name: maintenance
 description: "Run the repository maintenance pass — audit dependencies for vulnerabilities and outdated versions, apply security + minor/patch updates in a worktree, sync pre-commit revs, verify with ci-check, and ship a PR; majors and runtime changes are reported for a human decision. Use when the user asks for maintenance / dependency updates / security check (例:「メンテナンスして」「依存を更新」「脆弱性チェック」), or when the weekly security-audit issue is open. Optional argument --dry-run (audit + report only)."
 argument-hint: [--dry-run]
-allowed-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__github__issue_read, mcp__github__issue_write, mcp__github__list_issues, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__merge_pull_request, mcp__github__add_issue_comment
+allowed-tools: Bash, Read, Edit, Write, Glob, Grep, mcp__github__issue_read, mcp__github__issue_write, mcp__github__list_issues, mcp__github__list_pull_requests, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__merge_pull_request, mcp__github__add_issue_comment, mcp__github__list_dependabot_alerts
 ---
 
 # /maintenance — Dependency & Security Maintenance Pass
@@ -19,6 +19,10 @@ decisions (majors, upper-bound pins, runtime versions).
 
 1. Sync local main per `.claude/rules/dev/git.md` §2 (quiet fetch + ff-only).
 2. Open automation state (GitHub MCP):
+   - `list_dependabot_alerts(state="open")` — **the source of truth for Python advisories** (pip-audit's
+     default PyPI service misses GHSA-only advisories; it stayed green through 13 filelock alerts, #1502).
+     The result exceeds the tool output limit and is saved to a file; summarise it with
+     `jq -r '.alerts[] | [.number, .security_advisory.severity, .dependency.package.name, (.security_vulnerability.first_patched_version|tostring), .security_advisory.ghsa_id] | @tsv' <file>`.
    - `list_issues(state="OPEN", labels=["security-audit"])` — open audit issue?
    - `list_pull_requests(state="open")` — Dependabot PRs waiting (majors need a decision; minors stuck = check `ci-guard`).
 3. Python:
@@ -27,8 +31,10 @@ decisions (majors, upper-bound pins, runtime versions).
    uv export --frozen --no-hashes --all-packages --no-emit-workspace \
      --format requirements-txt -o "$CLAUDE_JOB_DIR/tmp/req.txt" 2>/dev/null \
      || uv export --frozen --no-hashes --all-packages --no-emit-workspace --format requirements-txt -o /tmp/req.txt
-   uvx pip-audit -r <req.txt> --no-deps --desc off -f columns
+   uvx pip-audit -r <req.txt> --no-deps --desc off -f columns -s osv   # OSV carries GHSA ids; PyPI DB does not
    ```
+   The sandbox egress blocks `api.osv.dev`, so there `-s osv` fails with a name-resolution error and the
+   PyPI-service result is only a second opinion — the Dependabot list above decides. CI runs both services.
 4. npm (frontend): `npm --prefix packages/garmin-web/frontend outdated` and `npm --prefix packages/garmin-web/frontend audit --audit-level=high`.
 5. Tooling drift: compare `.pre-commit-config.yaml` revs (ruff / black / pre-commit-hooks) with the locked
    versions in `uv.lock`; note GitHub Actions majors in `.github/workflows/*.yml` vs latest releases;
@@ -48,9 +54,12 @@ section, not in the plan.
 `git worktree add -q -b chore/<issue>-deps-update-<YYYY-MM> .claude/worktrees/deps-update-<YYYY-MM> origin/main` (path and naming per `git.md` §2), then:
 
 1. **Security first.** If a fix requires crossing a major, still apply it and flag it explicitly.
-2. Python: `uv lock --upgrade` (respects pyproject bounds). If the dry-run showed an unwanted major
-   under a `>=`-only constraint, add an upper bound **with a reason comment** and re-lock.
-   Upper bounds are exceptions, not defaults — re-evaluate each existing one (`grep -n '<[0-9]' packages/*/pyproject.toml`).
+2. Python: take the dry-run list, drop the majors, and apply the rest with one
+   `uv lock --upgrade-package <pkg> --upgrade-package <pkg> ...` call (plus any security fix that crosses a
+   major). This leaves the majors for the human without touching `pyproject.toml`. Add an upper bound
+   **with a reason comment** only when Dependabot must also stop proposing that major (known breaking change,
+   migration not yet investigated). Upper bounds are exceptions, not defaults — re-evaluate each existing one
+   (`grep -n '<[0-9]' packages/*/pyproject.toml`).
 3. npm: `npm --prefix packages/garmin-web/frontend ci --no-audit` then `npm --prefix packages/garmin-web/frontend audit fix` and `npm --prefix packages/garmin-web/frontend update`
    (both stay inside `package.json` ranges; majors are never applied here).
 4. pre-commit: set `ruff-pre-commit` rev = locked ruff version, `black` rev = locked black version,
