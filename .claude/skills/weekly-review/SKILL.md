@@ -52,6 +52,18 @@ mcp__garmin-db__prefetch_weekly_review_context(target=$ARGUMENTS)   # None | "th
 
 確定した対象週 W（`week_start_date`〜`week_end_date`）と実績週 W-1（`prev_start`〜`prev_end`）、開始曜日、および `week_in_progress`（today が W 内か）をユーザーに一言で提示してから次に進んでください。
 
+バンドルが確定した日付で、**走者が述べた事情**と**この走者専用のルール**を同じターンで読みます（バンドルには含まれない。deferred なら先に `ToolSearch(query="select:mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")`）:
+
+```
+mcp__garmin-db__get_activity_context(start_date=prev_start, end_date=week_end_date)   # W-1 と W 進行中分
+mcp__garmin-db__get_coaching_rules(scopes=["planning", "conversation"])               # scope=all も常に含まれる
+```
+
+- 荷物・通勤・流しの持ち越しなどが申告されたランは、その事情で読む（心拍やフォームの外れを体力・フォームの変化として講評しない）。
+- 各 `rule_text` は指示として、この手順と併せて適用する（`rationale` は背景で、講評に引用しない）。
+- **context がすでに答えていることを質問しない**。会話の中で走者がランの事情を述べたら、確認を取らずに
+  `save_activity_context(activity_id, kind, value?, load_kg?, note?)` で保存し、「（記録しました: 10/30 は 3 kg の荷物あり）」の一行だけを添える。
+
 ### Step 2: バンドルから実績・負荷・回復・補強・山行を読む（W-1 主軸 ＋ W 進行中分）
 
 Step 1 の `prefetch_weekly_review_context` バンドルから、以下のキーを読んで実績を把握します（**追加の MCP 呼びは原則不要**。各キーは null-on-error なので欠損は破綻させず、その旨を講評に明示する）。

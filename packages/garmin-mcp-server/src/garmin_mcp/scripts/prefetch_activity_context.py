@@ -16,6 +16,8 @@ Output (JSON to stdout):
       "activity_date": "2026-02-16",
       "training_type": "aerobic_base",
       "gear": {...}|null,            # shoe worn + its cumulative mileage
+      "athlete_context": {...}|null, # stated circumstances + commute guess
+      "coaching_rules": [...]|null,  # the athlete's active coaching rules
       "similar_workouts": {"target_activity": {...}, "similar_activities": [...]},
       "long_run_gate": null,         # long runs only (>= 10 km); see below
       "prescription": [],            # that day's weekly_prescriptions rows
@@ -70,7 +72,9 @@ from garmin_mcp.analysis.derivations import (
     select_prescription_for_run,
 )
 from garmin_mcp.database.connection import get_connection, get_db_path
+from garmin_mcp.database.readers.athlete import AthleteReader
 from garmin_mcp.database.readers.metadata import collect_activity_gear
+from garmin_mcp.database.readers.run_report import collect_athlete_context
 
 logger = logging.getLogger(__name__)
 
@@ -492,6 +496,11 @@ def prefetch_activity_context(activity_id: int) -> dict:
         },
     )
 
+    # What the athlete said about this run, and the rules they set for the
+    # coach (Issue #1522). Both live in the local DB only (#1520).
+    athlete_context = _safe(lambda: collect_athlete_context(db_path_str, activity_id))
+    coaching_rules = _safe(lambda: AthleteReader(db_path_str).get_coaching_rules())
+
     return {
         "activity_id": activity_id,
         "activity_date": activity_date,
@@ -499,6 +508,8 @@ def prefetch_activity_context(activity_id: int) -> dict:
         # Shoe worn on this run plus its cumulative mileage (Issue #1207); null
         # when no gear was registered in Garmin for the activity.
         "gear": gear,
+        "athlete_context": athlete_context,
+        "coaching_rules": coaching_rules,
         "similar_workouts": similar_workouts,
         # Deterministic long-run progression verdict (Issue #982); null for
         # runs below _LONG_RUN_GATE_MIN_KM.
@@ -528,13 +539,35 @@ _RUN_NOTE_PRESCRIPTION_FIELDS = (
 # Similar workouts are context for one sentence, not a table.
 _RUN_NOTE_SIMILAR_LIMIT = 3
 
+# The coaching-rule scopes the run-note agent applies (#1522): rules for every
+# surface and rules written for the coach review itself.
+_RUN_NOTE_RULE_SCOPES = frozenset({"all", "run_note"})
+
+# The rule fields the agent reads; bookkeeping (user, timestamps) stays out.
+_RUN_NOTE_RULE_FIELDS = ("rule_id", "scope", "rule_text", "rationale")
+
+
+def _run_note_rules(rules: Any) -> list[dict[str, Any]]:
+    """The active coaching rules scoped ``all`` / ``run_note``, trimmed."""
+    if not isinstance(rules, list):
+        return []
+    return [
+        {k: rule.get(k) for k in _RUN_NOTE_RULE_FIELDS}
+        for rule in rules
+        if isinstance(rule, dict)
+        and rule.get("scope") in _RUN_NOTE_RULE_SCOPES
+        and rule.get("active", True) is not False
+    ]
+
 
 def build_run_note_context(bundle: dict | None) -> dict | None:
     """The coach subset of the bundle that the run-note agent reads.
 
     What is left out is only bulk: the raw prescription rows, unused
-    prescription fields and similar workouts past the third. There is no plan
-    verdict here -- the run report's ``plan`` is the only one (#1353).
+    prescription fields, similar workouts past the third and the coaching
+    rules written for other surfaces (only scopes ``all`` / ``run_note`` are
+    kept). There is no plan verdict here -- the run report's ``plan`` is the
+    only one (#1353).
 
     Args:
         bundle: ``prefetch_activity_context`` output.
@@ -563,6 +596,10 @@ def build_run_note_context(bundle: dict | None) -> dict | None:
         ),
         "gear": bundle.get("gear"),
         "long_run_gate": bundle.get("long_run_gate"),
+        # What the athlete said about the run, and the rules they set for the
+        # coach review (#1522).
+        "athlete_context": bundle.get("athlete_context"),
+        "coaching_rules": _run_note_rules(bundle.get("coaching_rules")),
     }
 
 

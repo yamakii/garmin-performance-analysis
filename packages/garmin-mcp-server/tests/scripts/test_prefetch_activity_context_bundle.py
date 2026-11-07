@@ -26,6 +26,8 @@ BUNDLE_KEYS = {
     "activity_date",
     "training_type",
     "gear",
+    "athlete_context",
+    "coaching_rules",
     "similar_workouts",
     "long_run_gate",
     "prescription",

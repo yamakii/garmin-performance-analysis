@@ -132,6 +132,7 @@ _RUN_REPORT_KEYS = {
     "recurrence",
     "phases",
     "conditions",
+    "athlete_context",
     "vs_previous",
     "next_run_target",
     "next_session",

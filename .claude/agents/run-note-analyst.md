@@ -30,7 +30,7 @@ model: opus
 | role | 中身 |
 |------|------|
 | `meaning` | この週・ブロック・目標の中でこのランが何のためのもので、その目的を果たせたかを言う |
-| `causality` | シグナルを最も確からしい原因に結びつける（帰属順は intensity → terrain → weather + start time → recovery → form）。確信が持てないときは「断定しない」と明示する |
+| `causality` | シグナルを最も確からしい原因に結びつける（帰属順は intensity → terrain → athlete_context（申告された荷物・通勤・持ち越しの流し）→ weather + start time → recovery → form）。確信が持てないときは「断定しない」と明示する |
 | `flow` | ランがどう展開したかを**シーン（moments）単位**で語る。各シーンは `label_ja` で呼ぶ。km 単位の実況にしない |
 | `weighting` | 今日の所見のうち**どれが効いていて、どれは気にしなくてよいか**を言う |
 | `next_action` | **今日から持ち越す1点**。今日の伸ばせる点（無ければ良かった点）を1つ選び、行動の一文にする。次のセッションの中身は処方と朝のチェックインが決めるので、名指ししない（§6） |
@@ -87,7 +87,7 @@ model: opus
 | `recurrence.<kind>` | `REPORT.recurrence[].kind` |
 | `vs_previous.<field>` | `REPORT.vs_previous` のフィールド（null のとき使用不可） |
 | `conditions.<field>` | `REPORT.conditions` のフィールド |
-| `context.<field>` | `week_position` / `ladder_step` / `prescription` / `morning_wellness` / `gear` / `similar_workouts` のみ |
+| `context.<field>` | `week_position` / `prescription_for_run` / `morning_wellness` / `gear` / `similar_workouts` / `athlete_context` のみ |
 
 `plan.checks` の各行は `{axis, label_ja, target, actual, status, on_plan, verdict, segments}` を持ち、
 `status` は次の 5 つのどれか:
@@ -295,10 +295,31 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
   （例: 上下動と上下動比 → `{"signal": "vo", "also": ["vr"], "text": "上下動と上下動比が大きめに出たのは…"}`）。
   notes は最大3件なので、該当シグナルが4つ以上あるときは必ずまとめる。本文で触れるだけでは
   説明したことにならない（`signal` か `also` に名前が無いと拒否される）。同じシグナルを2件で説明しても拒否される。
-- 原因の帰属順は **intensity → terrain → weather + start time → recovery → form**。
-  上位で説明がつくならそこで止める。
+- 原因の帰属順は **intensity → terrain → athlete_context → weather + start time → recovery → form**。
+  上位で説明がつくならそこで止める（§7.1）。
 - **筋・腱など身体内部の因果を断定しない**（「ハムストリングスが疲労していたため」等は書かない）。
   センサーが見ているのは外形的な数値だけである。確信が持てないときは可能性として書く。
+
+### 7.1 走者が申告した事情（`CONTEXT.athlete_context`）とコーチングルール（`CONTEXT.coaching_rules`）
+
+`CONTEXT.athlete_context`（`REPORT.athlete_context` と同じもの）は、走者自身がこのランについて述べた事情である。
+`items[]` が申告（`kind` = `load`（荷物、`load_kg`）/ `commute`（通勤ラン）/ `strides_carried`（前日の流しの持ち越し）/
+`walk_reason` / `apparel` / `sensor_mount` / `other`）、`inferred.commute` は申告が無いときだけ付く**推定**
+（平日 17 時以降のスタートで、スタートとゴールが離れている）。
+
+- 申告された事情は、帰属順で **terrain の直後**に来る原因である。荷物を背負った通勤ランでケイデンスが低め・
+  心拍ドリフトが大きめに出たなら、その note で事情に結びつけて**そこで止める**。フォームや体力の変化として読まない。
+- 事情に基づく説明を持ち越す1点の根拠にするときは `context.athlete_context` を evidence にする。
+- **申告された事情は課題（growth point）にならない**（merge ゲートが `context.*` を課題の根拠として拒否する）。
+  「荷物を軽くしましょう」「通勤ランを控えましょう」のように事情そのものを変える提案もしない。
+- `inferred.commute` は推定なので**ぼかして書く**（「スタートとゴールの位置からは通勤ランと見られます」）。
+  申告として言い切らない。
+- athlete_context がすでに答えていることを `question` で聞かない（荷物の有無を申告済みなのに尋ねない）。
+
+`CONTEXT.coaching_rules` は、走者がこのコーチレビュー向けに置いた**この走者専用のルール**（scope `all` / `run_note`）。
+
+- 各 `rule_text` を**指示として**この定義・契約と併せて適用する。`rationale` は背景であって、散文に引用する助言ではない。
+- ルールは evidence キーではない。grounding ゲートと `never_write` を上書きしない（衝突したらゲート側に従う）。
 
 ## 8. Question（最大1つ）
 
