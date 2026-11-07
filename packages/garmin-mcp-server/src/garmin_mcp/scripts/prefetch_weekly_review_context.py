@@ -30,6 +30,7 @@ Output (JSON to stdout, one line):
       "load_trend": {...}|null,           # + long_run: {weekly_longest_sec,
                                           #   long_run_build_weeks,
                                           #   cutback_due_long_run,
+                                          #   cutback_reason_ja (str|null),
                                           #   cutback_due_event_window,
                                           #   event_window: {last_event,
                                           #     days_since_event, in_window,
@@ -41,7 +42,7 @@ Output (JSON to stdout, one line):
                                           # + volume: {consecutive_build_weeks,
                                           #   last_cutback_weeks_ago} over the
                                           #   same completed weeks (secondary gate)
-      "acwr": {...}|null,
+      "acwr": {...}|null,                 # includes reason_ja (str|null)
       "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
                                           #   _RECOVERY_SERIES_KEEP_DAYS days
                                           #   (aggregates stay 8-week)
@@ -113,10 +114,12 @@ from typing import TYPE_CHECKING, Any
 
 from garmin_mcp.analysis.derivations import (
     LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+    _cutback_reason_ja,
     count_consecutive_build_weeks,
     count_long_run_build_weeks,
     detect_garmin_conflicts,
     format_gear_label,
+    long_run_extension_weeks,
     summarize_adherence,
     weeks_since_last_cutback,
 )
@@ -265,9 +268,11 @@ def _long_run_gate(
 
     Returns:
         ``{"weekly_longest_sec": [int|None, ...], "long_run_build_weeks": int,
-        "cutback_due_long_run": bool, "cutback_due_event_window": bool,
-        "event_window": {...}|None}`` where ``cutback_due_long_run`` is the
-        streak reaching :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` and
+        "cutback_due_long_run": bool, "cutback_reason_ja": str|None,
+        "cutback_due_event_window": bool, "event_window": {...}|None}`` where
+        ``cutback_due_long_run`` is the streak reaching
+        :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` (``cutback_reason_ja`` names the
+        counted weeks then, and is ``None`` otherwise) and
         ``cutback_due_event_window`` is an in-window ``yellow`` / ``red``.
     """
     weeks = [
@@ -288,6 +293,9 @@ def _long_run_gate(
         "weekly_longest_sec": weekly_longest_sec,
         "long_run_build_weeks": build_weeks,
         "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
+        "cutback_reason_ja": _cutback_reason_ja(
+            long_run_extension_weeks(weeks), LONG_RUN_CUTBACK_TRIGGER_WEEKS
+        ),
         "cutback_due_event_window": in_window and verdict in _EVENT_WINDOW_CUTBACK,
         "event_window": _slim_event_window(window),
     }

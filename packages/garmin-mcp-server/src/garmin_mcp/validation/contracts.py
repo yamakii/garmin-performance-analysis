@@ -155,6 +155,12 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "A blanket 'every signal is within range' when some signals are "
             "status insufficient -- those were not judged; say the judged "
             "ones are within range, or name which were judged",
+            "A conclusion drawn from a label alone -- a scene's kind, its "
+            "policy.verdict or a headline flag label -- without reading the "
+            "facts behind it (HR against the ceiling, pace, the run's purpose)",
+            "A derived metric cited as confirmation of the inputs it is derived "
+            "from (stride length confirming cadence and pace, wrist GCT "
+            "confirming cadence)",
         ],
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
@@ -212,6 +218,36 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             ),
         },
         "evaluation_policy": {
+            # One judgement checklist shared with conversation and the coaching
+            # skills (.claude/rules/analysis/analysis-standards.md §3, #1524).
+            "judgement": {
+                "steps": [
+                    "purpose: what the run was for (report.purpose), judged by "
+                    "that purpose's own criteria -- start from what those "
+                    "criteria count as achieved",
+                    "facts: what the report shows, and whether it is comparable "
+                    "(vs_previous.comparability, report.provenance)",
+                    "applicability: before a label, a rule or a recurring "
+                    "pattern becomes advice, check that its precondition holds "
+                    "in this run's facts",
+                    "confidence: how sure the point is -- high, medium or low -- "
+                    "and the one condition that would change it",
+                ],
+                "description": (
+                    "Build every point through the four steps purpose -> facts "
+                    "-> applicability -> confidence. Start the story from what "
+                    "the purpose's criteria count as achieved. A label is an "
+                    "entry point, never the conclusion"
+                ),
+            },
+            "confidence": (
+                "State certainty in the prose instead of a separate field: say a "
+                "point plainly when the facts are direct (high), hedge it when "
+                "it rests on one signal or an inferred purpose / commute "
+                "(medium), and say it is uncertain, naming what would settle "
+                "it, when the cause is not in the report (low). Never present "
+                "a medium or low point as fact"
+            ),
             "grounding": (
                 "Every good point, growth point, timeline item and note carries "
                 "the key of the datum behind it; a claim with no key is not "
@@ -395,6 +431,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         "instructions": [
             "Play the six prose_roles and nothing else -- the figures already "
             "carry the numbers",
+            "Build each point through the four steps of "
+            "evaluation_policy.judgement and hedge it to its confidence",
             "Never write anything listed in never_write",
             "Attach an evidence key from evidence_keys to every good point and "
             "growth point; timeline items carry a moment_id and notes carry a "

@@ -644,7 +644,17 @@ def count_long_run_build_weeks(weekly_longest_sec: list[float | None]) -> int:
         ``[7200, 7500, 7480, 7800]``  -> ``2`` (7480 is a hold, not a reset)
         ``[8000, 3000, 7000]``        -> ``1`` (0.375 ratio ends the walk)
     """
-    count = 0
+    return len(_long_run_extension_indices(weekly_longest_sec))
+
+
+def _long_run_extension_indices(weekly_longest_sec: list[float | None]) -> list[int]:
+    """Indices of the weeks the trailing extension streak counted (ascending).
+
+    The single walk behind :func:`count_long_run_build_weeks` and
+    :func:`long_run_extension_weeks`, so the count and the named weeks can
+    never disagree.
+    """
+    indices: list[int] = []
     for i in range(len(weekly_longest_sec) - 1, 0, -1):
         current = weekly_longest_sec[i]
         prior = weekly_longest_sec[i - 1]
@@ -652,11 +662,79 @@ def count_long_run_build_weeks(weekly_longest_sec: list[float | None]) -> int:
             break
         ratio = current / prior
         if ratio >= _LONG_RUN_EXT_RATIO:
-            count += 1
+            indices.append(i)
         elif ratio < _LONG_RUN_RESET_RATIO:
             break
         # else: a hold -- neither extends nor resets; keep walking back.
-    return count
+    return sorted(indices)
+
+
+def long_run_extension_weeks(weeks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The weekly buckets the trailing long-run streak counted (oldest -> newest).
+
+    ``weeks`` are ``get_load_trend`` buckets (``week_start`` /
+    ``longest_run_sec``); the returned list has
+    :func:`count_long_run_build_weeks` items, so it names exactly the weeks the
+    cutback gate counted.
+    """
+    weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
+    return [weeks[i] for i in _long_run_extension_indices(weekly_longest_sec)]
+
+
+def _week_label(week_start: Any) -> str:
+    """``2026-10-25`` -> ``10/25`` (the bare value when it is not ISO)."""
+    text = str(week_start or "")
+    try:
+        day = datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return text
+    return f"{day.month}/{day.day}"
+
+
+def _week_longest_label(week: dict[str, Any]) -> str:
+    """The week's longest run as ``16 km`` (or ``95 分`` without a distance)."""
+    km = week.get("longest_run_km")
+    if km is not None:
+        return f"{float(km):g} km"
+    sec = week.get("longest_run_sec")
+    if sec is not None:
+        return f"{round(float(sec) / 60)} 分"
+    return ""
+
+
+def _cutback_reason_ja(
+    build_weeks: list[dict[str, Any]], trigger_weeks: int
+) -> str | None:
+    """Why the long-run cutback gate applies now, in one Japanese paragraph.
+
+    Names the counted extension weeks (start date and longest run), why the
+    cycle matters (long-run tendon / bone stress does not show in HR, HRV or
+    ACWR) and the condition that cancels it (a week whose longest run falls
+    below 75% of the week before). ``None`` when fewer than ``trigger_weeks``
+    weeks were counted -- the gate is not due, so there is nothing to explain.
+
+    Args:
+        build_weeks: The counted extension weeks, oldest -> newest (see
+            :func:`long_run_extension_weeks`); each carries ``week_start`` and
+            ``longest_run_sec`` and optionally ``longest_run_km``.
+        trigger_weeks: The streak length at which a cutback is due
+            (:data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS`).
+    """
+    if len(build_weeks) < trigger_weeks:
+        return None
+    items = "、".join(
+        f"{_week_label(w.get('week_start'))} の週 {_week_longest_label(w)}".rstrip()
+        for w in build_weeks
+    )
+    reset_pct = round(_LONG_RUN_RESET_RATIO * 100)
+    return (
+        f"ロングの最長が {len(build_weeks)} 週続けて前週比 +3% 以上伸びています"
+        f"（{items}）。伸長が {trigger_weeks} 週続くとカットバックの番です。"
+        "ロングが積む腱・骨のストレスは心拍・心拍変動・ACWR に現れないため、"
+        "ロング軸の周期で負荷を抜きます。最長ランが前週の "
+        f"{reset_pct}% 未満に下がる週（直近ピーク比 30〜40% の短縮）が入ると、"
+        "この判定は解除されます。"
+    )
 
 
 def compute_fusion_flags(
@@ -718,6 +796,9 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
           :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` (always a ``bool``). The
           narration cannot be expected to know the trigger threshold, so the
           gate is decided here and only transcribed downstream (Issue #1110).
+        - ``cutback_reason_ja``: :func:`_cutback_reason_ja` -- which weeks
+          counted, why the cycle matters and what cancels it; ``None`` when
+          ``cutback_due_long_run`` is false (Issue #1524).
         - ``deload_prescription``: a copy of :data:`DELOAD_PRESCRIPTION` when
           ``cutback_due_long_run`` is true, else ``None`` -- the numbers the
           narration cites for next week's deload.
@@ -762,6 +843,9 @@ def compute_trend_headline_metrics(context: dict[str, Any]) -> dict[str, Any]:
         "build_weeks": build_weeks,
         "long_run_build_weeks": long_run_build_weeks,
         "cutback_due_long_run": cutback_due,
+        "cutback_reason_ja": _cutback_reason_ja(
+            long_run_extension_weeks(weeks), LONG_RUN_CUTBACK_TRIGGER_WEEKS
+        ),
         "deload_prescription": (
             copy.deepcopy(DELOAD_PRESCRIPTION) if cutback_due else None
         ),

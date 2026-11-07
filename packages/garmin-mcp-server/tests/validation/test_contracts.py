@@ -297,6 +297,33 @@ def test_contract_good_points_rules():
 
 
 @pytest.mark.unit
+def test_contract_evaluation_policy_has_judgement_checklist():
+    """One judgement checklist shared with conversation and skills (#1524)."""
+    policy = get_contract("run_note")["evaluation_policy"]
+
+    steps = policy["judgement"]["steps"]
+    assert [step.split(":", 1)[0] for step in steps] == [
+        "purpose",
+        "facts",
+        "applicability",
+        "confidence",
+    ]
+    assert "achieved" in steps[0]
+    for level in ("high", "medium", "low"):
+        assert level in policy["confidence"]
+
+
+@pytest.mark.unit
+def test_contract_never_write_forbids_label_only_conclusion():
+    never_write = get_contract("run_note")["never_write"]
+
+    assert any("label alone" in item and "facts" in item for item in never_write)
+    assert any(
+        "derived metric" in item and "confirmation" in item for item in never_write
+    )
+
+
+@pytest.mark.unit
 def test_contract_mentions_athlete_context_attribution():
     """A stated circumstance is a cause right after terrain (#1522)."""
     contract = get_contract("run_note")
