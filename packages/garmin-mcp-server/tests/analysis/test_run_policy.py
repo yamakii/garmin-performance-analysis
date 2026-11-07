@@ -94,3 +94,55 @@ def test_policy_breakdown_neutral_on_intervals() -> None:
     """Intervals are judged on their reps, not on holding one pace."""
     verdict, _reason = policy_for("breakdown", "intervals", None)
     assert verdict == "neutral"
+
+
+def test_policy_fast_start_neutral_under_ceiling() -> None:
+    """A quick opening that stayed under the ceiling missed nothing (#1513)."""
+    verdict, reason = policy_for(
+        "fast_start", "easy", None, facts={"avg_hr": 131.1}, hr_ceiling=140
+    )
+    assert verdict == "neutral"
+    assert "140 bpm ceiling" in reason
+
+
+def test_policy_fast_start_concern_over_ceiling() -> None:
+    """An opening above the ceiling is still the deviation it was."""
+    verdict, _reason = policy_for(
+        "fast_start", "easy", None, facts={"avg_hr": 142}, hr_ceiling=140
+    )
+    assert verdict == "concern"
+
+
+def test_policy_fast_start_concern_without_ceiling() -> None:
+    """Without a prescribed ceiling the table stands."""
+    verdict, _reason = policy_for(
+        "fast_start", "easy", None, facts={"avg_hr": 131.1}, hr_ceiling=None
+    )
+    assert verdict == "concern"
+    assert policy_for("fast_start", "easy", None)[0] == "concern"
+
+
+def test_policy_fast_start_pace_governed_unchanged() -> None:
+    """A goal-pace rehearsal guards pace, so HR under the ceiling does not help."""
+    verdict, _reason = policy_for(
+        "fast_start",
+        "long_goal_pace",
+        None,
+        facts={"avg_hr": 131.1},
+        hr_ceiling=140,
+    )
+    assert verdict == "concern"
+
+
+def test_apply_policy_uses_hr_ceiling() -> None:
+    """apply_policy reads each scene's facts against the ceiling."""
+    moments = [
+        {"id": "m1", "kind": "fast_start", "facts": {"avg_hr": 131}},
+        {"id": "m2", "kind": "ceiling_touch", "facts": {"avg_hr": 139.4}},
+    ]
+
+    judged = apply_policy(moments, "easy", None, hr_ceiling=140)
+
+    assert judged[0]["policy"]["verdict"] == "neutral"
+    # The ceiling touch is what the run guards; it stays a concern.
+    assert judged[1]["policy"]["verdict"] == "concern"

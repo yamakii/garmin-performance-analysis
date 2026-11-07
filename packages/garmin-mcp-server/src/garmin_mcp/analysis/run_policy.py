@@ -87,7 +87,12 @@ _FALLBACK_PURPOSE = "unknown"
 
 
 def policy_for(
-    kind: str, purpose: str, allowances: Mapping[str, Any] | None
+    kind: str,
+    purpose: str,
+    allowances: Mapping[str, Any] | None,
+    *,
+    facts: Mapping[str, Any] | None = None,
+    hr_ceiling: int | None = None,
 ) -> tuple[Verdict, str]:
     """Judge one scene kind against the run's purpose.
 
@@ -97,6 +102,17 @@ def policy_for(
             judged as ``unknown``.
         allowances: The prescription's ``allowances`` (``{"walk": bool}``), or
             ``None``. ``walk`` overrides the table for ``walk_break``.
+        facts: The moment's ``facts``; only ``avg_hr`` is read, for the
+            fast_start rule below.
+        hr_ceiling: The prescription's HR ceiling in bpm, or ``None``.
+
+    A fast start is detected on pace alone (the opening kilometres against the
+    run median), so it also fires when the athlete merely slowed down later --
+    e.g. after touching the ceiling. On a purpose that guards HR (its
+    ``ceiling_touch`` is a concern) a quick opening that stayed under the
+    ceiling missed nothing the run was for, so it is ``neutral`` (#1513, the
+    same reasoning as the recovery surge in #1322). A pace-governed purpose
+    keeps the table.
 
     Returns:
         ``(verdict, reason)`` where ``reason`` is a short English explanation.
@@ -116,17 +132,47 @@ def policy_for(
         table = POLICY[_FALLBACK_PURPOSE]
         judged_as = _FALLBACK_PURPOSE
     verdict = table.get(kind, "neutral")
+    if (
+        kind == "fast_start"
+        and verdict == "concern"
+        and table.get("ceiling_touch") == "concern"
+        and _held_under_ceiling(facts, hr_ceiling)
+    ):
+        return "neutral", (
+            f"fast_start stayed under the {hr_ceiling} bpm ceiling on a "
+            f"{judged_as} run: HR, not pace, is what it guards"
+        )
     return verdict, f"{kind} is {verdict} on a {judged_as} run"
+
+
+def _held_under_ceiling(
+    facts: Mapping[str, Any] | None, hr_ceiling: int | None
+) -> bool:
+    """True when the scene's average HR is known and at or under the ceiling."""
+    if hr_ceiling is None or not facts:
+        return False
+    avg_hr = facts.get("avg_hr")
+    if isinstance(avg_hr, bool) or not isinstance(avg_hr, int | float):
+        return False
+    return float(avg_hr) <= hr_ceiling
 
 
 def apply_policy(
     moments: Sequence[Mapping[str, Any]],
     purpose: str,
     allowances: Mapping[str, Any] | None,
+    hr_ceiling: int | None = None,
 ) -> list[dict[str, Any]]:
     """Return copies of moments with policy={"verdict", "reason"} added."""
     judged: list[dict[str, Any]] = []
     for moment in moments:
-        verdict, reason = policy_for(str(moment.get("kind") or ""), purpose, allowances)
+        facts = moment.get("facts")
+        verdict, reason = policy_for(
+            str(moment.get("kind") or ""),
+            purpose,
+            allowances,
+            facts=facts if isinstance(facts, Mapping) else None,
+            hr_ceiling=hr_ceiling,
+        )
         judged.append({**moment, "policy": {"verdict": verdict, "reason": reason}})
     return judged

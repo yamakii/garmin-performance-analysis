@@ -255,6 +255,18 @@ def test_contract_strides_not_ceiling_excursion():
 
 
 @pytest.mark.unit
+def test_contract_fast_start_under_ceiling_neutral():
+    """A fast start under the HR ceiling is not a growth point (#1513)."""
+    import json
+
+    text = json.dumps(get_contract("run_note"), ensure_ascii=False)
+
+    assert "fast_start whose HR stayed under the ceiling is neutral" in text
+    assert "never a growth point" in text
+    assert "avg_hr against the ceiling" in text
+
+
+@pytest.mark.unit
 def test_contract_good_points_rules():
     """good_points is 0-3 with gated evidence, and invented causes are banned (#1329)."""
     contract = get_contract("run_note")

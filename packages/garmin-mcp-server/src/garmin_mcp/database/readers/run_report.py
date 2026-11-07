@@ -454,7 +454,10 @@ class RunReportReader(BaseDBReader):
         # The verdicts are added on top of detection; recurrence (below) still
         # reads the purpose-blind scenes, so a habit is found whatever it means.
         judged_moments = apply_policy(
-            told_moments, purpose.id, _allowances(prescription)
+            told_moments,
+            purpose.id,
+            _allowances(prescription),
+            hr_ceiling=hr_ceiling_bpm,
         )
         recurrence = detect_recurrence(
             moments,
