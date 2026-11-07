@@ -939,7 +939,7 @@ def _fetch_evaluation_speeds(
             "AND (p.run_splits IS NULL OR TRIM(p.run_splits) = '' "
             "OR list_contains("
             "list_transform(str_split(p.run_splits, ','), "
-            "x -> TRY_CAST(TRIM(x) AS INTEGER)), s.split_index))"
+            "lambda x: TRY_CAST(TRIM(x) AS INTEGER)), s.split_index))"
         )
 
     rows = conn.execute(
