@@ -66,6 +66,7 @@ function NarrativeBody({ data }: { data: Record<string, unknown> }) {
           return (
             <ul key={key} className="list-disc space-y-1 pl-5 text-ink-muted">
               {(value as string[]).map((item, i) => (
+                // eslint-disable-next-line react-x/no-array-index-key
                 <li key={i}>{item}</li>
               ))}
             </ul>
