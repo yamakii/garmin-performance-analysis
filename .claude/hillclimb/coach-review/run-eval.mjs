@@ -34,7 +34,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cleanEnv, combine, deterministicChecks, judge } from './grade.mjs'
+import { caseEnv, cleanEnv, combine, deterministicChecks, garminToolsReached, judge } from './grade.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '../../..')
@@ -220,7 +220,7 @@ async function runCase(input, ctx) {
     '--allowedTools', ...perms.allow, '--disallowedTools', ...perms.deny]
   if (input.kind === 'run_note') args.push('--agent', 'run-note-analyst', '--add-dir', tempDir)
   if (ctx.effort) args.push('--effort', ctx.effort)
-  const { code, out, err } = await spawnCollect('claude', args, { cwd: REPO, timeoutMs: ctx.timeoutS > 0 ? ctx.timeoutS * 1000 : 2147483647 })
+  const { code, out, err } = await spawnCollect('claude', args, { cwd: REPO, env: caseEnv(), timeoutMs:ctx.timeoutS > 0 ? ctx.timeoutS * 1000 : 2147483647 })
   const events = out.split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
   const result = events.find((e) => e.type === 'result')
   if (!result) {
@@ -244,6 +244,11 @@ async function runCase(input, ctx) {
 
   let output = null, report = null, pyCheck = null, judgeContext
   if (input.kind === 'run_note') {
+    if (!garminToolsReached(exchanges)) {
+      const e = new Error('run_note session never reached garmin-db (MCP server not connected); not graded')
+      e.failure_class = 'harness'
+      throw Object.assign(e, { usage, model })
+    }
     try { output = JSON.parse(readFileSync(join(tempDir, 'run_note.json'), 'utf8')) } catch {}
     // The report the analyst read; the live report only when the call is missing.
     const inputs = exchanges.find((x) => x.name === mcp('get_run_note_inputs') && !x.is_error)

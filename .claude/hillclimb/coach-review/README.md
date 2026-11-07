@@ -63,6 +63,11 @@ specifics enter only through each case's `expect` strings, which stay local.
 
 ## Running
 
+Every case's `claude -p` runs with `MCP_CONNECTION_NONBLOCKING=false`, so the session waits for
+garmin-db to connect. A `--agent run-note-analyst` session has no ToolSearch to wait with; without
+this setting it starts with no garmin-db tools and writes nothing (#1532). A run_note case that
+never calls a `mcp__garmin-db__*` tool is recorded as `failure_class: "harness"` and is not graded.
+
 **This spends Max usage (Claude Code login).** Every case is one headless session plus
 one judge call. Ask the athlete before a full run. The first run after any harness
 change must be started by a human with `--approve-harness`. The harness covers this
