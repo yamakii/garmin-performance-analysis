@@ -7,7 +7,7 @@ Consolidated reference for all analysis rules.
 - **MCP tools only**: `mcp__garmin-db__*` を使う。`duckdb.connect()` や `.duckdb` ファイルへの直接アクセスはしない。SQL を書くのは `export` の `query` 引数だけ
 - **Token optimization**: `statistics_only=True` 優先 (67-80% 削減)。`get_splits_comprehensive()` で12フィールド一括取得
 - **10+ activities**: Export workflow — PLAN(SQL設計) → EXPORT(parquet) → CODE(Python) → RESULT → INTERPRET
-- **数値は当該テーブルから**: VO2max / LTHR / 体重 / HR ゾーン境界などの数値は、`athlete_profile.focus_notes` 等のプロフィール散文ではなく該当ツール（`get_vo2_max_data`、`get_lactate_threshold_data`、`get_body_composition_trend`、`get_heart_rate_zones_detail`）から取る。プロフィール記述は執筆時点のスナップショットで陳腐化する（"now 44" と書かれた VO2max の実値は 45.8 だった）
+- **数値は当該テーブルから**: VO2max / LTHR / 体重 / HR ゾーン境界などの数値は、`athlete_profile.focus_notes` 等のプロフィール散文ではなく該当ツール（`get_vo2_max_data`、`get_lactate_threshold_data`、`get_body_composition_trend`、`get_heart_rate_zones_detail`）から取る。プロフィール記述は執筆時点のスナップショットで陳腐化する
 
 ## 2. Agent Rules
 
@@ -25,11 +25,18 @@ Consolidated reference for all analysis rules.
 - `run_note` が登録された → 完了
 - `run_note` が拒否された → merge の grounding ゲートが返した理由をそのままユーザーに報告する。自動リトライはしない
 
-## 3. Evaluation Principles
+## 3. Coaching judgement（会話・スキル・run_note 共通）
 
-**単一のランに成績はつけない**（星・点数・総合評価のいずれも出さない）。1本のランは REPORT の2つの問い（処方どおりだったか / いつもの自分と比べてどうか）で読む。
+**単一のランに成績はつけない**（星・点数・総合評価のいずれも出さない）。1本のランは REPORT の2つの問い（処方どおりだったか / いつもの自分と比べてどうか）で読む。ラン・プラン・相談への判断は次の4段で組み立てる:
 
-- **ラベルは入口であって結論ではない**: シーンの `kind` / `policy.verdict` / `headline.flag_labels` を助言にする前に、その `facts`（心拍・ペース・上限）と目的を読み、本当に目的から外れたかを自分で判断する（#1513）
+1. **目的**: このラン・プランは何のためか。目的自身の基準で読み、その基準で達成できたことから始める
+2. **事実**: データが示すことと、それが比較できるか（同じセンサー・同じ荷物・同じ基準。`comparability` / `provenance`）。派生値をその入力の裏付けにしない
+3. **適用条件**: ラベル（シーンの `kind` / `policy.verdict` / `flag_labels`）・ルール・過去の型（`retrospectives` / `focus_notes` の散文）を使う前に、その前提が今も成り立つかを `facts` や `export` の集計で確かめる。ラベルは入口であって結論ではなく、散文の言い換えは確認ではない
+4. **確信度**: 高・中・低と、結論を変えうる条件を1つ添える
+
+- **反論されたら**まず引用したデータを確かめ直し、データが変える部分だけを変える。丸ごと翻さず、根拠なく固執もしない
+- **保守的なゲート**（カットバック・ACWR・症状・保護期間）は残すが、発動するときはこの走者に今それが当てはまる理由（ゲートの `reason_ja`）を添える
+- **走者専用のルール**は `get_coaching_rules(scopes=[...])` で読む。リポジトリ（rules・skills・コード・Issue・PR）には書かない
 
 ### 改善提案
 
@@ -41,11 +48,10 @@ Consolidated reference for all analysis rules.
 
 ## 4. Training Plans
 
-- **Volume**: 初週 = 直近 median ±10%。週間増加 15% warning / 25% reject（自動検証）
 - **gap_detected=true**: recent_runs ベースライン使用
 - **Schedule**: 曜日検証必須。連続ラン制限（3-4回/週→3日連続禁止、5回→4日連続禁止、6回→週1休養+高強度連続禁止）
 - **HR zone target**: Garmin native zones 内に収まること
-- **Intent**: "プラン生成" = `/plan-training` 実行。コード分析ではない
+- **Intent**: 「プランを作って」= `/weekly-review`。コード分析ではない
 
 ## 5. Data Safety
 
@@ -62,7 +68,6 @@ Consolidated reference for all analysis rules.
 - **読む側の版チェック**: 処方行の `review_id` とレビューの `review_id` が一致しないときは**処方が正**。そのレビューの日別の言及は使わない
 - **Garmin カレンダー**: `[MCP]` 項目はこちらの処方の写し（正本は処方行）、`fbtAdaptiveWorkout` は参考情報にとどめる
 
-## 7. 過去の経緯を今の判断の根拠にするとき
+## 7. 過去の型を確かめるときの比較
 
-- **プロフィールの散文は仮説**: `retrospectives` / `focus_notes` にある過去の型（故障パターン等）を今の判断の理由に使う前に、その型の成立条件が今も当てはまるかを `export` の集計で確かめてから答える。散文の言い換えは確認ではない（2026-10-19: 去年の故障パターンを未確認のまま繰り返し持ち出した。実際は去年7-9月のロングは0本で土台が別物だった）
-- **比較は同じ基準で**: 同じ暦期間か同じイベント前の同じ長さで並べ、基準を明示し、予定値は実績と分ける。週量平均だけでなく型が依存する条件（ロング本数・最長・直前の途切れ・レース後の伸び）を並べる
+- §3 の適用条件を確かめる比較は同じ基準で: 同じ暦期間か同じイベント前の同じ長さで並べ、基準を明示し、予定値は実績と分ける。週量平均だけでなく型が依存する条件（ロング本数・最長・直前の途切れ・レース後の伸び）を並べる

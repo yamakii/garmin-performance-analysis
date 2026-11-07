@@ -35,20 +35,37 @@ _OPTIMAL_MAX = 1.3
 _CAUTION_MAX = 1.5
 
 
-def _classify(acwr: float | None) -> str:
-    """Map an ACWR value to its injury-risk status label.
+_SAFE_BAND_JA = f"{_UNDERTRAINING_MAX}〜{_OPTIMAL_MAX}"
 
-    ``None`` (no chronic load) -> ``insufficient_data``.
+
+def _classify(acwr: float | None) -> tuple[str, str | None]:
+    """Map an ACWR value to its injury-risk status and the reason it applies.
+
+    The reason (Issue #1524) lets a conservative gate say why it applies now:
+    the ratio, the safe band and what would move it back. ``None`` for
+    ``optimal`` (no gate) and ``insufficient_data`` (no chronic load to judge).
+
+    Returns:
+        ``(status, reason_ja)`` where status is undertraining / optimal /
+        caution / high_risk / insufficient_data.
     """
     if acwr is None:
-        return "insufficient_data"
+        return "insufficient_data", None
+    if _UNDERTRAINING_MAX <= acwr <= _OPTIMAL_MAX:
+        return "optimal", None
+    ratio = f"{acwr:.2f}"
     if acwr < _UNDERTRAINING_MAX:
-        return "undertraining"
-    if acwr <= _OPTIMAL_MAX:
-        return "optimal"
-    if acwr <= _CAUTION_MAX:
-        return "caution"
-    return "high_risk"
+        return "undertraining", (
+            f"直近7日の距離が過去28日の週平均の {ratio} 倍で、安全域 "
+            f"{_SAFE_BAND_JA} を下回っています。週平均に近い距離に戻すと比が "
+            f"{_UNDERTRAINING_MAX} 以上に戻ります。"
+        )
+    status = "caution" if acwr <= _CAUTION_MAX else "high_risk"
+    return status, (
+        f"直近7日の距離が過去28日の週平均の {ratio} 倍で、安全域 "
+        f"{_SAFE_BAND_JA} を超えています。急な距離の増加は故障リスクを上げるため、"
+        f"次の7日の距離を抑えて比が {_OPTIMAL_MAX} 以下に戻れば解除されます。"
+    )
 
 
 def _acwr_from_loads(acute_7d: float, chronic_28d_total: float) -> float | None:
@@ -87,6 +104,8 @@ class TrainingLoadReader(BaseDBReader):
             - ``acwr``: float | None (None when chronic weekly == 0)
             - ``status``: undertraining | optimal | caution | high_risk |
               insufficient_data
+            - ``reason_ja``: str | None -- the ratio, the safe band and what
+              would move it back; None for optimal / insufficient_data
             - ``load_metric``: ``"distance_km"``
         """
         resolved_end = self._resolve_end_date(end_date)
@@ -97,6 +116,7 @@ class TrainingLoadReader(BaseDBReader):
                 "chronic_load_28d_weekly": 0.0,
                 "acwr": None,
                 "status": "insufficient_data",
+                "reason_ja": None,
                 "load_metric": LOAD_METRIC,
             }
 
@@ -109,13 +129,15 @@ class TrainingLoadReader(BaseDBReader):
         acute_total = sum(km for day, km in daily.items() if day >= acute_start)
 
         acwr = _acwr_from_loads(acute_total, chronic_total)
+        status, reason_ja = _classify(acwr)
 
         return {
             "end_date": resolved_end.strftime("%Y-%m-%d"),
             "acute_load_7d": round(acute_total, 2),
             "chronic_load_28d_weekly": round(chronic_total / 4.0, 2),
             "acwr": round(acwr, 2) if acwr is not None else None,
-            "status": _classify(acwr),
+            "status": status,
+            "reason_ja": reason_ja,
             "load_metric": LOAD_METRIC,
         }
 
@@ -200,7 +222,9 @@ class TrainingLoadReader(BaseDBReader):
                     "week_start": bucket_start.strftime("%Y-%m-%d"),
                     "load_km": round(acute_total, 2),
                     "acwr": round(acwr, 2) if acwr is not None else None,
-                    "status": _classify(acwr),
+                    # Per-week buckets carry the status only; the reason is
+                    # the current snapshot's (get_acwr) to quote.
+                    "status": _classify(acwr)[0],
                     "longest_run_sec": max(bucket_longest) if bucket_longest else None,
                 }
             )

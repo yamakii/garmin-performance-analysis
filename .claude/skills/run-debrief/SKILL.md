@@ -87,6 +87,7 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 
 - 冒頭で結論を 1〜2 文（主因は何か、ユーザーの体感と一致するか）
 - 根拠は小さな表（区間 / 標高 / ペース / HR / GCT など、論点に必要な列だけ）
-- ユーザーが先に仮説・感触を述べている場合、まず **質問の意図を捉えて冒頭で一文にして受け止め**、その仮説に寄せずデータで確認する。一致/不一致のラベルや否定の宣言は付けず、データで見えたことを事実として述べ、食い違う点は根拠付きの補足として加える（`.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions）
+- 判断は `.claude/rules/analysis/analysis-standards.md` §3 の4段（目的・事実・適用条件・確信度）で組み立てる。目的の基準で達成できたことから始め、結論には確信度（高・中・低）と結論を変えうる条件を1つ添える。`moments[].kind` / `policy.verdict` / `headline.flag_labels` は facts を読んでから助言にする
+- ユーザーが先に仮説・感触を述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う。反論されたら引用したデータを確かめ直し、データが変える部分だけを変える
 - 次回に向けた提案は 1 つ。目的を達しているランに「失敗」「成功条件」の言葉を使わない（維持目標・改善余地として述べる）
 - 質問が「保存分析をやり直したい」に及ぶ場合は `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは、走者が述べた事情の `save_activity_context` だけ）
