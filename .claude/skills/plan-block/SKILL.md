@@ -87,7 +87,92 @@ mcp__garmin-db__get_training_blocks()
 
 `target_km` と `target_minutes` は**排他**。暑熱期など時間で管理する週は `target_minutes` を使い `target_km` を `null` にする。
 
+### Step 2.5: アンカーなしの対案（大きな計画判断のときだけ）
+
+登録済みの計画から考え始めると、選手が考え直しを求めていても小さな手直しで終わりやすい（既存案がアンカーになる）。
+大きな判断では、既存の計画を見ない別のエージェントにゼロから計画を組ませ、Step 3 で 2 つの案を並べて選手に選んでもらう。
+
+**起動条件**（どれか 1 つに当たれば実行する）:
+
+- 変更が**ブロック境界**に触れる（ブロックの追加・分割・削除、`start_date` / `end_date` の移動、`phase` の付け替え）
+- **ロング階段**の組み方を変える（ピーク距離・伸ばす段数・据え置き/カットバックの置き方）
+- **質練の構成**を変える（`quality_sessions_per_week` / `quality_types`）
+- 選手が**見直し・考え直し**を求めた（「見直したい」「ゼロから考えたい」「そもそもこの計画でいいか」など）
+
+どれにも当たらない小修正（メモ・タイトルの修正、1 段だけの HR 上限の修正など）では実行しない。
+
+**手順**:
+
+1. `mcp__garmin-db__get_athlete_profile()` から **`goals` の行だけ**を取り出す（`{race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}`。`notes` はその目標自身の成功条件として残す）。`current_focus` / `focus_notes` / `retrospectives` は転記しない。
+2. 下の**ブリーフ**の `{...}` を埋めて `Agent(subagent_type="general-purpose")` を 1 回呼ぶ（新しいエージェント定義は作らない）。ブリーフには **Step 1 の現行計画・選手が Step 2 で出した編集案・メインセッションの見立てを一切入れない**。
+3. 返ってきた JSON を控え、Step 3 で並べて示す。`tools_called` に「読まないもの」が混ざっていたら、その対案は使わず理由を添えて選手に伝える（アンカーが外れていないため）。
+
+**ブリーフ（テンプレート）**:
+
+````markdown
+あなたはランニングコーチです。下の目標に向けた中期計画（フェーズ・ロング階段・週量）を、既存の計画を一切見ずにゼロから組んでください。
+
+## 目標（athlete_goals の行をそのまま転記）
+{goal_rows_json}
+
+## 基準
+- today: {YYYY-MM-DD}
+- 計画期間: {plan_start} 〜 {最も遠い目標の race_date}
+- 週の開始曜日: {week_start_day}（0=月曜）
+
+## 使ってよいデータ（これ以外のツール・テーブルは読まない）
+- mcp__garmin-db__get_load_trend(lookback_weeks=16)
+- mcp__garmin-db__get_acwr()
+- mcp__garmin-db__get_post_event_window()
+- mcp__garmin-db__get_recovery_trend(weeks=8)
+- mcp__garmin-db__get_long_run_progression_gate(activity_id=<下の export で得た直近ロングの activity_id>)
+- mcp__garmin-db__export(format="csv", query=<次の SQL のみ>)。返った handle の CSV は Read で読む
+  SELECT activity_id, activity_date, total_distance_km, total_time_seconds, avg_heart_rate
+  FROM activities
+  WHERE activity_date >= '{today の 16 週前}' AND total_distance_km >= 15
+  ORDER BY activity_date
+
+## 読まないもの
+- get_training_blocks / prefetch_weekly_review_context / get_weekly_review / get_weekly_prescriptions / get_garmin_scheduled_workouts
+- get_athlete_profile（目標は上に転記済み。focus_notes / retrospectives / current_focus は読まない）
+- 上の SQL 以外の export（training_blocks / weekly_reviews / athlete_profile 系のテーブルを含む）
+
+## 進め方
+1. まず **requirements** を立てる: レース当日までに何ができている必要があるか（最長ロング、週量、レース前に必要なロングの本数、テーパーの長さなど）を、目標と一般的なトレーニング原則から根拠付きで列挙する。
+2. 測定データで**現在地**を確かめる: 直近の週量と最長ロング、ACWR、レース後の保護期間、回復トレンド、直近ロングの伸長ゲート。
+3. requirements から**逆算**して phases / ladder / weekly_volume を組む（現在地から requirements まで、無理のない伸ばし方とカットバックで届くか）。届かないときは、届かないことをそのまま requirements の `feasible: false` に書く。
+4. 選んだ一つひとつに理由を付ける。
+
+## 出力（JSON を 1 つだけ返す）
+{
+  "requirements": [{"id": "R1", "statement": "...", "basis": "...", "feasible": true}],
+  "phases": [{"phase": "base|build|peak|taper|race|recovery|cutback", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "purpose": "...", "quality_sessions_per_week": 0, "quality_types": []}],
+  "ladder": [{"week_start": "YYYY-MM-DD", "target_km": 0.0, "target_minutes": null, "kind": "build|hold|cutback|race|taper"}],
+  "weekly_volume": [{"week_start": "YYYY-MM-DD", "target_km": 0.0}],
+  "rationale_per_choice": [{"choice": "...", "reason": "...", "requirement_ids": ["R1"]}],
+  "tools_called": ["get_load_trend", "..."]
+}
+`ladder` は週 1 エントリで、`target_km` と `target_minutes` はどちらか一方だけを持つ。
+````
+
 ### Step 3: 全件を提示して承認を得る
+
+**Step 2.5 を実行したとき**は、全件の提示より先に 2 つの案を並べ、**違いだけ**をその理由と一緒に示して選手に選んでもらう。同じ項目は表に入れず「その他は同じ」と一行で書く。
+
+```markdown
+## 2 つの案の違い
+
+| 項目 | 案 A（登録計画＋今回の編集） | 案 B（アンカーなしの対案） | B の理由 |
+|------|------------------------------|----------------------------|----------|
+| ロングのピーク | 28km（9/27 週） | 30km（10/4 週） | R2: レース前に 30km を 1 本（rationale_per_choice より） |
+| テーパー | 2 週 | 3 週 | R4: … |
+
+その他は同じ。どちらで進めますか？（A / B / 一部を組み合わせる）
+```
+
+- 「B の理由」は `rationale_per_choice` の `reason` と `requirement_ids` から引く。A 側の理由が会話や登録計画の `purpose` / `notes` にあればそれも添える。どちらかを推して決めない（選ぶのは選手）
+- `feasible: false` の requirement があれば、表の下に一文で示す（どちらの案でも届かない前提があるため）
+- 選ばれた案（組み合わせを含む）を `save_training_blocks` の形（`phase` の値、週 1 エントリのラダー、`target_km` / `target_minutes` の排他）に直してから、下の全件提示に進む
 
 組み立てた**全ブロック**（変更していないブロックも含む）を Step 1 と同じ表形式で提示し、変更点を箇条書きで添える。
 

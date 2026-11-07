@@ -126,6 +126,24 @@ mcp__garmin-db__get_garmin_scheduled_workouts(start_date=week_start_date, end_da
 
 対象週 W に「本来あるべきトレーニングフェーズ」を目標から逆算し、登録ブロック（Step 3）とのギャップを言語化します。
 
+**0. アンカーなしの対案（節目の週だけ）**
+
+このレビューは登録ブロックを骨格に組むので、節目の判断でも既存計画の小さな手直しで終わりやすい。次のどれかに当たる週だけ、既存計画を見ない別のエージェントに W からレースまでの計画をゼロから組ませ、2 つの案を並べて選手に選んでもらいます。
+
+- **ブロック / フェーズの境界**: `training_block.weeks_to_block_end = 0`（W がブロック最終週）、または `training_block.block.start_date` が W の中にある（W が新しいブロックの初週）
+- **レースの直後**: `load_trend.long_run.event_window.last_event.date` が W-1（`prev_start`〜`prev_end`）の中にある
+- **レース戦略の判断**: `goals_with_weeks_to_race[]` に `race_date` が W の中のレースがある、または選手がレースのペース配分・戦略の相談をしている
+
+**どれにも当たらない通常週では実行しない**（毎週回すと比較が形骸化し、往復も増える）。
+
+実行するときは `/plan-block` の **Step 2.5** にある**ブリーフ（テンプレート）と手順をそのまま使う**（`.claude/skills/plan-block/SKILL.md` を Read して写す。ここに再掲しない）。この skill 固有の差分は次のとおり:
+
+- 目標の行は `goals_with_weeks_to_race[]` から転記する（`weeks_to_race` は残してよい）。**バンドルの他のキー（`training_block` / `past_review` / `athlete_profile` / `prescriptions_*` / `scheduled_workouts`）はブリーフに入れない**
+- 計画期間は W の開始日〜最も遠い目標の `race_date`
+- レース戦略の判断で起動したときは、ブリーフの「進め方」1. に「レース当日のペース配分（前半・後半の目安と根拠）」を requirements として加える
+- 対案の結果は Step 6 の「目標逆算フェーズ vs 登録ブロックのギャップ」の直後に、`/plan-block` Step 3 と同じ「2 つの案の違い」表で示す（案 A = 登録ブロックに沿った W〜レースの計画）。違いだけを理由と一緒に並べ、選ぶのは選手
+- **選手が選ぶまで W の処方は確定しない**（Step 7 の保存に進まない）。案 B（またはその一部）が選ばれてブロックやロング階段が変わる場合は、W の処方は選ばれた案の W 週の値で組み、ブロックの登録は `/plan-block` で行うよう一文で促す（このスキルはブロックを保存しない）
+
 **1. 各レースの残り週数**
 
 各レース（`priority` A=本命 / B=中間）の残り週数は `goals_with_weeks_to_race[].weeks_to_race` をそのまま使う。null（開催日未確定）はレビュー文で「**残り週数は概算/未確定**」と明示し、0 扱いにしない（`notes` に開催時期があれば「概算 約 N 週（未確定）」と注記する）。
