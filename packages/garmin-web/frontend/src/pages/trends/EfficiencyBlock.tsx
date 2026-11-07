@@ -62,7 +62,7 @@ function ZoneBars({ point }: { point: EfficiencyTrendPoint }) {
       {shares.map((share, index) => (
         <li
           // The five zones are a fixed, ordered set: the index is the identity.
-          // eslint-disable-next-line react/no-array-index-key
+          // eslint-disable-next-line react-x/no-array-index-key
           key={index}
           className="grid grid-cols-[28px_1fr_40px] items-center gap-2"
         >

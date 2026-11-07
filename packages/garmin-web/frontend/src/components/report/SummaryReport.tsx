@@ -67,11 +67,11 @@ function PointList({
   return (
     <ul className="flex flex-col gap-2">
       {strengths.map((item, index) => (
-        // eslint-disable-next-line react/no-array-index-key
+        // eslint-disable-next-line react-x/no-array-index-key
         <Point key={`s${index}`} text={String(item)} kind="strength" />
       ))}
       {improvements.map((item, index) => (
-        // eslint-disable-next-line react/no-array-index-key
+        // eslint-disable-next-line react-x/no-array-index-key
         <Point key={`i${index}`} text={String(item)} kind="issue" />
       ))}
     </ul>

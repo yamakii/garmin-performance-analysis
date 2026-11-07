@@ -49,7 +49,7 @@ export function renderValue(value: unknown): ReactNode {
     return (
       <ul className="list-disc space-y-0.5 pl-5">
         {value.map((item, index) => (
-          // eslint-disable-next-line react/no-array-index-key
+          // eslint-disable-next-line react-x/no-array-index-key
           <li key={index}>{renderValue(item)}</li>
         ))}
       </ul>

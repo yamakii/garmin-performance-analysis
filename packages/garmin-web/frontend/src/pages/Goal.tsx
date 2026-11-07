@@ -317,7 +317,7 @@ function FocusRows({ sections }: { sections: FocusSection[] }): JSX.Element {
       {preamble.map((section, index) => (
         <p
           // Sections are positional and have no stable id.
-          // eslint-disable-next-line react/no-array-index-key
+          // eslint-disable-next-line react-x/no-array-index-key
           key={index}
           className="text-[15px] leading-[1.7] whitespace-pre-line text-ink-soft"
         >
@@ -327,14 +327,14 @@ function FocusRows({ sections }: { sections: FocusSection[] }): JSX.Element {
       {rules.length > 0 && (
         <div className="border-t border-hairline">
           {shown.map((section, index) => (
-            // eslint-disable-next-line react/no-array-index-key
+            // eslint-disable-next-line react-x/no-array-index-key
             <FocusRow key={index} section={section} />
           ))}
           {folded.length > 0 && (
             <Disclosure title={`ルール(${folded.length}件) 展開`}>
               <div className="border-t border-hairline">
                 {folded.map((section, index) => (
-                  // eslint-disable-next-line react/no-array-index-key
+                  // eslint-disable-next-line react-x/no-array-index-key
                   <FocusRow key={index} section={section} />
                 ))}
               </div>
