@@ -145,6 +145,13 @@ class CompareSimilarWorkoutsParams(BaseModel):
     limit: int | None = Field(
         default=None, description="Maximum number of results (default 10)"
     )
+    same_sensor_only: bool = Field(
+        default=False,
+        description=(
+            "Drop candidates measured by another dynamics or HR sensor than "
+            "the target (pod vs wrist, chest strap vs wrist)"
+        ),
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -265,6 +272,7 @@ def _compare_similar_workouts(
         activity_type_filter=p.activity_type_filter,
         date_range=date_range,
         limit=p.limit if p.limit is not None else 10,
+        same_sensor_only=p.same_sensor_only,
     )
 
 
@@ -374,7 +382,10 @@ ANALYSIS_TOOLS: list[ToolDef] = [
             "target_activity and similar_activities[] with training_type, "
             "temperature and its diff, similarity_score (0-100: pace 45%, "
             "distance 35%, training type 20%), pace_diff (s/km) and hr_diff (bpm) "
-            "as candidate minus target, and a Japanese interpretation."
+            "as candidate minus target, a Japanese interpretation, and "
+            "comparability {excluded_metrics, reasons} naming the metrics "
+            "that may not be compared because the dynamics sensor, the HR "
+            "sensor or the stated load differs."
         ),
         params=CompareSimilarWorkoutsParams,
         handler=_compare_similar_workouts,

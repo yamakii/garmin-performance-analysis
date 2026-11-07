@@ -549,3 +549,58 @@ class TestBuildRunNoteContext:
         assert out is not None
         assert out["coaching_rules"] == []
         assert out["athlete_context"] is None
+
+
+@pytest.mark.unit
+def test_previous_same_type_reports_incomparable_reason(tmp_path: Path) -> None:
+    """A loaded previous run: HR and dynamics deltas dropped, and why (#1523)."""
+    from garmin_mcp.scripts.prefetch_activity_context import (
+        _collect_prescription_layer,
+    )
+
+    previous = {
+        "activity_id": 12000,
+        "activity_date": "2026-02-09",
+        "pace_s_per_km": 340.0,
+        "avg_hr": 151,
+        "gct_ms": 266.0,
+        "cadence_spm": 170.0,
+        "decoupling_pct": None,
+    }
+    profiles = {
+        12345: {"dynamics_source": "wrist", "hr_source": "wrist", "load_kg": None},
+        12000: {"dynamics_source": "wrist", "hr_source": "wrist", "load_kg": 3.0},
+    }
+    with (
+        patch(
+            "garmin_mcp.scripts.prefetch_activity_context._fetch_previous_same_type",
+            return_value=previous,
+        ),
+        patch(
+            "garmin_mcp.scripts.prefetch_activity_context."
+            "_fetch_comparability_profiles",
+            return_value=profiles,
+        ),
+    ):
+        layer = _collect_prescription_layer(
+            str(tmp_path / "absent.duckdb"),
+            12345,
+            "2026-02-16",
+            "aerobic_base",
+            {
+                "activity_id": 12345,
+                "activity_date": "2026-02-16",
+                "pace_s_per_km": 330.0,
+                "avg_hr": 148,
+                "gct_ms": 260.0,
+                "cadence_spm": 172.0,
+                "decoupling_pct": None,
+            },
+        )
+
+    assert layer["previous_same_type"]["comparability"]["reasons"] == ["load_differs"]
+    vs_previous = layer["vs_previous"]
+    assert vs_previous["comparability"]["reasons"] == ["load_differs"]
+    for dropped in ("avg_hr", "gct_ms", "pace_at_hr"):
+        assert dropped not in vs_previous, dropped
+    assert vs_previous["pace_s_per_km"]["delta"] == -10.0

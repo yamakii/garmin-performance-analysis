@@ -267,6 +267,7 @@ class TestCompareSimilarWorkouts:
             activity_type_filter=None,
             date_range=None,
             limit=10,
+            same_sensor_only=False,
         )
 
     @pytest.mark.asyncio
@@ -321,6 +322,7 @@ class TestCompareSimilarWorkouts:
                 "activity_type_filter": "running",
                 "date_range": ["2025-10-01", "2025-10-31"],
                 "limit": 5,
+                "same_sensor_only": True,
             },
         )
 
@@ -331,6 +333,7 @@ class TestCompareSimilarWorkouts:
             activity_type_filter="running",
             date_range=("2025-10-01", "2025-10-31"),
             limit=5,
+            same_sensor_only=True,
         )
 
     @pytest.mark.asyncio

@@ -121,6 +121,7 @@ model: opus
   その段が自分の帯から外れた事実に基づいて書く（§4.2）。帯に収まった段を「もっと速く」「もっと上げて」と課題にしない。
 - `recurrence` / `vs_previous` / `conditions` / `context` は課題の**背景**であって課題そのものではない。
   growth point の `evidence` には使えない（文中で「前回も同じ」「暑さの影響もある」と触れるのはよい）。
+- `comparability.excluded_metrics` に挙がった指標（センサーや荷物が違う比較）は引用しない。`REPORT.provenance` が `device_derived` / `computed` の指標（ストライド長、ポッド無しの GCT・上下動など）を、その元になった入力の裏付けとして書かない（契約 `evaluation_policy.comparability`）。
 - 課題として成立するものが1つも無いランは、**1つの「維持目標」**（次も同じ水準を保つ、という形）を書くか、
   `growth_points` を**空配列のまま**にする。無理に課題を作らない。
 
