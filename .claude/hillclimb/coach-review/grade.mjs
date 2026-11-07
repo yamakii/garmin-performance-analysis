@@ -247,6 +247,19 @@ export function cleanEnv() {
   return env
 }
 
+// The env for a case's `claude -p`. MCP servers connect non-blocking by
+// default, and a `--agent run-note-analyst` session has no ToolSearch to wait
+// with, so it started before garmin-db connected and wrote nothing (#1532).
+export function caseEnv() {
+  return { ...cleanEnv(), MCP_CONNECTION_NONBLOCKING: 'false' }
+}
+
+// Whether a session reached garmin-db at all. A run_note case that never did
+// is a harness failure (the server never connected), not a model failure.
+export function garminToolsReached(exchanges) {
+  return (exchanges ?? []).some((x) => typeof x?.name === 'string' && x.name.startsWith('mcp__garmin-db__'))
+}
+
 export const JUDGE_MODEL = 'claude-fable-5-1'
 
 // -> {must: [bool], must_not: [bool], notes, reasons, judge_model, judge_usage, judge_cost_usd}

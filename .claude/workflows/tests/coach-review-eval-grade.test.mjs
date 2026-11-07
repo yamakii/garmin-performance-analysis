@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { combine, deterministicChecks, judge } from '../../hillclimb/coach-review/grade.mjs'
+import { caseEnv, combine, deterministicChecks, garminToolsReached, judge } from '../../hillclimb/coach-review/grade.mjs'
 import { caseProblem, loadCases, loadRunNotePrompt, toolPermissions } from '../../hillclimb/coach-review/run-eval.mjs'
 
 const REPORT = {
@@ -172,4 +172,25 @@ test('test_conversation_probe_is_read_only', () => {
   assert.ok(rn.allow.includes('Write(//tmp/x/**)'))
   assert.ok(rn.deny.includes('mcp__garmin-db__export'))
   assert.ok(rn.deny.includes('Bash'))
+})
+
+test('test_garmin_tools_reached_true', () => {
+  assert.equal(garminToolsReached([{ name: 'Write' }, { name: 'mcp__garmin-db__get_run_note_inputs' }]), true)
+})
+
+test('test_garmin_tools_reached_false_when_only_write', () => {
+  assert.equal(garminToolsReached([{ name: 'Write' }]), false)
+  assert.equal(garminToolsReached([]), false)
+  assert.equal(garminToolsReached(undefined), false)
+})
+
+test('test_case_env_blocks_on_mcp', () => {
+  process.env.CLAUDE_CODE_TEST_MARKER = '1'
+  try {
+    const env = caseEnv()
+    assert.equal(env.MCP_CONNECTION_NONBLOCKING, 'false')
+    assert.equal(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_')), false)
+  } finally {
+    delete process.env.CLAUDE_CODE_TEST_MARKER
+  }
 })
