@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **77 tools** (75 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **82 tools** (80 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (12)
+- [Athlete](#athlete) (17)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -617,6 +617,68 @@ Record the athlete's own word on one day's food log (MyFitnessPal via Garmin): s
 | `date` | string | **required** | Day the food log is about (YYYY-MM-DD) |
 | `status` | enum: `complete`, `incomplete` | **required** | complete: the log holds everything eaten that day (lifts a suspect_low flag); incomplete: food is missing (the day is excluded from the energy balance) |
 | `note` | string | optional | Free-form note in the athlete's own words |
+
+### `save_activity_context`
+
+CLI: `garmin-db athlete save-activity-context`
+
+Record one fact the athlete stated about an activity: a commute run, the load carried (load_kg), strides carried over from the previous day, why they walked, apparel or sensor mounting. Write it silently when the athlete states the fact in conversation; never ask them to keep a log. Rows are append-only and stay in the local DB only; a later save for the same (activity_id, kind) supersedes the earlier one on read. Returns {status, context_id, activity_id, kind}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_id` | integer | **required** | The activity the fact is about |
+| `kind` | enum: `commute`, `load`, `strides_carried`, `walk_reason`, `apparel`, `sensor_mount`, `other` | **required** | What the fact is about: commute, load (carried weight), strides_carried (strides done the day before), walk_reason, apparel, sensor_mount, other |
+| `value` | string | optional | Short free value, e.g. 'running backpack' |
+| `load_kg` | number | optional | Carried load in kg (only for kind='load', 0-30) |
+| `source` | enum: `athlete_stated`, `inferred` | optional (default `athlete_stated`) | athlete_stated: the athlete said it; inferred: read from the conversation without being said outright |
+| `note` | string | optional | Free-form note in the athlete's own words |
+| `user_id` | string | optional (default `default`) | Profile owner identifier |
+
+### `get_activity_context`
+
+CLI: `garmin-db athlete get-activity-context`
+
+Get the athlete-stated facts about activities (commute, load, strides_carried, walk_reason, apparel, sensor_mount, other), the newest row per (activity_id, kind), filtered by activity_ids and/or an activity_date range. Each row carries activity_date, kind, value, load_kg, source (athlete_stated / inferred) and note. Returns an empty list when nothing was recorded.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `activity_ids` | array[integer] | optional | Activities to read; omit for every activity |
+| `start_date` | string | optional | Range start on activity_date, inclusive (YYYY-MM-DD) |
+| `end_date` | string | optional | Range end on activity_date, inclusive (YYYY-MM-DD) |
+
+### `save_coaching_rule`
+
+CLI: `garmin-db athlete save-coaching-rule`
+
+Store a coaching rule that applies only to this athlete (a preference, a correction, an incident-derived read) in the local DB. coaching_rules holds athlete-specific rules that must not be written into the repository (rules, agents, skills or code). Write it silently when the athlete states or corrects something; never ask them to keep a log. scope picks where it applies (all / conversation / run_note / checkin / debrief / planning); rule_text is the instruction (1-400 chars), rationale the background (never shown as advice). Returns {status, rule_id, scope}.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scope` | enum: `all`, `conversation`, `run_note`, `checkin`, `debrief`, `planning` | **required** | Where the rule applies: all, conversation, run_note, checkin, debrief, planning |
+| `rule_text` | string | **required** | The rule, written as an instruction (1-400 chars) |
+| `rationale` | string | optional | Why the rule exists (incident summary); background only, never shown as advice |
+| `origin_date` | string | optional | Date of the incident behind it (YYYY-MM-DD) |
+
+### `get_coaching_rules`
+
+CLI: `garmin-db athlete get-coaching-rules`
+
+Get the athlete-specific coaching rules stored in the local DB (coaching_rules: rules that must not be written into the repository). With scopes, rules of those scopes plus every scope='all' rule are returned; deactivated rules are hidden unless include_inactive. Each row carries rule_id, scope, rule_text, rationale, origin_date, active, created_at and deactivated_at. Returns an empty list when none are stored.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `scopes` | array[string] | optional | Scopes to read; 'all' rules are always included. Omit for every scope |
+| `include_inactive` | boolean | optional (default `False`) | Also return deactivated rules |
+
+### `deactivate_coaching_rule`
+
+CLI: `garmin-db athlete deactivate-coaching-rule`
+
+Retire an athlete-specific coaching rule: sets active=false and deactivated_at, keeping the row as history (readable via get_coaching_rules include_inactive). Returns {status, rule_id}, or {error} for an unknown rule_id.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rule_id` | integer | **required** | rule_id from get_coaching_rules |
 
 ### `prefetch_weekly_review_context`
 

@@ -29,6 +29,10 @@ Write semantics:
   never overwrites an earlier one.
 - ``intake_confirmations`` is upserted on ``(user_id, date)``: the latest
   confirmation of a day's food log replaces the earlier one.
+- ``activity_context`` is append-only: a restated fact is a new row, and the
+  reader keeps the newest row per ``(activity_id, kind)``.
+- ``coaching_rules`` is append-only, except that ``deactivate_coaching_rule``
+  flips ``active`` to false and stamps ``deactivated_at`` (issue #1520).
 """
 
 from __future__ import annotations
@@ -538,6 +542,157 @@ def insert_symptom(row: dict[str, Any], db_path: str | None = None) -> int:
         )
 
     return symptom_id
+
+
+def _resolve_db_path(db_path: str | None) -> str:
+    """Return ``db_path`` or the default DuckDB file path."""
+    if db_path is not None:
+        return db_path
+    from garmin_mcp.utils.paths import get_database_dir
+
+    return str(get_database_dir() / "garmin_performance.duckdb")
+
+
+def insert_activity_context(row: dict[str, Any], db_path: str | None = None) -> int:
+    """Append one athlete-stated fact about an activity to ``activity_context``.
+
+    Rows are append-only; the reader keeps the newest row per
+    ``(activity_id, kind)``, so restating a fact simply supersedes it.
+
+    Args:
+        row: Dict with ``activity_id``, ``kind`` and the optional ``user_id``
+            (defaults to ``"default"``), ``value``, ``load_kg``, ``source``
+            (defaults to ``"athlete_stated"``) and ``note``.
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        The new row's ``context_id``.
+
+    Raises:
+        ValueError: When ``value`` or ``note`` carries emoji (Issue #1428).
+    """
+    reject_pictographs(row.get("value"), where="save_activity_context")
+    reject_pictographs(row.get("note"), where="save_activity_context")
+
+    from garmin_mcp.database.connection import get_write_connection
+
+    user_id = row.get("user_id") or "default"
+    source = row.get("source") or "athlete_stated"
+
+    with get_write_connection(_resolve_db_path(db_path)) as conn:
+        id_row = conn.execute("SELECT nextval('activity_context_seq')").fetchone()
+        context_id = int(id_row[0]) if id_row is not None else 0
+        conn.execute(
+            """
+            INSERT INTO activity_context (
+                context_id, user_id, activity_id, kind, value, load_kg,
+                source, note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                context_id,
+                user_id,
+                row.get("activity_id"),
+                row.get("kind"),
+                row.get("value"),
+                row.get("load_kg"),
+                source,
+                row.get("note"),
+            ],
+        )
+        logger.info(
+            "Saved activity context user_id=%s activity_id=%s kind=%s "
+            "(context_id=%d)",
+            user_id,
+            row.get("activity_id"),
+            row.get("kind"),
+            context_id,
+        )
+
+    return context_id
+
+
+def insert_coaching_rule(row: dict[str, Any], db_path: str | None = None) -> int:
+    """Append one athlete-specific coaching rule to ``coaching_rules``.
+
+    Args:
+        row: Dict with ``scope``, ``rule_text`` and the optional ``user_id``
+            (defaults to ``"default"``), ``rationale`` and ``origin_date``
+            (``YYYY-MM-DD``).
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        The new row's ``rule_id``.
+
+    Raises:
+        ValueError: When ``rule_text`` or ``rationale`` carries emoji
+            (Issue #1428).
+    """
+    reject_pictographs(row.get("rule_text"), where="save_coaching_rule")
+    reject_pictographs(row.get("rationale"), where="save_coaching_rule")
+
+    from garmin_mcp.database.connection import get_write_connection
+
+    user_id = row.get("user_id") or "default"
+
+    with get_write_connection(_resolve_db_path(db_path)) as conn:
+        id_row = conn.execute("SELECT nextval('coaching_rules_seq')").fetchone()
+        rule_id = int(id_row[0]) if id_row is not None else 0
+        conn.execute(
+            """
+            INSERT INTO coaching_rules (
+                rule_id, user_id, scope, rule_text, rationale, origin_date
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                rule_id,
+                user_id,
+                row.get("scope"),
+                row.get("rule_text"),
+                row.get("rationale"),
+                row.get("origin_date"),
+            ],
+        )
+        logger.info(
+            "Saved coaching rule user_id=%s scope=%s (rule_id=%d)",
+            user_id,
+            row.get("scope"),
+            rule_id,
+        )
+
+    return rule_id
+
+
+def deactivate_coaching_rule(rule_id: int, db_path: str | None = None) -> bool:
+    """Retire a coaching rule: set ``active = false`` and ``deactivated_at``.
+
+    The row itself is kept (so the rule's history stays readable through
+    ``include_inactive``). Deactivating an already inactive rule keeps its
+    original ``deactivated_at``.
+
+    Args:
+        rule_id: Identifier returned by :func:`insert_coaching_rule`.
+        db_path: Path to DuckDB database. If None, uses default.
+
+    Returns:
+        ``True`` when the rule exists, ``False`` for an unknown ``rule_id``.
+    """
+    from garmin_mcp.database.connection import get_write_connection
+
+    with get_write_connection(_resolve_db_path(db_path)) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM coaching_rules WHERE rule_id = ?", [rule_id]
+        ).fetchone()
+        if exists is None:
+            return False
+        conn.execute(
+            "UPDATE coaching_rules SET active = FALSE, "
+            "deactivated_at = COALESCE(deactivated_at, current_timestamp) "
+            "WHERE rule_id = ?",
+            [rule_id],
+        )
+        logger.info("Deactivated coaching rule rule_id=%d", rule_id)
+    return True
 
 
 _INTAKE_CONFIRMATION_STATUSES = frozenset({"complete", "incomplete"})

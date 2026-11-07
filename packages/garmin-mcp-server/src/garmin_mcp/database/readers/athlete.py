@@ -319,6 +319,114 @@ class AthleteReader(BaseDBReader):
             columns = [desc[0] for desc in result.description]
             return [self._row_to_dict(columns, row) for row in rows]
 
+    def get_activity_context(
+        self,
+        activity_ids: list[int] | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        user_id: str = "default",
+    ) -> list[dict[str, Any]]:
+        """List the athlete-stated facts about activities (latest per kind).
+
+        ``activity_context`` is append-only, so a restated fact is a newer row;
+        only the newest row per ``(activity_id, kind)`` is returned. Each row
+        carries ``activity_date`` joined from ``activities`` (``None`` when the
+        activity is not ingested).
+
+        Args:
+            activity_ids: Optional activity filter.
+            start_date: Optional range start on ``activity_date``, inclusive.
+            end_date: Optional range end on ``activity_date``, inclusive.
+            user_id: Profile owner identifier (defaults to ``"default"``).
+
+        Returns:
+            Row dicts ordered by ``activity_date``, ``activity_id``, ``kind``,
+            with date/timestamp values converted to ``str``. Empty when nothing
+            matches or the table is missing (databases older than the
+            migration).
+        """
+        where = "c.user_id = ?"
+        params: list[Any] = [user_id]
+        if activity_ids is not None:
+            if not activity_ids:
+                return []
+            placeholders = ", ".join("?" for _ in activity_ids)
+            where += f" AND c.activity_id IN ({placeholders})"
+            params.extend(activity_ids)
+        if start_date is not None:
+            where += " AND a.activity_date >= CAST(? AS DATE)"
+            params.append(start_date)
+        if end_date is not None:
+            where += " AND a.activity_date <= CAST(? AS DATE)"
+            params.append(end_date)
+
+        with self._get_connection() as conn:
+            try:
+                result = conn.execute(
+                    "SELECT c.context_id, c.user_id, c.activity_id, "
+                    "a.activity_date, c.kind, c.value, c.load_kg, c.source, "
+                    "c.note, c.created_at "
+                    "FROM activity_context c "
+                    "LEFT JOIN activities a ON a.activity_id = c.activity_id "
+                    f"WHERE {where} "
+                    "QUALIFY ROW_NUMBER() OVER ("
+                    "PARTITION BY c.activity_id, c.kind "
+                    "ORDER BY c.created_at DESC, c.context_id DESC) = 1 "
+                    "ORDER BY a.activity_date NULLS LAST, c.activity_id, c.kind",
+                    params,
+                )
+                rows = result.fetchall()
+            except duckdb.Error:
+                logger.debug("activity_context unavailable; returning no context")
+                return []
+            columns = [desc[0] for desc in result.description]
+            return [self._row_to_dict(columns, row) for row in rows]
+
+    def get_coaching_rules(
+        self,
+        scopes: list[str] | None = None,
+        user_id: str = "default",
+        include_inactive: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List the athlete-specific coaching rules.
+
+        Args:
+            scopes: Optional scope filter (e.g. ``["checkin"]``). Rules with
+                scope ``"all"`` are always included when a filter is given.
+                When None, every scope is returned.
+            user_id: Profile owner identifier (defaults to ``"default"``).
+            include_inactive: Also return deactivated rules.
+
+        Returns:
+            Row dicts ordered by ``rule_id``, with date/timestamp values
+            converted to ``str``. Empty when nothing matches or the table is
+            missing (databases older than the migration).
+        """
+        where = "user_id = ?"
+        params: list[Any] = [user_id]
+        if scopes is not None:
+            wanted = sorted({*scopes, "all"})
+            placeholders = ", ".join("?" for _ in wanted)
+            where += f" AND scope IN ({placeholders})"
+            params.extend(wanted)
+        if not include_inactive:
+            where += " AND active"
+
+        with self._get_connection() as conn:
+            try:
+                result = conn.execute(
+                    "SELECT rule_id, user_id, scope, rule_text, rationale, "
+                    "origin_date, active, created_at, deactivated_at "
+                    f"FROM coaching_rules WHERE {where} ORDER BY rule_id",
+                    params,
+                )
+                rows = result.fetchall()
+            except duckdb.Error:
+                logger.debug("coaching_rules unavailable; returning no rules")
+                return []
+            columns = [desc[0] for desc in result.description]
+            return [self._row_to_dict(columns, row) for row in rows]
+
     def _prescription_rows(
         self, conn: Any, where: str, params: list[Any]
     ) -> list[dict[str, Any]]:

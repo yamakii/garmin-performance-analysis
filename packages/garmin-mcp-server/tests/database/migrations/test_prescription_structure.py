@@ -82,4 +82,5 @@ def test_registry_has_version_33() -> None:
         (33, "add_prescription_structure"),
         (34, "add_daily_energy_tables"),
         (35, "add_sensor_source_columns"),
+        (36, "add_activity_context_and_coaching_rules"),
     ]

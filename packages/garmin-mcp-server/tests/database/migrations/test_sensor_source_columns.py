@@ -11,11 +11,10 @@ from garmin_mcp.database.migrations.registry import MIGRATIONS
 
 @pytest.mark.unit
 def test_registry_has_version_35() -> None:
-    """The sensor source columns are registered as migration 35, the schema head."""
+    """The sensor source columns are registered as migration 35."""
     assert (35, "add_sensor_source_columns") in [
         (version, name) for version, name, _ in MIGRATIONS
     ]
-    assert max(version for version, _, _ in MIGRATIONS) == 35
 
 
 @pytest.mark.integration

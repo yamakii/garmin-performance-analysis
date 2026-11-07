@@ -9,7 +9,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis
 
 **Key Features:**
-- DuckDB normalized storage (30 tables, 100+ activities)
+- DuckDB normalized storage (32 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
 - 1 analysis agent (run-note-analyst) writing the coach review on top of the deterministic run report
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)

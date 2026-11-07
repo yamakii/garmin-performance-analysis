@@ -1005,6 +1005,160 @@
     }
   },
   {
+    "name": "save_activity_context",
+    "description": "Record one fact the athlete stated about an activity: a commute run, the load carried (load_kg), strides carried over from the previous day, why they walked, apparel or sensor mounting. Write it silently when the athlete states the fact in conversation; never ask them to keep a log. Rows are append-only and stay in the local DB only; a later save for the same (activity_id, kind) supersedes the earlier one on read. Returns {status, context_id, activity_id, kind}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_id": {
+          "type": "integer",
+          "description": "The activity the fact is about"
+        },
+        "kind": {
+          "type": "string",
+          "description": "What the fact is about: commute, load (carried weight), strides_carried (strides done the day before), walk_reason, apparel, sensor_mount, other",
+          "enum": [
+            "commute",
+            "load",
+            "strides_carried",
+            "walk_reason",
+            "apparel",
+            "sensor_mount",
+            "other"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Short free value, e.g. 'running backpack'"
+        },
+        "load_kg": {
+          "type": "number",
+          "description": "Carried load in kg (only for kind='load', 0-30)"
+        },
+        "source": {
+          "type": "string",
+          "description": "athlete_stated: the athlete said it; inferred: read from the conversation without being said outright",
+          "enum": [
+            "athlete_stated",
+            "inferred"
+          ],
+          "default": "athlete_stated"
+        },
+        "note": {
+          "type": "string",
+          "description": "Free-form note in the athlete's own words"
+        },
+        "user_id": {
+          "type": "string",
+          "description": "Profile owner identifier",
+          "default": "default"
+        }
+      },
+      "required": [
+        "activity_id",
+        "kind"
+      ]
+    }
+  },
+  {
+    "name": "get_activity_context",
+    "description": "Get the athlete-stated facts about activities (commute, load, strides_carried, walk_reason, apparel, sensor_mount, other), the newest row per (activity_id, kind), filtered by activity_ids and/or an activity_date range. Each row carries activity_date, kind, value, load_kg, source (athlete_stated / inferred) and note. Returns an empty list when nothing was recorded.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "activity_ids": {
+          "type": "array",
+          "description": "Activities to read; omit for every activity",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "start_date": {
+          "type": "string",
+          "description": "Range start on activity_date, inclusive (YYYY-MM-DD)"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "Range end on activity_date, inclusive (YYYY-MM-DD)"
+        }
+      }
+    }
+  },
+  {
+    "name": "save_coaching_rule",
+    "description": "Store a coaching rule that applies only to this athlete (a preference, a correction, an incident-derived read) in the local DB. coaching_rules holds athlete-specific rules that must not be written into the repository (rules, agents, skills or code). Write it silently when the athlete states or corrects something; never ask them to keep a log. scope picks where it applies (all / conversation / run_note / checkin / debrief / planning); rule_text is the instruction (1-400 chars), rationale the background (never shown as advice). Returns {status, rule_id, scope}.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Where the rule applies: all, conversation, run_note, checkin, debrief, planning",
+          "enum": [
+            "all",
+            "conversation",
+            "run_note",
+            "checkin",
+            "debrief",
+            "planning"
+          ]
+        },
+        "rule_text": {
+          "type": "string",
+          "description": "The rule, written as an instruction (1-400 chars)"
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why the rule exists (incident summary); background only, never shown as advice"
+        },
+        "origin_date": {
+          "type": "string",
+          "description": "Date of the incident behind it (YYYY-MM-DD)"
+        }
+      },
+      "required": [
+        "scope",
+        "rule_text"
+      ]
+    }
+  },
+  {
+    "name": "get_coaching_rules",
+    "description": "Get the athlete-specific coaching rules stored in the local DB (coaching_rules: rules that must not be written into the repository). With scopes, rules of those scopes plus every scope='all' rule are returned; deactivated rules are hidden unless include_inactive. Each row carries rule_id, scope, rule_text, rationale, origin_date, active, created_at and deactivated_at. Returns an empty list when none are stored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "description": "Scopes to read; 'all' rules are always included. Omit for every scope",
+          "items": {
+            "type": "string"
+          }
+        },
+        "include_inactive": {
+          "type": "boolean",
+          "description": "Also return deactivated rules",
+          "default": false
+        }
+      }
+    }
+  },
+  {
+    "name": "deactivate_coaching_rule",
+    "description": "Retire an athlete-specific coaching rule: sets active=false and deactivated_at, keeping the row as history (readable via get_coaching_rules include_inactive). Returns {status, rule_id}, or {error} for an unknown rule_id.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "rule_id": {
+          "type": "integer",
+          "description": "rule_id from get_coaching_rules"
+        }
+      },
+      "required": [
+        "rule_id"
+      ]
+    }
+  },
+  {
     "name": "prefetch_weekly_review_context",
     "description": "Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the target week W (and prior week W-1) and returns both weeks' activities (with performance_trends + weather), the fitness summary (Garmin native hr_zones), multi-week load_trend/acwr, recovery (trend/status/baseline_deviation), strength sessions, the training_block backbone (W's block + long-run ladder step + weeks to the block's end + quality budget), prescriptions_prev_week (W-1 rows + adherence counts), prescriptions_current_week (W's canonical batch with its batch_id / review_id), the Garmin scheduled_workouts for W with the garmin_conflicts they raise against the block, the athlete_profile, goals with weeks_to_race, and the last past_review. Every collector is null-on-error (additive). Excludes catch_up_ingest (a write); run that separately before this.",
     "inputSchema": {
