@@ -1,0 +1,90 @@
+# coach-review eval
+
+A regression eval for coaching behaviour. A change to the run-report contract, the
+`run-note-analyst` agent, a skill or a rule can be measured against known failure
+cases here, so the athlete is not the one who finds the regression. The layout
+follows `../trend-narration/`.
+
+## Case kinds
+
+- **`run_note`**: runs `run-note-analyst` headless for an `activity_id`
+  (`claude -p --agent run-note-analyst`). The prompt is the workflow's own
+  `buildRunNotePrompt`, taken from the `// >>> testable` block of
+  `.claude/workflows/analyze-activity.js`. The analyst writes `run_note.json` to a
+  scratch dir under the system temp dir, and that file is graded. **Nothing is
+  merged.** The two merge gates (section schema + grounding) run through the
+  read-only CLI `garmin_mcp.scripts.check_run_note --report <json> --note <json>`.
+- **`conversation`**: a single-turn probe, `claude -p "<athlete question>"` in the
+  repo root, so CLAUDE.md and the rules load. Only **read-only** tools are allowed:
+  Read / Glob / Grep and the garmin-db `get_*`, `export` and `prefetch_*` tools.
+  Every other garmin-db tool (taken from the tool registry snapshot, so a new
+  write tool is denied by default), Bash, Write, Edit, subagents, and the github /
+  serena servers are on the deny list. The final answer is graded.
+
+The harness never writes to DuckDB.
+
+## Cases and the public repo
+
+The repository is public, so the repo carries only the mechanism:
+
+| File | In git | Contents |
+|------|--------|----------|
+| `cases.schema.json` | yes | the case shape |
+| `cases.example.json` | yes | two synthetic cases (one per kind) |
+| `cases.local.json` | **no** (gitignored) | the real cases: activity ids, the athlete's wording, expectations derived from incidents |
+| `<variant>/` | **no** (gitignored) | results, traces, outputs, report copies |
+
+The runner uses `cases.local.json` when it exists. Without it, it falls back to the
+example and warns: those results are synthetic and measure nothing.
+
+Each case names the generic failure pattern it guards against:
+
+- **A**: a label, rule or profile note relayed as a conclusion;
+- **B**: evidence quality not self-checked (cross-sensor or cross-period comparisons, derived values treated as confirmation);
+- **C**: an uncalibrated stance (conservative by default, full reversal on pushback);
+- **D**: context the athlete stated is lost;
+- **E**: scope drift.
+
+The judge rubric in `grade.mjs` only knows these abstract patterns. Athlete
+specifics enter only through each case's `expect` strings, which stay local.
+
+## Graders (`grade.mjs`)
+
+- Deterministic (free):
+  - `output_ok`;
+  - `schema_ok` and `grounding_ok` (run_note only, via `check_run_note`);
+  - `forbid_regex_ok`;
+  - `growth_point_kinds_ok` (no growth point cites a moment whose `kind` is listed in `forbid_growth_point_moment_kinds`);
+  - `required_evidence_ok` (every `required_evidence_prefixes` entry starts at least one cited evidence key).
+- Judge (`claude-fable-5-1`, not a model under test): `must_ok` and `must_not_ok`
+  over the case's `expect.must` / `expect.must_not`. The judge sees the run report
+  and CONTEXT (run_note) or the probe's tool results (conversation).
+- `case_pass` (the headline): every applicable metric passes. `null` means not applicable.
+
+## Running
+
+**This spends Max usage (Claude Code login).** Every case is one headless session plus
+one judge call. Ask the athlete before a full run. The first run after any harness
+change must be started by a human with `--approve-harness`. The harness covers this
+runner plus `_state.json` → `harness_paths`, which include `cases.local.json`.
+
+```bash
+F=.claude/hillclimb/coach-review
+node $F/run-eval.mjs --flow $F --variant baseline --model opus --effort medium --only <id>   # pilot one case
+node $F/run-eval.mjs --flow $F --variant baseline --model opus --effort medium
+node $F/compare.mjs                 # every metric, per-pattern case_pass, cost, paired vs baseline
+```
+
+Flags (same as trend-narration):
+
+- `--only id,id` runs a subset;
+- `--no-judge` skips the model-graded metrics;
+- `--reps N` repeats each case;
+- `--concurrency N` sets how many cases run at once (default 2);
+- `--timeout-s N` sets the per-case wall-clock ceiling.
+
+Runs resume at the (case, rep) key. A variant directory is one configuration
+(`config.json`), and the runner refuses to mix another into it. After changing the
+deterministic graders or a case's deterministic `expect` fields,
+`node $F/regrade.mjs <variant>` re-scores stored outputs without any model calls.
+`--rejudge` re-runs the judge.
