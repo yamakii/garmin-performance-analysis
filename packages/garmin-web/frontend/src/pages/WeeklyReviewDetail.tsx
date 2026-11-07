@@ -424,6 +424,7 @@ export default function WeeklyReviewDetail() {
                     thisWeek.highlights.length > 0 && (
                       <ul className="list-disc space-y-0.5 pl-5 text-ink-muted">
                         {thisWeek.highlights.map((h, i) => (
+                          // eslint-disable-next-line react-x/no-array-index-key
                           <li key={i}>{h}</li>
                         ))}
                       </ul>
@@ -616,6 +617,7 @@ export default function WeeklyReviewDetail() {
                   </thead>
                   <tbody className="divide-y divide-hairline">
                     {verdict.map((v, i) => (
+                      // eslint-disable-next-line react-x/no-array-index-key
                       <tr key={i} className="hover:bg-surface">
                         <td
                           className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
@@ -725,6 +727,7 @@ export default function WeeklyReviewDetail() {
                     >
                       <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
                         {moreRecommendations.map((rec, i) => (
+                          // eslint-disable-next-line react-x/no-array-index-key
                           <li key={i}>
                             <MarkdownText inline>{rec}</MarkdownText>
                           </li>
@@ -764,6 +767,7 @@ export default function WeeklyReviewDetail() {
                     </thead>
                     <tbody className="divide-y divide-hairline">
                       {garminConflicts.map((conflict, i) => (
+                        // eslint-disable-next-line react-x/no-array-index-key
                         <tr key={i} className="hover:bg-surface">
                           <td
                             className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
@@ -811,6 +815,7 @@ export default function WeeklyReviewDetail() {
                     </thead>
                     <tbody className="divide-y divide-hairline">
                       {garminNextWeek.map((w, i) => (
+                        // eslint-disable-next-line react-x/no-array-index-key
                         <tr key={i} className="hover:bg-surface">
                           <td
                             className={`px-2 py-2 text-left font-mono text-ink-soft ${NOWRAP_CELL}`}
