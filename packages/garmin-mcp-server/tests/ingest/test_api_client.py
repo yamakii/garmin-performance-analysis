@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import Generator
+from unittest.mock import MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -38,7 +39,7 @@ class TestGetGarminClient:
             },
         )
         mock_garmin_cls = mocker.patch("garmin_mcp.ingest.api_client.Garmin")
-        mock_instance = mock_garmin_cls.return_value
+        mock_instance: MagicMock = mock_garmin_cls.return_value
 
         result = get_garmin_client()
 
@@ -64,7 +65,7 @@ class TestGetGarminClient:
             },
         )
         mock_garmin_cls = mocker.patch("garmin_mcp.ingest.api_client.Garmin")
-        mock_instance = mock_garmin_cls.return_value
+        mock_instance: MagicMock = mock_garmin_cls.return_value
 
         # First call (with token path) raises, second call (no args) succeeds
         mock_instance.login.side_effect = [FileNotFoundError("no tokens"), None]
