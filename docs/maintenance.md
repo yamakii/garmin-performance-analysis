@@ -11,7 +11,7 @@ in `.claude/rules/dev/maintenance-policy.md`; the interactive pass is the
 |-----------|------|----------|--------------|
 | Dependabot | `.github/dependabot.yml` | weekly (uv, npm) / monthly (actions, docker), Monday 09:00 JST | Opens update PRs. Minor + patch updates are grouped into one PR per ecosystem; each major gets its own PR. Security advisories trigger PRs outside the schedule. |
 | Dependabot auto-merge | `.github/workflows/dependabot-auto-merge.yml` | on each Dependabot PR | Enables GitHub auto-merge for minor/patch PRs, so they merge once the required `ci-guard` check is green. Majors — and any PR whose update type cannot be determined — only get a comment asking for review. |
-| Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. |
+| Security audit | `.github/workflows/security-audit.yml` | weekly (Monday 09:00 JST), on lockfile PRs, and on demand (*Run workflow*) | `pip-audit` over the exported `uv.lock` against both the PyPI advisory DB and OSV (OSV carries the GitHub Advisory Database; the PyPI service alone missed 13 filelock GHSAs, #1502), and `npm audit --audit-level=high` over the frontend lockfile. A scheduled failure opens (or comments on) an issue labelled `security-audit`. The repository's Dependabot alerts remain the authoritative list for Python advisories. |
 | CodeQL | `.github/workflows/codeql.yml` + `.github/codeql/codeql-config.yml` | every PR / push to main, weekly (Monday 09:15 JST), and on demand | Static analysis for python / javascript-typescript / actions. **Advanced setup**, not default setup — see below. Not the required check, so a CodeQL failure does not block merges on its own. |
 | CI | `.github/workflows/ci.yml` | every PR / push to main | Lint, type-check, tests, build. `uv.lock` is in the path filter, so a lockfile-only PR still runs `lint-and-test`. A `docker/**` change additionally runs `docker-build` (builds the sandbox image and smokes uv / Python / Node / Claude Code inside it), so Dependabot base-image bumps are actually exercised. Runs with a read-only `GITHUB_TOKEN`. |
 
@@ -124,10 +124,12 @@ change; there is no Docker inside the sandbox, so CI is the only build check.
 ## Running the audit locally
 
 ```bash
-# Python: audit exactly the locked set
+# Python: audit exactly the locked set. -s osv includes GitHub advisories (GHSA);
+# the default PyPI service does not. The sandbox cannot reach api.osv.dev, so
+# check the Dependabot alerts tab (or mcp__github__list_dependabot_alerts) there.
 uv export --frozen --no-hashes --all-packages --no-emit-workspace \
   --format requirements-txt -o /tmp/req.txt
-uvx pip-audit -r /tmp/req.txt --no-deps --desc off -f columns
+uvx pip-audit -r /tmp/req.txt --no-deps --desc off -f columns -s osv
 
 # Python: preview what a full upgrade would change (majors show up here)
 uv lock --upgrade --dry-run
