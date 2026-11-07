@@ -38,9 +38,9 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Asia/Tokyo"
-    # 10, not 5: eslint 10 (#1105) and TypeScript 7 are parked on upstream peer
-    # ranges and @eslint/js 10 is still to come, so 5 slots would be filled by
-    # majors alone and the weekly minor/patch group would silently stop (#1112).
+    # 10, not 5: majors parked on upstream peer ranges (TypeScript 7; eslint 10
+    # was one until eslint-plugin-react was replaced in #1504) fill slots, and if
+    # majors alone fill them the weekly minor/patch group silently stops (#1112).
     open-pull-requests-limit: 10
     groups:
       npm-minor-patch:
