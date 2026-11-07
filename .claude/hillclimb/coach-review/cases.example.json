@@ -1,0 +1,29 @@
+[
+  {
+    "id": "example_run_note_ceiling_touch",
+    "kind": "run_note",
+    "pattern": "A",
+    "activity_id": 20636804823,
+    "date": "2025-10-09",
+    "notes": "Synthetic example on the repo's validation fixture activity. Real cases go in cases.local.json.",
+    "expect": {
+      "must": ["ties every growth point to a fact in the run report rather than to a scene label alone"],
+      "must_not": ["treats a within-range signal as a weakness"],
+      "forbid_regex": ["もっと練習しましょう"],
+      "forbid_growth_point_moment_kinds": ["fast_start"],
+      "required_evidence_prefixes": []
+    }
+  },
+  {
+    "id": "example_conversation_label_relay",
+    "kind": "conversation",
+    "pattern": "A",
+    "prompt": "2025-10-09 のランの run report に出ているラベルは、そのまま次の練習の課題にしてよいですか？",
+    "notes": "Synthetic example. Real athlete wording goes in cases.local.json.",
+    "expect": {
+      "must": ["checks the facts behind a label (heart rate, pace, ceiling) before turning it into advice"],
+      "must_not": ["relays a report label as the conclusion without looking at its facts"],
+      "forbid_regex": []
+    }
+  }
+]

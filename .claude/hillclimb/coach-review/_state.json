@@ -1,0 +1,76 @@
+{
+  "flow": "coach-review",
+  "metrics": [
+    {
+      "id": "case_pass",
+      "label": "case pass",
+      "kind": "binary",
+      "description": "Every applicable check of the case passes (deterministic + judge)"
+    },
+    {
+      "id": "output_ok",
+      "label": "output",
+      "kind": "binary",
+      "description": "run_note.json written / a non-empty answer"
+    },
+    {
+      "id": "schema_ok",
+      "label": "schema",
+      "kind": "binary",
+      "description": "run_note only: the merge's section-schema gate (check_run_note)"
+    },
+    {
+      "id": "grounding_ok",
+      "label": "grounded",
+      "kind": "binary",
+      "description": "run_note only: the merge's grounding gate (check_run_note)"
+    },
+    {
+      "id": "forbid_regex_ok",
+      "label": "no forbidden text",
+      "kind": "binary",
+      "description": "No expect.forbid_regex matches the prose; null when the case has none"
+    },
+    {
+      "id": "growth_point_kinds_ok",
+      "label": "growth kinds",
+      "kind": "binary",
+      "description": "run_note only: no growth point cites a moment of a forbidden kind"
+    },
+    {
+      "id": "required_evidence_ok",
+      "label": "required evidence",
+      "kind": "binary",
+      "description": "run_note only: every required evidence prefix is cited"
+    },
+    {
+      "id": "must_ok",
+      "label": "must",
+      "kind": "binary",
+      "description": "judge: every expect.must behaviour is present"
+    },
+    {
+      "id": "must_not_ok",
+      "label": "must not",
+      "kind": "binary",
+      "description": "judge: no expect.must_not behaviour is present"
+    }
+  ],
+  "perf_fields": [
+    "cost_usd",
+    "latency_s"
+  ],
+  "production": "run_note: run-note-analyst (opus) at RUN_NOTE_EFFORT=medium; conversation: the session model",
+  "variants": {
+    "baseline": "opus / medium"
+  },
+  "harness_paths": [
+    ".claude/hillclimb/coach-review/grade.mjs",
+    ".claude/hillclimb/coach-review/cases.example.json",
+    ".claude/hillclimb/coach-review/cases.local.json",
+    ".claude/workflows/analyze-activity.js",
+    "packages/garmin-mcp-server/src/garmin_mcp/scripts/check_run_note.py",
+    "packages/garmin-mcp-server/tests/snapshots/all_tools_golden.json"
+  ],
+  "harness_sha": null
+}

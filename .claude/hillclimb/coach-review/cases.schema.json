@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coach-review/cases.schema.json",
+  "title": "coach-review eval cases",
+  "description": "Shape of cases.local.json (gitignored, real cases) and cases.example.json (synthetic). Real activity ids, the athlete's wording and incident-derived expectations belong only in cases.local.json.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "kind", "pattern", "expect"],
+    "properties": {
+      "id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "Path-safe case id (also the trace / output file stem)" },
+      "kind": { "enum": ["run_note", "conversation"] },
+      "pattern": { "enum": ["A", "B", "C", "D", "E"], "description": "The generic failure pattern the case guards against (see README)" },
+      "activity_id": { "type": "integer", "description": "run_note: the activity to review" },
+      "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "run_note: the activity date" },
+      "prompt": { "type": "string", "minLength": 1, "description": "conversation only: the athlete's question" },
+      "notes": { "type": "string", "description": "Free text for the case author; never sent to a model" },
+      "expect": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "must": { "type": "array", "items": { "type": "string" }, "description": "Judge-checked behaviours the output must show" },
+          "must_not": { "type": "array", "items": { "type": "string" }, "description": "Judge-checked behaviours the output must not show" },
+          "forbid_regex": { "type": "array", "items": { "type": "string" }, "description": "Regexes (JS, u flag) that must not match the prose" },
+          "forbid_growth_point_moment_kinds": { "type": "array", "items": { "type": "string" }, "description": "run_note: moment kinds a growth point must not cite" },
+          "required_evidence_prefixes": { "type": "array", "items": { "type": "string" }, "description": "run_note: each prefix must start at least one cited evidence key" }
+        }
+      }
+    },
+    "allOf": [
+      {
+        "if": { "properties": { "kind": { "const": "run_note" } } },
+        "then": { "required": ["activity_id", "date"] }
+      },
+      {
+        "if": { "properties": { "kind": { "const": "conversation" } } },
+        "then": { "required": ["prompt"] }
+      }
+    ]
+  }
+}
