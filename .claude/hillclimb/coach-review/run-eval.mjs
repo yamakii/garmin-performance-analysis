@@ -194,9 +194,16 @@ async function fetchReport(activityId) {
 }
 
 // The merge gates, without the merge (garmin_mcp.scripts.check_run_note).
+// `uv run --directory` runs the CLI from the server package, so a relative path
+// (a relative --flow) would not resolve there (#1536).
+export function cliPaths(reportPath, notePath) {
+  return [resolve(reportPath), resolve(notePath)]
+}
+
 export async function checkRunNoteCli(reportPath, notePath) {
+  const [report, note] = cliPaths(reportPath, notePath)
   const { out, err } = await spawnCollect(
-    'uv', ['run', '--directory', SERVER_DIR, 'python', '-m', 'garmin_mcp.scripts.check_run_note', '--report', reportPath, '--note', notePath],
+    'uv', ['run', '--directory', SERVER_DIR, 'python', '-m', 'garmin_mcp.scripts.check_run_note', '--report', report, '--note', note],
     { cwd: REPO, timeoutMs: 300_000 },
   )
   const r = parseJsonLoose(out.trim().split('\n').at(-1) ?? '')
