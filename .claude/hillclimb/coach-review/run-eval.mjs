@@ -256,6 +256,7 @@ async function runCase(input, ctx) {
     if (!garminToolsReached(exchanges)) {
       const e = new Error('run_note session never reached garmin-db (MCP server not connected); not graded')
       e.failure_class = 'harness'
+      e.transient = true
       throw Object.assign(e, { usage, model })
     }
     if (writeDenied(exchanges)) {
@@ -377,12 +378,14 @@ function checkHarness(statePath, st, approve) {
   process.exit(2)
 }
 
-async function withBackoff(fn, retry, deadline = Infinity, tries = 5) {
+export async function withBackoff(fn, retry, deadline = Infinity, tries = 5) {
   for (let attempt = 0; ; attempt++) {
     if (Date.now() >= deadline) { const e = new Error('wall-clock ceiling exceeded before attempt'); e.failure_class = 'timeout'; throw e }
     try { return await fn() } catch (e) {
       const status = e?.status ?? e?.response?.status
-      const transient = status === 429 || status === 529 || (status >= 500 && status < 600) || /overloaded|rate.?limit/i.test(String(e?.message ?? ''))
+      // e.transient: a failure the harness knows is passing, e.g. an MCP server
+      // that did not come up for one of several concurrent cases (#1538).
+      const transient = e?.transient === true || status === 429 || status === 529 || (status >= 500 && status < 600) || /overloaded|rate.?limit/i.test(String(e?.message ?? ''))
       if (!transient || attempt >= tries - 1) throw e
       const delay = Math.min(60_000, 1000 * 2 ** attempt) * (0.5 + Math.random())
       if (Date.now() + delay >= deadline) throw e
