@@ -260,6 +260,13 @@ export function garminToolsReached(exchanges) {
   return (exchanges ?? []).some((x) => typeof x?.name === 'string' && x.name.startsWith('mcp__garmin-db__'))
 }
 
+// Whether a file write was refused by the permission rules (#1534). That is a
+// harness failure: the analyst's note never reached the grader.
+export function writeDenied(exchanges) {
+  return (exchanges ?? []).some((x) => (x?.name === 'Write' || x?.name === 'Edit')
+    && typeof x?.result === 'string' && /permission to use (Write|Edit) has been denied/i.test(x.result))
+}
+
 export const JUDGE_MODEL = 'claude-fable-5-1'
 
 // -> {must: [bool], must_not: [bool], notes, reasons, judge_model, judge_usage, judge_cost_usd}

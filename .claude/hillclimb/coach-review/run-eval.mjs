@@ -34,7 +34,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { caseEnv, cleanEnv, combine, deterministicChecks, garminToolsReached, judge } from './grade.mjs'
+import { caseEnv, cleanEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from './grade.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '../../..')
@@ -105,7 +105,9 @@ const mcp = (n) => `mcp__garmin-db__${n}`
 export function toolPermissions(kind, names = garminTools(), scratchDir = SCRATCH) {
   const allowedGarmin = kind === 'run_note' ? RUN_NOTE_TOOLS : names.filter(isReadOnlyTool)
   const allow = allowedGarmin.map(mcp)
-  if (kind === 'run_note') allow.push(`Write(/${scratchDir}/**)`)
+  // Path-scoped write rules are Edit(...) rules, which cover every file-editing
+  // tool; a Write(...) path rule alone was denied in dontAsk mode (#1534).
+  if (kind === 'run_note') allow.push(`Edit(/${scratchDir}/**)`, `Write(/${scratchDir}/**)`)
   else allow.push('Read', 'Glob', 'Grep', 'ToolSearch')
   const deny = [...ALWAYS_DENY, ...names.filter((n) => !allowedGarmin.includes(n)).map(mcp)]
   if (kind === 'conversation') deny.push(...CONVERSATION_DENY)
@@ -246,6 +248,11 @@ async function runCase(input, ctx) {
   if (input.kind === 'run_note') {
     if (!garminToolsReached(exchanges)) {
       const e = new Error('run_note session never reached garmin-db (MCP server not connected); not graded')
+      e.failure_class = 'harness'
+      throw Object.assign(e, { usage, model })
+    }
+    if (writeDenied(exchanges)) {
+      const e = new Error('run_note.json write was denied by the permission rules; not graded')
       e.failure_class = 'harness'
       throw Object.assign(e, { usage, model })
     }
