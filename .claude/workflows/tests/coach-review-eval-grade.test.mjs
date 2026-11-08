@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { caseEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
-import { caseProblem, cliPaths, loadCases, loadRunNotePrompt, toolPermissions } from '../../hillclimb/coach-review/run-eval.mjs'
+import { caseProblem, cliPaths, loadCases, loadRunNotePrompt, toolPermissions, withBackoff } from '../../hillclimb/coach-review/run-eval.mjs'
 
 const REPORT = {
   moments: [
@@ -205,6 +205,28 @@ test('test_cli_paths_are_absolute', () => {
 
 test('test_cli_paths_keep_absolute', () => {
   assert.deepEqual(cliPaths('/x/r.json', '/x/n.json'), ['/x/r.json', '/x/n.json'])
+})
+
+test('test_with_backoff_retries_transient_flag', async () => {
+  const retry = { count: 0 }
+  let calls = 0
+  const out = await withBackoff(async () => {
+    calls++
+    if (calls === 1) throw Object.assign(new Error('mcp not connected'), { failure_class: 'harness', transient: true })
+    return 'ok'
+  }, retry)
+  assert.equal(out, 'ok')
+  assert.equal(retry.count, 1)
+})
+
+test('test_with_backoff_does_not_retry_harness_without_flag', async () => {
+  const retry = { count: 0 }
+  let calls = 0
+  await assert.rejects(withBackoff(async () => {
+    calls++
+    throw Object.assign(new Error('no run report'), { failure_class: 'harness' })
+  }, retry))
+  assert.equal(calls, 1)
 })
 
 test('test_case_env_blocks_on_mcp', () => {
