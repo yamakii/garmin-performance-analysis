@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { caseEnv, combine, deterministicChecks, garminToolsReached, judge } from '../../hillclimb/coach-review/grade.mjs'
+import { caseEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
 import { caseProblem, loadCases, loadRunNotePrompt, toolPermissions } from '../../hillclimb/coach-review/run-eval.mjs'
 
 const REPORT = {
@@ -182,6 +182,19 @@ test('test_garmin_tools_reached_false_when_only_write', () => {
   assert.equal(garminToolsReached([{ name: 'Write' }]), false)
   assert.equal(garminToolsReached([]), false)
   assert.equal(garminToolsReached(undefined), false)
+})
+
+test('test_run_note_permissions_allow_scratch_edit', () => {
+  const p = toolPermissions('run_note', ['get_run_note_inputs', 'export'], '/tmp/x')
+  assert.ok(p.allow.includes('Edit(//tmp/x/**)'))
+  assert.ok(p.allow.includes('Write(//tmp/x/**)'))
+  assert.ok(p.deny.includes('Bash'))
+})
+
+test('test_write_denied_detects_permission_denial', () => {
+  assert.equal(writeDenied([{ name: 'Write', result: "Permission to use Write has been denied because Claude Code is running in don't ask mode." }]), true)
+  assert.equal(writeDenied([{ name: 'Write', result: 'File created successfully' }]), false)
+  assert.equal(writeDenied([]), false)
 })
 
 test('test_case_env_blocks_on_mcp', () => {
