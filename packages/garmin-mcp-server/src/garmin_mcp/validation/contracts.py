@@ -36,7 +36,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "type": "array",
                 "description": (
                     "0-3 items of {text, evidence}. A strength rests on a "
-                    "favourable out-of-range signal, an on-plan axis, or "
+                    "favourable out-of-range signal, an on-plan axis (plan.hr_ceiling "
+                    "only when pct_over <= 5), or "
                     "vs_previous / recurrence / conditions / context -- never on "
                     "a within-range signal, an 'acceptable' or 'concern' moment, "
                     "or a scene the timeline already tells. Leave it empty "

@@ -31,7 +31,7 @@ ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save
 `.claude/rules/analysis/analysis-standards.md` §3、質問の受け止め方は `.claude/rules/intent-disambiguation.md` に従います。
 このスキルで加えるのは次の点だけです:
 
-- 走者が条件や方針を示していれば、それを前提に答え、別案で置き換えない
+- 走者が条件や方針を示していれば、それを前提に答え、別案で置き換えない。聞かれていない解決策や代案は付け足さない
 - データが無いことは「分からない」と言う（実績の範囲の外側を推測で言い切らない）
 - 冒頭に結論を 1〜2 文、根拠は小さな表か箇条書きで出典を付ける。質問は最大 1 つで、データで答えが出ないときだけ
 - コーチの仕方についての指示を受けたら `save_coaching_rule(scope, rule_text, rationale?)` で黙って保存し、一行だけ添える
