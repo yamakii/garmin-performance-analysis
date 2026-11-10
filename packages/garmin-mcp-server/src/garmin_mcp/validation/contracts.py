@@ -53,8 +53,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "description": (
                     "持ち越す 1 点: ONE sentence, 10-120 chars -- one of "
                     "today's growth_points (or, with none, a good point to keep) "
-                    "turned into one behaviour cue for the runs ahead "
-                    "('入りは上限の 150 に近づく前に意識して抑える'). Not a "
+                    "turned into one behaviour cue for the runs ahead -- the "
+                    "point that matters most for what the run was for "
+                    "(e.g. '後半も今日と同じリズムを保つ'). Not a "
                     "restatement of the point, not a target for a named or "
                     "dated session, and no numbers except the prescription's "
                     "own values quoted as a guard"
@@ -117,8 +118,10 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "athlete can ignore today"
             ),
             "next_action": (
-                "Carry ONE point over from today: pick one growth point (or a "
-                "good point to keep) and turn it into one behaviour cue. The "
+                "Carry ONE point over from today: pick the growth point (or "
+                "the good point to keep) that matters most for what the run "
+                "was for -- not a minor or on-plan detail -- and turn it into "
+                "one behaviour cue. The "
                 "next session itself is the prescription's and the morning "
                 "check-in's to set -- never target it from a single run"
             ),
