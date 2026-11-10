@@ -6,68 +6,29 @@ argument-hint: [YYYY-MM-DD | missing [N | start..end]]
 
 # Analyze Activity Command
 
-日付 $ARGUMENTS のアクティビティの完全な分析を、**`analyze-activity` dynamic workflow** に委譲して実行してください。
-
-**引数なしの場合は today（実行日）を対象日とします。**
-
-## なぜ workflow か
-
-分析は `fetch → コーチレビュー生成 → proofread → DuckDB 登録` の決定論的パイプライン。
-数値・範囲判定・処方判定・シーン抽出は `get_run_report` がすべて決定論的に算出するため、
-LLM が書くのは **`run_note` の1セクション（コーチレビュー）だけ**。分析エージェントは
-`get_run_note_inputs` の1回の呼び出しで REPORT と CONTEXT サブセットを受け取り、
-コンテキストを「そのランのぶんだけ」に抑える。
-
-## 実行手順
-
-**Workflow tool を起動するだけ**です（このスキルの指示が Workflow 呼び出しの明示的オプトインに相当します）:
+日付 $ARGUMENTS（省略時は today）のアクティビティの分析を、**`analyze-activity` workflow** に委譲して実行してください。
+workflow が取り込み → `run-note-analyst` によるコーチレビュー（`run_note`）生成 → 校正 → DuckDB 登録までを行います。
+このスキルの指示が Workflow 呼び出しの明示的オプトインに相当します:
 
 ```
 Workflow(name="analyze-activity", args={"date": "$ARGUMENTS"})
 ```
 
-- `$ARGUMENTS` が空のときは `args` を省略（workflow 内で today を解決）するか `{"date": "<today YYYY-MM-DD>"}` を渡す。
-- workflow は背景で次を実行する:
-  1. **Fetch**: `catch_up_ingest`（ラン・体重・補強の差分取込）＋ `ingest_activity`（当日ラン）だけ
-  2. **Analyze**: `run-note-analyst` が `get_run_note_inputs` で REPORT（決定論的ランレポート。ランそのもの）と
-     CONTEXT サブセット（処方・週内の位置・当日朝の回復・前回同種ラン・シューズ）を受け取り、`run_note.json` を1つ生成
-  3. **Finalize**: proofreader で日本語校正 → `merge_section_analyses` で DuckDB 登録
-     （grounding ゲート通過時のみ。成功時 temp 自動削除）
+`$ARGUMENTS` が空なら `args` を省略するか `{"date": "<today>"}` を渡します。
 
 ## 戻り値の扱い
 
-workflow の戻り値に応じてユーザーへ報告:
+- `status: "done"` → `succeeded` に `run_note` があれば「コーチレビュー登録完了」。`failed` に入っていれば grounding ゲートの拒否理由（`errors`）をそのまま伝える。自動リトライはしない
+- `status: "no_run"` → その日にランが無かった。`catch_up_summary` を一言報告して終了
 
-- `status: "done"` → `succeeded` に `run_note` があれば「コーチレビュー登録完了」と報告。
-  `failed` に入っていれば grounding ゲートの拒否理由（`errors`）をそのまま伝える。自動リトライはしない。
-- `status: "no_run"` → その日にランニング activity が無かった。`catch_up_summary`（差分取込の有無）を一言報告して正常終了。
+分析結果は Web 版が DuckDB から描画します（Markdown レポートは作らない）。
 
 ## キャッチアップモード（`missing`）
 
-「分析漏れを分析して」「直近 1 週間で分析できていない activity を分析して」「日曜と昨日のワークアウトを分析して」のように
-**複数日・未分析分**が対象のときは、日付を 1 つずつ推測せずこのモードで処理します。
+複数日・未分析分が対象のとき（「分析漏れを分析して」「日曜と昨日のワークアウトを分析して」など）は、日付を推測せずこのモードで処理します。
 
-1. **範囲の確定**: `missing` 単独 → 直近 14 日。`missing 7` → 直近 N 日。`missing 2026-07-01..2026-07-31` → その範囲。
-   「日曜と昨日」のような日付列挙は、それぞれを対象日として同じ手順に流す
-2. **未分析の列挙**（1 回だけ）:
-   ```
-   mcp__garmin-db__find_unanalyzed_activities(start_date=<start>, end_date=<end>)
-   ```
-   返り値 `[{activity_id, date, section_count}]` を日付昇順の表でユーザーに先に提示する（件数 0 なら「未分析なし」で終了）
-3. **直列に Workflow を起動**: DuckDB は single writer なので **同時に 2 本起動しない**。1 件の完了通知（`status: "done"` / `"no_run"`）を受けてから次の日付を起動する。
-   起動時に `find_unanalyzed_activities` が返した `date` をそのまま `args.date` に渡す
-4. **各件の報告は 1 行**（日付 / activity_id / 登録可否）。個別の分析内容は語らない（Web で読む）
-5. **最後に再確認**: 同じ範囲で `find_unanalyzed_activities` を再実行し、残件 0 を確認して表で締める。残件があれば該当日と `errors` を報告し、自動リトライはしない
-
-## 重要事項
-
-- **キャッチアップは取り込みのみ**: ランニング・体重・補強の未取込分を対象日まで埋めるだけ。補強・体重には section 分析を行わない
-- **閲覧**: 分析結果は Web 版（`packages/garmin-web`）が DuckDB から描画する（Markdown レポートは生成しない）
-
-## 関連ファイル（保守用）
-
-- workflow 本体: `.claude/workflows/analyze-activity.js`（純粋ロジックは `// >>> testable` ブロック、テストは `.claude/workflows/tests/analyze-activity.test.mjs`）
-- 分析エージェント: `.claude/agents/run-note-analyst.md`（`run_note` 専用・唯一の分析エージェント）
-- 校正: `.claude/agents/proofreader.md`
-- 入力ツール: `get_run_note_inputs`（`garmin_mcp.tools.run_report`。CONTEXT の絞り込みは `garmin_mcp.scripts.prefetch_activity_context.build_run_note_context`）
-- スクリプト: `garmin_mcp.scripts.merge_section_analyses`
+1. **範囲**: `missing` 単独 → 直近 14 日、`missing 7` → 直近 N 日、`missing 2026-07-01..2026-07-31` → その範囲。日付の列挙はそれぞれを対象日にする
+2. **未分析の列挙**（1 回だけ）: `mcp__garmin-db__find_unanalyzed_activities(start_date, end_date)` の結果を日付昇順の表で先に示す（0 件なら終了）
+3. **直列に Workflow を起動**: DuckDB は single writer なので同時に 2 本起動しない。完了通知を受けてから次の `date` を起動する
+4. 各件の報告は 1 行（日付 / activity_id / 登録可否）
+5. 最後に同じ範囲で `find_unanalyzed_activities` を再実行し、残件と `errors` を報告する（自動リトライはしない）

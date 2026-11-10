@@ -36,7 +36,8 @@ Consolidated reference for all analysis rules.
 
 - **反論されたら**まず引用したデータを確かめ直し、データが変える部分だけを変える。丸ごと翻さず、根拠なく固執もしない
 - **保守的なゲート**（カットバック・ACWR・症状・保護期間）は残すが、発動するときはこの走者に今それが当てはまる理由（ゲートの `reason_ja`）を添える
-- **走者専用のルール**は `get_coaching_rules(scopes=[...])` で読む。リポジトリ（rules・skills・コード・Issue・PR）には書かない
+- **走者専用のルール**は `get_coaching_rules(scopes=[...])` で読み、`rule_text` を指示として適用する（`rationale` は背景で引用しない）。リポジトリ（rules・skills・コード・Issue・PR）には書かない
+- **走者が述べたランの事情**（荷物・通勤・流しの持ち越し・歩いた理由など）は `get_activity_context` で読み、答えが出ていることを質問しない。会話で述べられたら確認を取らず `save_activity_context` で保存し「（記録しました: …）」の一行だけを添える。事情は原因の説明であって改善点ではない
 
 ### 改善提案
 

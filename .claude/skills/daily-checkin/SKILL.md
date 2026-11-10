@@ -6,21 +6,18 @@ argument-hint: [YYYY-MM-DD]
 
 # Daily Check-in（ラン前の今日のコンディション相談）
 
-対象日 `$ARGUMENTS`（省略時は today）のコンディションを **固定のツールセットを 1 ターンで並列取得**して判定し、
+対象日 `$ARGUMENTS`（省略時は today）のコンディションを、固定のツールセットを 1 ターンで並列取得して判定し、
 落ち着いた丁寧なコーチの口調（自然な です・ます）で答えてください。
-
-このスキルの目的は「毎回ツールを選び直さない」「登録済みプランを背骨にする」「回復データの取り込み漏れをなくす」の 3 点です。
 
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
 ```
 
 ## Step 1: 今朝の wellness と前日の収支を取り込む（必須・単独ステップ）
 
-今朝の HRV/RHR/睡眠は日次同期より先にユーザーが質問することが多く、取り込み前だと `get_recovery_status` が **前日**の値を返します。
-前日の摂取/消費カロリー（`energy`）も同じ呼び出しで取り込みます。write 系なので他の read より先に単独で実行します:
+取り込み前だと `get_recovery_status` が前日の値を返すので、write 系のこれを他の read より先に単独で実行します:
 
 ```
 mcp__garmin-db__catch_up_ingest(domains=["wellness", "energy"], end_date=<対象日>)
@@ -28,89 +25,63 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness", "energy"], end_date=<対象
 
 ## Step 1b: 脚の状態を 1 問だけ聞いて記録する（必須）
 
-wellness 取り込みの直後に、**質問を 1 つだけ**します（増やさない）:
-
 > 脚の張り・痛みはありますか？（部位・左右・0-10 でお願いします）
 
-答えを必ず `save_symptom` に記録します。**「なし」も記録する**（記録があって初めて「聞いて異常なし」と
-「聞いていない」を区別でき、Step 3 のゲートが計算できます）:
+答えを必ず `save_symptom` に記録します。**「なし」も記録する**（「聞いて異常なし」と「聞いていない」を区別するため）:
 
 | 回答 | 呼び方 |
 |---|---|
-| 部位を申告（例「右ふくらはぎ 3」） | `save_symptom(date=<対象日>, body_region="calf", side="right", severity=3, phase="morning", note=<本人の言葉>)` |
+| 部位を申告 | `save_symptom(date=<対象日>, body_region="calf", side="right", severity=3, phase="morning", note=<本人の言葉>)` |
 | なし | `save_symptom(date=<対象日>, body_region="other", severity=0, phase="morning", note="なし")` |
-| 2 箇所以上 | 部位ごとに 1 回ずつ呼ぶ（append-only、上書きされない） |
+| 2 箇所以上 | 部位ごとに 1 回ずつ呼ぶ |
 
-ユーザーが先回りして症状を書いている場合は質問を省き、その内容をそのまま記録します。
-質問に答えが返らないまま進む場合は記録せず、Step 3 のゲートでは「未確認」として扱います。
+先回りして症状が書かれていれば質問を省いてそれを記録し、答えが返らなければ記録せず「未確認」として扱います。
 
 ## Step 2: 固定セットを 1 ターンで並列取得
 
-以下を **同じターンで並列に** 呼びます（順番待ちしない）:
+| ツール | 引数 |
+|---|---|
+| `get_recovery_status` | `date=<対象日>` |
+| `get_wellness_baseline_deviation` | `date=<対象日>` |
+| `get_acwr` | `end_date=<対象日>` |
+| `get_recovery_trend` | `weeks=2` |
+| `get_activity_by_date` | `date=<前日>` と `date=<対象日>` |
+| `get_run_report` | `activity_id=<前日のラン>`（無ければ省略）。`headline`、outside かつ adverse の `signals`、`athlete_context` を読む |
+| `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日+6>` |
+| `get_weekly_prescriptions` | `date=<対象日>`（今日の処方。判定の背骨） |
+| `get_weekly_review` | `week_start_date=<今週の開始日>`（引数なしだと翌週分が返りうる） |
+| `get_symptom_status` | `date=<対象日>`（Step 1b の記録が反映された状態） |
+| `get_energy_balance` | `end_date=<前日>` |
+| `get_coaching_rules` | `scopes=["checkin", "conversation"]` |
 
-| ツール | 引数 | 読むもの |
-|---|---|---|
-| `get_recovery_status` | `date=<対象日>` | recommendation（rest/easy/moderate/quality/unknown）、readiness、sleep、body battery |
-| `get_wellness_baseline_deviation` | `date=<対象日>` | HRV / readiness / RHR の個人ベースライン z と adverse フラグ |
-| `get_acwr` | `end_date=<対象日>` | acute/chronic、acwr、status |
-| `get_recovery_trend` | `weeks=2` | RHR 7d/30d 中央値、HRV 連続割れ、under_recovery |
-| `get_activity_by_date` | `date=<前日>` と `date=<対象日>` | 直近ラン（距離・時間・ペース・HR）、今日すでに走ったか |
-| `get_run_report` | `activity_id=<前日のラン>` | 前日のランの `headline`（処方ラベル + adverse フラグ）と、`signals` のうち `status="outside"` かつ `adverse=true` のものだけ。保存分析の要約や星評価は読まない（前日のランが無ければ省略） |
-| `get_garmin_scheduled_workouts` | `start_date=<対象日>`, `end_date=<対象日+6>` | 今日〜1 週間の予定（[MCP] 登録分を含む） |
-| `get_weekly_prescriptions` | `date=<対象日>` | **今日の処方**（session_type / target_km / target_minutes / hr_high / rating / rationale / status / review_id）。これが判定の背骨 |
-| `get_weekly_review` | `week_start_date=<今週の開始日>`（引数なしだと最新週＝翌週分のレビューが返りうる） | 今週の文脈（カットバック判定・回復ゲート・recommendations の言い回し）。処方の**背景**として読む |
-| `get_symptom_status` | `date=<対象日>` | 症状ルールの判定（`flag` / `flagged_regions` / `asked_today` / `clear_today` / `reason_ja`）。Step 1b の記録が反映された状態で読む |
-| `get_energy_balance` | `end_date=<前日>` | 前日の収支（`days[]` のうち `date=<前日>` の行の `balance_kcal` / `intake_status`）と 7 日平均（`window.status` / `window.mean_balance_kcal`）。Step 4 の 1 行にだけ使う |
-| `get_activity_context` | `activity_ids=[<前日のラン>]` | 走者が前日のランについて述べた事情（荷物・通勤・前日の流しの持ち越しなど）。`get_run_report` の `athlete_context` と同じ中身（前日のランが無ければ省略） |
-| `get_coaching_rules` | `scopes=["checkin", "conversation"]` | この走者専用のルール（scope `all` も常に含まれる）。各 `rule_text` を指示としてこの手順と併せて適用する。`rationale` は背景で、回答に引用しない |
-
-**前日のランは `get_run_report` の `headline` で一言に要約する**（例:「昨日は処方どおり、指摘なし」「昨日は一部ずれ、心拍が想定より高め」）。
-前日のランに荷物・通勤などの事情が申告されている（または `athlete_context.inferred.commute` が立っている）ときは、
-その adverse フラグを事情で読み、体力やフォームの変化として今日の強度に反映しません（推定の通勤はぼかして伝える）。
-**事情がすでに記録されていることを質問しない**。会話の中で走者がランの事情（荷物 何 kg、通勤ラン、流しの持ち越し、
-歩いた理由など）を述べたら、確認を取らずに `save_activity_context(activity_id, kind, value?, load_kg?, note?)` で保存し、
-回答に「（記録しました: 前日は 3 kg の荷物あり）」の一行だけを添えます（Step 1b の 1 問の制限は変わりません）。
-通常の範囲の内側（`within` / `edge`）の指標は今日の判断材料にしません。星評価・保存分析の散文は使わず、
-`streak`（数ラン続く傾き）が立っているときだけ今日の強度に反映します。
-
-`get_load_trend(lookback_weeks=6)` は「今週何 km」「ロングを伸ばしていいか」など**週単位の量**を聞かれたときだけ追加します。
-週全体の並び（今日以外の日）が論点なら `get_weekly_prescriptions(week_start_date=<今週の開始日>)` に切り替えます。
-`get_athlete_profile` は `get_weekly_prescriptions` と `get_weekly_review` がどちらも空のとき、または目標・フェーズ自体が論点のときだけ読みます（focus_notes は長大なので毎日は読まない）。
+前日のランは `headline` で一言に要約します（例:「昨日は処方どおり、指摘なし」）。走者ルールと走者が述べた事情の扱いは
+`.claude/rules/analysis/analysis-standards.md` §3 に従います（質問は Step 1b の 1 問だけのまま）。
+`get_load_trend(lookback_weeks=6)` は週単位の量を聞かれたときだけ、`get_weekly_prescriptions(week_start_date=…)` は週全体の並びが論点のときだけ、
+`get_athlete_profile` は処方とレビューがどちらも空か、目標・フェーズ自体が論点のときだけ読みます。
 
 ## Step 3: 判定の組み立て
 
-1. **背骨は今日の構造化処方**。`get_weekly_prescriptions(date=<対象日>)` の行（`session_type` / `target_km` / `target_minutes` / `hr_high` / `rating` / `rationale`）を出発点にし、`get_weekly_review` の recommendations・カットバック判定・回復ゲートをその背景として重ねる。処方と矛盾する提案をする場合は、その旨と理由を明示する（黙って別案を出さない）
-   - **散文を重ねてよいのは版が一致するときだけ**: 処方行の `review_id` が上で取った `get_weekly_review` の `review_id` と**等しいときだけ**、そのレビューの散文（recommendations・週次方針）を背景として使う。**一致しない場合は処方行が正**で、そのレビューの**日別の言及は使わない**（週の途中で処方が改訂され、散文が追いついていない状態。「プランが改訂されており、レビュー本文は前版です」と一言添えて、必要なら `/weekly-review` での改訂反映を促す）
-   - 処方が **空**（その日に行が無い / 週がまだ処方されていない）なら「今週はまだ処方が登録されていません」と明示し、`get_weekly_review` の週次方針で代替する。`/weekly-review` の実行を1文で促してよい
-   - 行の `status` が `done` / `replaced` なら **今日はすでに消化済み**として扱い、追加で走るかどうかの相談に切り替える
-   - **Garmin カレンダー（`get_garmin_scheduled_workouts`）は参照情報**: `[MCP]` 接頭辞の項目はこちらが登録した処方の写しなので処方行が正本、`fbtAdaptiveWorkout`（Garmin の適応プラン）は**参考にとどめ**、処方と食い違っても処方を優先する
-2. **回復ゲートを読む順**: `recovery_status.recommendation` → `baseline_deviation.overall_flag`（adverse なら理由） → `recovery_trend.hrv.under_recovery` と `acwr.status` の AND（両方点灯で「積み過ぎ」）
-2b. **症状ゲート**（`get_symptom_status`）: `flag=true` なら処方より症状が優先する。`rule='acute'` は当日を休養か完全 easy に落とし、`rule='consecutive'` はロング・質練を見送って距離を直近のクリーンな距離までに抑える。判定の根拠は `reason_ja` をそのまま引用する。`flag=false` でも `days_since_last_report=null`（＝ここ 14 日 1 度も記録なし）のときは「未確認」と明示し、症状ゼロとは扱わない
-   - **条件付きの 6 日目**（どの曜日か・いつから導入するかは `focus_notes`【頻度】と W の処方行に従う。`focus_notes` が週 5 とする期間には判定しない）: `recovery_status.training_readiness >= 50` **かつ** `get_symptom_status().flag == false` **かつ** `clear_today == true`（今日聞いて異常なしの記録がある）の **3 つが揃ったときだけ**走る。1 つでも欠ける（readiness 不足 / フラグ点灯 / 今日まだ聞いていない）なら休養にする
-3. **今日の距離・強度の答えは帯で出す**（例: 6〜8 km、HR 上限 150）。ぴったりの数字に意味を持たせない
-4. **暑熱期（気温 28℃ 以上が見込まれる時期）**: HR 上限（ceiling）で管理し、ペースは結果として扱う。HR floor や「涼しい朝に効率テスト」を提案しない
-5. **判断は `.claude/rules/analysis/analysis-standards.md` §3 の4段**（目的・事実・適用条件・確信度）で組み立て、結論に確信度と結論を変えうる条件を1つ添える。回復ゲート・症状ゲート・ACWR で強度を落とすときは、そのゲートの `reason_ja`（ACWR は `get_acwr().reason_ja`）を引用して今日それが当てはまる理由を示す。ユーザーが感触・案を先に述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う
-6. **数値の出典を明記**（例: 「HRV 71ms、30 日平均 63±5」）。ゾーン境界は Garmin native zones（`get_heart_rate_zones_detail` 等）のみ。計算式は使わない
-7. **セッションの一部を別の日へ移すと決めたら処方行に書き残す**（例:「昨日できなかった流しを今日のジョグの後に入れる」）。会話で決めただけだと、ランの分析はそれを処方として読めない（#1494）。移す先の行を `update_prescription_status(prescription_id=<移す先>, status=<今の status のまま>, structure=<移した部分を足した step 構造>)` で書き換える（版の更新は不要）。移した元の行は消化していなければ `skipped` にする。前日に処方された流しを翌日に回すだけなら、分析が自動で持ち越しとして読むので書き換えは省いてよい（2 日より前の日から移す、本数を変える、流し以外を移すときは必ず書く）
+1. **背骨は今日の構造化処方**。処方行を出発点にし、レビューの方針を背景として重ねる。処方と違う提案をするなら、その旨と理由を明示する
+   - **レビューの散文を重ねてよいのは版が一致するときだけ**: 処方行の `review_id` が `get_weekly_review` の `review_id` と等しいときだけ散文を使う。一致しなければ処方行が正で、「プランが改訂されており、レビュー本文は前版です」と一言添える
+   - 処方が空なら「今週はまだ処方が登録されていません」と明示し、レビューの週次方針で代替する（`/weekly-review` を一文で促してよい）
+   - 行の `status` が `done` / `replaced` なら今日は消化済みとして、追加で走るかの相談に切り替える
+   - Garmin カレンダーは参照情報。`[MCP]` 項目は処方の写し、`fbtAdaptiveWorkout`（Garmin の適応プラン）は参考にとどめ、処方を優先する
+2. **回復ゲート**: `recommendation`、ベースライン逸脱（adverse なら理由）、`under_recovery` と `acwr.status` の両方点灯（積み過ぎ）を読む
+3. **症状ゲート**: `flag=true` なら処方より優先する。`rule='acute'` は休養か完全 easy、`rule='consecutive'` はロング・質練を見送り直近のクリーンな距離までに抑える（`reason_ja` を引用）。`days_since_last_report=null` は「未確認」で、症状ゼロとは扱わない
+4. **答えは帯で出す**（例: 6〜8 km、HR 上限 150）。暑い時期も HR 上限で管理し、ペースは結果として扱う
+5. 強度を落とすときは、そのゲートの `reason_ja` で今日それが当てはまる理由を示す（判断の組み立ては analysis-standards §3）
+6. **セッションの一部を別の日へ移すと決めたら処方行に書き残す**（会話で決めただけだとランの分析が処方として読めない）。`update_prescription_status(prescription_id=<移す先>, status=<今の status>, structure=<移した部分を足した構造>)` で書き換え、移した元の行は未消化なら `skipped` にする。前日の流しを翌日に回すだけなら、分析が持ち越しとして読むので省いてよい
 
 ## Step 4: 回答フォーマット
 
 - 冒頭 1〜2 文で結論（走ってよい/抑える/休む、距離帯、HR 上限）
-- 回復指標の小さな表（指標 / 今日 / ベースライン / 判定）。**脚の症状の行を必ず 1 行入れる**（例: 「脚の張り | 右ふくらはぎ 3/10 | 2回連続で3以上 | 🔴 ロングは見送り」。申告なしの日は「なし（本日確認済み）」、14 日記録が無ければ「未確認」）
-- 今日の処方との対応（処方のどこに沿っているか。ずらす場合はどうずらすか）
-- **収支の 1 行**（`get_energy_balance`。**質問はしない**: このチェックインの質問は Step 1b の 1 問だけ）。前日の行の `intake_status` で書き分ける:
-  - `settled` → 「昨日の収支 -320 kcal、7 日平均 -280 kcal/日」
-  - `provisional` → 同じ形で前日の値に「（暫定）」を付ける（まだ食事の記録が追加されうる）
-  - `suspect_low` → 前日の値に「少なめ・未確認」と添える（確認は週次レビューでまとめて行うので、ここでは問いかけない）
-  - `not_logged` / `pending` / `no_data` → 「昨日: 記録なし／同期待ち（収支は出していません）」
-  - `athlete_reported_incomplete`（本人が「抜けあり」と申告済み）、または `balance_kcal` が null（消費側が未同期・装着不足）→ 前日の値は出さず、その理由を短く添える
-  - 7 日平均は `window.status = "ok"` のときだけ `window.mean_balance_kcal` を添える。`insufficient` / `no_logging` なら平均は出さない
-  - 記録を促す・催促する言い回しは使わない（記録の途切れに触れるのは `/weekly-review` の 1 回だけ）
+- 回復指標の小さな表（指標 / 今日 / ベースライン / 判定）。**脚の症状の行を必ず入れる**（申告なしは「なし（本日確認済み）」、14 日記録が無ければ「未確認」）。数値には出典の比較を添える（例: 「HRV 71ms、30 日平均 63±5」）
+- 今日の処方との対応（どこに沿っているか、ずらすならどうずらすか）
+- **収支の 1 行**（質問はしない。確認は `/weekly-review` でまとめて行う）。前日の行の `intake_status` で書き分ける: `settled` は値、`provisional` は値に「（暫定）」、`suspect_low` は「少なめ・未確認」、`not_logged` / `pending` / `no_data` は「記録なし／同期待ち」、`athlete_reported_incomplete` や `balance_kcal` が null は値を出さず理由だけ。7 日平均は `window.status = "ok"` のときだけ。記録を促す言い回しは使わない
 - 注意点は最大 2 つ、次のアクションは 1 つ
-- 目的を達しているランや状態に対して「成功条件」「合否」の表現は使わない（維持目標・改善余地として述べる）
 
 ## やらないこと
 
-- 週次レビューの生成・保存（それは `/weekly-review`）
-- Garmin カレンダーへの登録（それは `/schedule-workout`）
-- ラン後のフォーム・疲労の原因分析（それは `/run-debrief`）
+- 週次レビューの生成・保存（`/weekly-review`）
+- Garmin カレンダーへの登録（`/schedule-workout`）
+- ラン後のフォーム・疲労の原因分析（`/run-debrief`）
