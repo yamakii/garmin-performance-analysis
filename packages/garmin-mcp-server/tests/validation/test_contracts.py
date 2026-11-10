@@ -69,18 +69,22 @@ def test_run_note_never_write_covers_insufficient_signals():
 
 
 @pytest.mark.unit
-def test_run_note_never_write_matches_agent_copy_count():
-    """run-note-analyst.md §2 restates never_write as a numbered list; the copy
-    must stay the same length as the contract (it drifted to 9 of 11 once)."""
-    import re
+def test_run_note_agent_does_not_copy_the_contract():
+    """The contract is the single home of what a run note must do (Epic #1544).
+
+    run-note-analyst.md used to restate never_write and the field rules, and the
+    copies drifted (8 substantive drifts). It now points at the contract instead.
+    """
     from pathlib import Path
 
     agent = Path(__file__).resolve().parents[4] / ".claude/agents/run-note-analyst.md"
-    section = agent.read_text(encoding="utf-8").split("## 2.", 1)[1]
-    section = section.split("## 3.", 1)[0]
-    numbered = re.findall(r"^(\d+)\. ", section, flags=re.MULTILINE)
+    text = agent.read_text(encoding="utf-8")
 
-    assert len(numbered) == len(get_contract("run_note")["never_write"])
+    assert 'get_analysis_contract("run_note")' in text
+    assert "never_write" in text  # named as living in the contract
+    # no verbatim copy of contract items
+    for item in get_contract("run_note")["never_write"]:
+        assert item not in text
 
 
 @pytest.mark.unit
@@ -255,39 +259,30 @@ def test_contract_strides_not_ceiling_excursion():
 
 
 @pytest.mark.unit
-def test_contract_fast_start_under_ceiling_neutral():
-    """A fast start under the HR ceiling is not a growth point (#1513)."""
-    import json
+def test_contract_has_no_scene_conclusion_templates():
+    """Scene-specific 'say X / never say Y' patches are gone (Epic #1544).
 
-    text = json.dumps(get_contract("run_note"), ensure_ascii=False)
-
-    assert "fast_start whose HR stayed under the ceiling is neutral" in text
-    assert "never a growth point" in text
-    assert "avg_hr against the ceiling" in text
-
-
-@pytest.mark.unit
-def test_contract_ceiling_touch_attribution():
-    """A ceiling touch is attributed by checking whether HR followed the pace.
-
-    #1517 blamed the start only when it ran hot; #1542 replaced its canned
-    conclusion ('say that HR rose whatever the pace', 'never ease off earlier')
-    with the comparison the attribution has to rest on.
+    The fast_start-under-ceiling verdict is computed by run_policy (#1513) and a
+    surge on an easy run is a neutral verdict there; the ceiling-touch
+    templates of #1517 / #1542 are subsumed by the timeline's general demand
+    that a cause names its comparison.
     """
     import json
 
     text = json.dumps(get_contract("run_note"), ensure_ascii=False)
 
-    assert "only when the opening stretch's HR was already near the ceiling" in text
-    for phrase in (
+    for patch in (
+        "fast_start whose HR stayed under the ceiling",
+        "never carries a surge scene",
+        "Blame a ceiling_touch on the start",
+        "whatever the pace",
         "followed the pace",
-        "flow.segments avg_hr before and after corrected_at_km",
-        "signals.hr_vs_expected",
-        "attribution order",
+        "a neutral moment the timeline does not narrate",
     ):
-        assert phrase in text
-    assert "say that HR rose whatever the pace" not in text
-    assert "never 'ease off earlier'" not in text
+        assert patch not in text
+    timeline = get_contract("run_note")["evaluation_policy"]["timeline"]
+    assert "names the comparison it rests on" in timeline
+    assert "attribution order" in timeline
 
 
 @pytest.mark.unit
