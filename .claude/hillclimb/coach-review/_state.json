@@ -72,5 +72,5 @@
     "packages/garmin-mcp-server/src/garmin_mcp/scripts/check_run_note.py",
     "packages/garmin-mcp-server/tests/snapshots/all_tools_golden.json"
   ],
-  "harness_sha": null
+  "harness_sha": "1e60601c1120dcbc287ee1ec47736f0f900c157dfeff5396d94bb9aa2d9338d7"
 }

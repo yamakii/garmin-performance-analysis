@@ -1,5 +1,7 @@
 """Tests for the run_note analysis contract."""
 
+import json
+
 import pytest
 
 from garmin_mcp.validation.contracts import VALID_SECTION_TYPES, get_contract
@@ -136,139 +138,106 @@ def test_contract_run_note_next_challenge_carries_one_point():
     """持ち越す 1 点: one of today's points as a cue, not a next-session target.
 
     #1267 pointed the challenge at report.next_session, which made a single
-    run prescribe the next session and put a long run's HR band on a Z2 jog
-    (2026-09-13). The session is the prescription's to set (#1358); the note
-    carries one of today's points over instead.
+    run prescribe the next session (2026-09-13). The session is the
+    prescription's to set (#1358); the note carries one of today's points over.
+    The rule lives in evaluation_policy.next_challenge only (Epic #1544).
     """
     contract = get_contract("run_note")
 
     policy = contract["evaluation_policy"]["next_challenge"]
     assert "good_points / growth_points" in policy
+    assert "matters most" in policy
     assert "no numbers but the prescription's" in policy
     assert "next_challenge_evidence" in policy
-    # next_session is named only to say it is not the source.
     assert "are not its source" in policy
-    assert "same_type" not in policy
-    required = contract["required_fields"]
-    assert "next_challenge_evidence" in required
-    assert "next_session" not in required["next_challenge"]["description"]
-    assert any("next_challenge_evidence" in line for line in contract["instructions"])
-    # The ceiling is still quoted as a guard.
     assert "150 bpm を超えないように" in policy
+    assert "next_challenge_evidence" in contract["required_fields"]
+    assert (
+        "next_session"
+        not in contract["required_fields"]["next_challenge"]["description"]
+    )
 
 
 @pytest.mark.unit
-def test_contract_run_note_scenes_referenced_by_label():
-    """A scene is named by its label, never by the lap it was recorded under.
-
-    Since #1268 every scene carries ``label_ja`` + ``unit``; step scenes
-    (``rep`` / ``rest`` / ``work_set``) have no kilometre to be numbered by at
-    all, so a lap-derived 「N km 目」 is simply wrong (#1267).
-    """
+def test_contract_principles_have_one_home():
+    """Each principle is stated once; copies drifted before (Epic #1544)."""
     contract = get_contract("run_note")
+    text = json.dumps(contract, ensure_ascii=False)
 
-    timeline = contract["evaluation_policy"]["timeline"]
-    assert "label_ja" in timeline
-    for kind in ("rep", "rest", "work_set", "progression"):
-        assert kind in timeline
-    # The facts a rep session is narrated from, rather than rep-by-rep numbers.
+    # attribution order: prose_roles.causality only
+    assert (
+        "intensity -> terrain -> athlete_context"
+        in contract["prose_roles"]["causality"]
+    )
+    assert text.count("intensity -> terrain") == 1
+    # scene naming: never_write only
+    assert any("lap" in r and "label_ja" in r for r in contract["never_write"])
+    assert text.count("label_ja") == 1
+    # the carried point: evaluation_policy.next_challenge only
+    assert text.count("150 bpm を超えないように") == 1
+    # instructions point at the sections instead of summarising them
+    assert len(contract["instructions"]) <= 5
+
+
+@pytest.mark.unit
+def test_contract_timeline_narrates_sets_and_context():
+    """Rep sessions are told as a set; acceptable / neutral scenes are context."""
+    timeline = get_contract("run_note")["evaluation_policy"]["timeline"]
+
     for fact in ("pace_spread_s", "first_vs_last_s", "hr_drop_bpm"):
         assert fact in timeline
-    # Placing a scene by a lap number is called out as forbidden.
-    assert any("lap" in rule and "label_ja" in rule for rule in contract["never_write"])
-    assert any("label_ja" in line for line in contract["instructions"])
+    assert "'acceptable'" in timeline and "'neutral'" in timeline
+    assert "names the comparison it rests on" in timeline
+    assert "attribution order" in timeline
 
 
 @pytest.mark.unit
 def test_contract_describes_strides_scene():
-    """The strides scene and the strides plan axis are documented (#1298)."""
+    """Strides are one set judged by reps, relaxed speed and recovery (#1294, #1298)."""
     contract = get_contract("run_note")
 
-    timeline = contract["evaluation_policy"]["timeline"]
-    assert "strides" in timeline
     assert "plan.strides" in contract["evidence_keys"]
-
     policy = contract["evaluation_policy"]["strides"]
     assert policy["kind"] == "strides"
     assert policy["evidence"] == "moments.<id>"
     assert policy["judge_by"] == ["reps", "relaxed_speed", "recovered_before_next"]
-    # The facts the set is judged from are the ones the strides scene carries.
-    for fact in ("fastest_pace_s_per_km", "hr_at_next_start", "peak_hr"):
+    assert policy["never"] == "ceiling_excursion"
+    for fact in ("fastest_pace_s_per_km", "hr_at_next_start", "ceiling excursion"):
         assert fact in policy["description"]
 
 
 @pytest.mark.unit
-def test_contract_growth_points_allow_concern_moments():
-    """A scene may carry a growth point only when its purpose calls it a concern.
+def test_contract_growth_points_match_the_gate():
+    """The contract names the same three growth-point sources the gate accepts (#1314)."""
+    policy = get_contract("run_note")["evaluation_policy"]["growth_points"]
 
-    The merge gate accepts ``moments.<id>`` as growth-point evidence only for a
-    moment whose ``policy.verdict`` is ``concern`` (#1314); the contract has to
-    say the same thing or the agent writes notes the gate then rejects.
-    """
-    contract = get_contract("run_note")
-
-    policy = contract["evaluation_policy"]["growth_points"]
+    assert "outside its normal range AND adverse" in policy
+    assert "off_plan / short / missing" in policy
     assert "policy.verdict == 'concern'" in policy
-    # Acceptable / neutral scenes are context, and background sources explain a
-    # growth point without being one.
-    assert "'acceptable'" in policy
-    assert "'neutral'" in policy
     for background in ("recurrence", "vs_previous", "conditions", "context"):
         assert background in policy
-    assert any(
-        "policy.verdict == 'concern'" in line and "growth point" in line
-        for line in contract["instructions"]
-    )
-    # The timeline narrates acceptable / neutral scenes as context.
-    timeline = contract["evaluation_policy"]["timeline"]
-    assert "policy.verdict" in timeline
-    assert "context" in timeline
 
 
 @pytest.mark.unit
 def test_contract_describes_purpose():
     """The run is read against report.purpose, and an inferred one is hedged."""
-    contract = get_contract("run_note")
+    purpose = get_contract("run_note")["evaluation_policy"]["purpose"]
 
-    purpose = contract["evaluation_policy"]["purpose"]
     assert purpose["source"] == "report.purpose"
     assert purpose["inferred"] == "hedge -- say the purpose was inferred"
     assert purpose["deviations"] == "acceptable/neutral are context, never a flaw"
-    for fact in ("label_ja", "source == 'inferred'", "policy", "judged_share"):
+    for fact in ("policy", "judged_share"):
         assert fact in purpose["description"]
-
-    rule = next(line for line in contract["instructions"] if "purpose" in line)
-    assert "inferred" in rule
-    assert "hedge" in rule
-    assert any("judged_share" in line for line in contract["instructions"])
-
-
-@pytest.mark.unit
-def test_contract_strides_not_ceiling_excursion():
-    """Stride HR peaks are the set doing its job, not an HR-ceiling breach."""
-    contract = get_contract("run_note")
-
-    assert contract["evaluation_policy"]["strides"]["never"] == "ceiling_excursion"
-    rule = next(
-        line for line in contract["instructions"] if "neuromuscular" in line.lower()
-    )
-    assert "ceiling excursion" in rule
-    assert "stride or recovery HR" in rule
-    assert "relaxed speed" in rule
-    assert "HR came back before the next rep" in rule
 
 
 @pytest.mark.unit
 def test_contract_has_no_scene_conclusion_templates():
-    """Scene-specific 'say X / never say Y' patches are gone (Epic #1544).
+    """Scene-specific 'say X / never say Y' patches stay out (Epic #1544).
 
-    The fast_start-under-ceiling verdict is computed by run_policy (#1513) and a
-    surge on an easy run is a neutral verdict there; the ceiling-touch
-    templates of #1517 / #1542 are subsumed by the timeline's general demand
-    that a cause names its comparison.
+    The Nov patches (#1513 / #1517 / #1542) were removed first; the terminology,
+    ceiling-wording, warm-up / progression / steady and backpack patches went in
+    the second pass. Each is covered by a principle, the gate or run_policy.
     """
-    import json
-
     text = json.dumps(get_contract("run_note"), ensure_ascii=False)
 
     for patch in (
@@ -278,36 +247,35 @@ def test_contract_has_no_scene_conclusion_templates():
         "whatever the pace",
         "followed the pace",
         "a neutral moment the timeline does not narrate",
+        "朝のレディネス",
+        "never say the HR ceiling was not exceeded",
+        "low-readiness morning",
+        "backpack",
+        "not filler",
+        "shape of the build",
     ):
         assert patch not in text
-    timeline = get_contract("run_note")["evaluation_policy"]["timeline"]
-    assert "names the comparison it rests on" in timeline
-    assert "attribution order" in timeline
 
 
 @pytest.mark.unit
-def test_contract_never_write_bans_cause_without_comparison():
-    """A cause must name the comparison it rests on (#1542)."""
-    contract = get_contract("run_note")
+def test_contract_never_write_core_items():
+    """The grounding bans that no gate can check stay in never_write."""
+    never_write = get_contract("run_note")["never_write"]
 
-    assert any("without the comparison" in line for line in contract["never_write"])
+    assert any("drink" in i and "traffic light" in i for i in never_write)  # #1329
+    assert any("without the comparison" in i for i in never_write)  # #1542
+    assert any("label alone" in i and "facts" in i for i in never_write)
+    assert any("derived metric" in i and "confirmation" in i for i in never_write)
 
 
 @pytest.mark.unit
 def test_contract_good_points_rules():
-    """good_points is 0-3 with gated evidence, and invented causes are banned (#1329)."""
-    contract = get_contract("run_note")
+    """good_points is 0-3 and never rests on a within-range or allowed scene (#1329)."""
+    good = get_contract("run_note")["required_fields"]["good_points"]["description"]
 
-    good = contract["required_fields"]["good_points"]["description"]
     assert good.startswith("0-3 items")
     for rule in ("within-range", "acceptable", "timeline", "Leave it empty"):
         assert rule in good
-    assert any(
-        "drink" in line and "traffic light" in line for line in contract["never_write"]
-    )
-    assert any("seconds_over > 0" in line for line in contract["instructions"])
-    # A run far over its ceiling cannot praise keeping it (#1332).
-    assert any("pct_over > 5" in line for line in contract["instructions"])
 
 
 @pytest.mark.unit
@@ -328,16 +296,6 @@ def test_contract_evaluation_policy_has_judgement_checklist():
 
 
 @pytest.mark.unit
-def test_contract_never_write_forbids_label_only_conclusion():
-    never_write = get_contract("run_note")["never_write"]
-
-    assert any("label alone" in item and "facts" in item for item in never_write)
-    assert any(
-        "derived metric" in item and "confirmation" in item for item in never_write
-    )
-
-
-@pytest.mark.unit
 def test_contract_mentions_athlete_context_attribution():
     """A stated circumstance is a cause right after terrain (#1522)."""
     contract = get_contract("run_note")
@@ -345,10 +303,5 @@ def test_contract_mentions_athlete_context_attribution():
     context_keys = contract["evidence_keys"]["context.<field>"]
     assert "athlete_context" in context_keys
     assert "prescription_for_run" in context_keys
-    assert "ladder_step" not in context_keys
-
-    order = "intensity -> terrain -> athlete_context"
-    assert order in contract["prose_roles"]["causality"]
-    assert order in contract["evaluation_policy"]["notes"]
     assert "never a growth point" in contract["evaluation_policy"]["athlete_context"]
     assert "instruction" in contract["evaluation_policy"]["coaching_rules"]

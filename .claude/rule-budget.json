@@ -11,7 +11,7 @@
       "kind": "contract",
       "path": "packages/garmin-mcp-server/src/garmin_mcp/validation/contracts.py",
       "section": "run_note",
-      "ceiling_bytes": 19924
+      "ceiling_bytes": 9179
     },
     "run_note_agent": {
       "kind": "files",
@@ -32,7 +32,7 @@
         ".claude/skills/schedule-workout/SKILL.md",
         ".claude/skills/set-goal/SKILL.md"
       ],
-      "ceiling_bytes": 160466
+      "ceiling_bytes": 68853
     }
   }
 }

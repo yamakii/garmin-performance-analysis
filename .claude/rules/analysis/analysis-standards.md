@@ -18,7 +18,7 @@ Consolidated reference for all analysis rules.
 - **HR zones**: Garmin native zones のみ (計算式禁止)
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値。ポイントごとに所見と根拠だけを簡潔に書く
 
-- **Grounding**: run_note の主張には REPORT 上の evidence キー（`plan.<axis>` / `signals.<metric>` / `moments.<id>` / `recurrence.<kind>` / `vs_previous.<field>` / `conditions.<field>` / `context.<field>`）を必ず付ける。課題（growth point）にできるのは **outside かつ adverse なシグナル**、off-plan の軸、`policy.verdict == "concern"` のシーン（ランの目的から外れた逸脱）の3つだけで、範囲内・有利側のブレを弱点にしない
+- **Grounding**: run_note の主張には REPORT 上の evidence キーを必ず付け、課題にできる条件は契約（`get_analysis_contract("run_note")`）とマージゲートに従う。範囲内・有利側のブレを弱点にしない
 
 ### Error Recovery
 
@@ -36,12 +36,13 @@ Consolidated reference for all analysis rules.
 
 - **反論されたら**まず引用したデータを確かめ直し、データが変える部分だけを変える。丸ごと翻さず、根拠なく固執もしない
 - **保守的なゲート**（カットバック・ACWR・症状・保護期間）は残すが、発動するときはこの走者に今それが当てはまる理由（ゲートの `reason_ja`）を添える
-- **走者専用のルール**は `get_coaching_rules(scopes=[...])` で読む。リポジトリ（rules・skills・コード・Issue・PR）には書かない
+- **走者専用のルール**は `get_coaching_rules(scopes=[...])` で読み、`rule_text` を指示として適用する（`rationale` は背景で引用しない）。リポジトリ（rules・skills・コード・Issue・PR）には書かない
+- **走者が述べたランの事情**（荷物・通勤・流しの持ち越し・歩いた理由など）は `get_activity_context` で読み、答えが出ていることを質問しない。会話で述べられたら確認を取らず `save_activity_context` で保存し「（記録しました: …）」の一行だけを添える。事情は原因の説明であって改善点ではない
 
 ### 改善提案
 
-- 1本のランから出す提案は `next_challenge`＝**持ち越す1点**だけ（#1358）。今日の伸ばせる点（無ければ良かった点の維持）を1つ選んで行動の一文にし、その点の evidence を `next_challenge_evidence` に書く。次のセッションの中身（距離・ペース・心拍帯）は週の処方と `/daily-checkin` が決めるので、1本のランからは名指ししない
-- 数値は処方の値の引用だけ（心拍上限はガード表現「150 bpm を超えないように」）。処方に無い帯やペースを作らない
+- 1本のランから出す提案は**持ち越す1点**だけ（run_note では契約の `next_challenge`）。次のセッションの中身（距離・ペース・心拍帯）は週の処方と `/daily-checkin` が決めるので、1本のランからは名指ししない
+- 数値は処方の値の引用だけ（心拍上限はガード表現）。処方に無い帯やペースを作らない
 - 一般的助言禁止（「もっと練習しましょう」→ このランの所見に根ざした具体的な行動にする）
 - **持ち越す1点は維持目標であり今回の合否ではない**。目的を達したランには「成功条件」「失敗」の表現を使わず、「維持目標」「改善余地」として提示する（agent の prose・会話での引用の双方）
 - **過敏な評価は閾値緩和ではなくカテゴリ分離で解く**: 「厳しすぎる」フィードバックの最初の一手は「一律に測っているものを training_type / 文脈で分けられないか」を問う（例: ペース CV はテンポ走はシビアに、LSD / 時間重視ロングは緩く）。既存の category 分離を確認し、閾値変更ではなく category 別の評価方針で分岐させる

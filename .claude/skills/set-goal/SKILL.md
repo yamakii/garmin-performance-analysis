@@ -7,16 +7,11 @@ description: Interactively register or update the athlete's race goals, current-
 
 あなたはランニングコーチのアシスタントです。選手の**目標（本命/中間レース）・現フェーズの重点・昨季の振り返り**を対話で登録/更新します。Web アプリは参照専用のため、登録/更新はこの CLI が担います。
 
-この内容は `save_athlete_profile` で DuckDB に保存され、週次レビューや分析など他の機能から参照されます。
-
 ## 重要事項
 
-- **日本語で対話・出力**する
-- **省略したキーは保持、渡したキーは置換**（#1468）: profile dict に**キーが無い**項目（`current_focus` / `focus_notes` / `week_start_day` / `goals` / `retrospectives`）は保存済みの値がそのまま残る。キーを渡すとその値で置き換わり、`null` / `[]` を渡せば消える。goals / retrospectives はキーを渡したときだけ user_id 単位で**全件まるごと置き換え**られるので、渡すなら「変更しない項目も含めて全件」を詰める（1 件だけ渡すと他が消える）
+- **goals / retrospectives はキーを渡すと全件置き換わる**: 変更しない項目も含めて全件を詰める（渡さないキーは保存済みの値のまま）
 - **focus_notes に足すだけなら `append_focus_notes` を使う**: `mcp__garmin-db__append_focus_notes(text=..., section="見出し名")` は全文を再送せずに該当セクションの末尾（見出しが無ければ新しい `【見出し】` 行）へ追記し、他の項目には触れない。`focus_notes` は約 1 万字の長い正本なので、既存の記述を書き換える必要があるときだけ `save_athlete_profile` で全文を渡し、短いメモで置き換えず編集する
-- **target_time_seconds は秒の整数**。`4:30:00` のような入力は秒に変換する（4:30:00 → 16200、3:30:00 → 12600、1:45:00 → 6300）
-- **race_date は `YYYY-MM-DD`** 形式
-- **priority**: `A`=本命, `B`=中間, `C`=その他
+- 目標タイムは `4:30:00` のように聞き、秒の整数に変換する。priority は A=本命 / B=中間 / C=その他
 - **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く
 
 ## ワークフロー
@@ -89,51 +84,10 @@ mcp__garmin-db__get_athlete_profile()
 
 - `week_start_day`: 週の開始曜日を `0=月曜 … 6=日曜`（`datetime.date.weekday()` 準拠）の整数で格納する。
 - 既定は `0`（月曜始まり）。既存 profile に値があればそれを初期値として提示し、「変更なし」を選べるようにする。
-- 全機能（週次レビュー・週間距離など）はこの値を共通の週定義（`utils/week.py`）として参照する。
 
 ### Step 3: profile dict の組み立てと最終確認
 
-収集内容を以下の構造に組み立てる。**Step 1 で取得した既存の goals / retrospectives のうち変更しない分も必ず含める**（洗い替えのため）。
-
-```json
-{
-  "user_id": "default",
-  "current_focus": "BASE 期・有酸素基盤構築",
-  "focus_notes": "膝に違和感あり。週3回・低強度中心で様子見",
-  "week_start_day": 0,
-  "goals": [
-    {
-      "race_name": "東京マラソン",
-      "race_date": "2026-03-01",
-      "priority": "A",
-      "goal_type": "marathon",
-      "distance_km": 42.195,
-      "target_time_seconds": 16200,
-      "status": "active",
-      "notes": "サブ4.5 が目標"
-    },
-    {
-      "race_name": "ハーフ調整レース",
-      "race_date": "2026-01-18",
-      "priority": "B",
-      "goal_type": "half",
-      "distance_km": 21.0975,
-      "target_time_seconds": 7200,
-      "status": "active",
-      "notes": ""
-    }
-  ],
-  "retrospectives": [
-    {
-      "season_label": "2025 秋シーズン",
-      "period_start": "2025-09-01",
-      "period_end": "2025-12-31",
-      "narrative": "走行距離は積めたが LT 走の頻度が不足した",
-      "key_learnings": "週1回のテンポ走を固定化する"
-    }
-  ]
-}
-```
+収集内容を `save_athlete_profile` の profile 形式（`current_focus` / `focus_notes` / `week_start_day` / `goals[]` / `retrospectives[]`。項目はツール説明が正本）に組み立てる。**Step 1 で取得した既存の goals / retrospectives のうち変更しない分も必ず含める**。
 
 組み立てた内容を**ユーザーに表示して承認を得る**。以下の点を明示する：
 
@@ -148,8 +102,6 @@ mcp__garmin-db__get_athlete_profile()
 ```
 mcp__garmin-db__save_athlete_profile(profile=<組み立てた profile dict>)
 ```
-
-profile 行は `user_id` で upsert され、goals / retrospectives はキーを渡したときだけ `user_id` 単位で全件置換される（省略したキーは保存済みの値のまま）。
 
 ### Step 5: 結果の要約表示
 
