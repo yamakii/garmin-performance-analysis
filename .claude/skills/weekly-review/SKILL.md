@@ -210,7 +210,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
 - **症状ログの扱い**: バンドルの `symptoms` を読み、**W-1 の申告と `status.flag` を必ず講評に入れる**。
   - `status.flag=true` → **処方を修正する**: 該当部位に負荷が乗るセッション種別を落とす（ロングは**直近のクリーンな距離**＝フラグが立つ前に問題なく走れた最長距離で頭打ちにし、質練はゼロにする）。根拠は `status.reason_ja` を引用する。進行ゲートが GREEN でも回復指標が全て緑でも、この修正が優先する（`cutback_due` と同格の主ゲート）。
   - `status.flag=false` かつ W-1 に行あり → 「申告あり・基準未満」または「申告なし（確認済み）」として一文で触れる。
-  - W-1 に行が 1 つも無い（`prev_week` が空、または `status.days_since_last_report` が null） → 「**症状記録なし**（記録が無いため症状面は判定不能）」と明示し、次週は `/daily-checkin` で毎朝 1 問記録するよう `recommendations` に入れる。
+  - W-1 に行が 1 つも無い（`prev_week` が空、または `status.days_since_last_report` が null） → 「**症状記録なし**（記録が無いため症状面は判定不能）」と明示する（記録を促す推奨は入れない。`/daily-checkin` が毎朝 1 問だけ聞く）。
 - **睡眠スコアの扱い**: `recovery.status.sleep_score` が低い週（おおむね <60）は **回復不足の主因候補** として言及し、`recommendation`（rest/easy 等）と整合させる。
 - **データ欠損週**: `recommendation = unknown`、または RHR/HRV 中央値が軒並み null の場合は、「**回復データ不足のため負荷ベースで講評**」と明示し、ACWR/週量だけで講評を成立させる（回復を黙って無視しない）。
 - **個人ベースライン逸脱の early-warning ノート**: バンドルの `recovery.baseline_deviation` の個人ベースライン逸脱（HRV / readiness / RHR の個人比 z 逸脱）と、`hrv.under_recovery` / `hrv.hrv_below_baseline_days`（HRV ベースライン割れ日数）を取り込み、**逸脱の帰結（consequence）＋予防アクション**を1〜2文の early-warning ノートとして出す。逸脱が無ければ「ベースライン内」と明示し、ノートは出さない。例:
@@ -257,7 +257,7 @@ Step 3 の `training_block`（`block.phase` / `block.purpose` / `ladder_step` / 
     - 「テンポ: 閾値心拍域で 15-20 分（暑熱時はペース固定せず心拍上限で）」
 - **ロング走を最重要チェック**: ロング走はマラソン筋持久力の核。**`ladder_step.current` の目標（km または分）を W の処方に必ず1本入れる**（カットバック週なら短縮した形で）。ラダー段が未定義の週は、直近ロングと進行ゲートから具体値（時間/距離/HR 上限）を決めて処方し、その旨を `overall` で触れる。
 - **伸長可否は Step 5-A-4 の `cutback_due` に従う**（W-1 単独で決めない）: `true` なら進行ゲートが GREEN でも回復指標が全て緑でも deload を処方する。
-- **暑熱期の管理**: 気温・湿度が高い時期は、ペース目標ではなく **心拍／努力度（RPE）で管理する** よう助言する。
+- **暑熱期の管理**: 気温・湿度が高い時期も **心拍上限で管理**し、ペースは結果として扱う（ペース目標を置かない）。
 - **回復の質を負荷と複合で講評**: Step 5-A-5 の回復サブ分析を踏まえ、**負荷（ACWR）と回復（RHR/HRV/睡眠）を掛け合わせて** 講評する。RHR `fatigued` や HRV `under_recovery` が ACWR caution+ と重なれば「積み過ぎ・回復不足」として deload を優先。ACWR optimal × RHR `improving` なら「順調に吸収」として漸進を許可する根拠にする。睡眠スコアが低い週は回復不足の主因候補として言及する。回復データ欠損週は「回復データ不足のため負荷ベースで講評」と明示する。
 - **過去レビューとの連続性**: `get_weekly_review()` の前回指摘がどうなったか（改善した／継続課題か）に言及する。
 - **中間レースの扱い**: priority=B の中間レースは、**全力 PB を狙わず制御された練習として扱う** 方針との整合をチェックする。`goals_with_weeks_to_race[]` に中間レースがあれば、対象週 W プランがそれを過度に意識した高強度になっていないか確認する。
