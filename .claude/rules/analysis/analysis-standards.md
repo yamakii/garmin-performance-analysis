@@ -46,28 +46,13 @@ Consolidated reference for all analysis rules.
 - **持ち越す1点は維持目標であり今回の合否ではない**。目的を達したランには「成功条件」「失敗」の表現を使わず、「維持目標」「改善余地」として提示する（agent の prose・会話での引用の双方）
 - **過敏な評価は閾値緩和ではなくカテゴリ分離で解く**: 「厳しすぎる」フィードバックの最初の一手は「一律に測っているものを training_type / 文脈で分けられないか」を問う（例: ペース CV はテンポ走はシビアに、LSD / 時間重視ロングは緩く）。既存の category 分離を確認し、閾値変更ではなく category 別の評価方針で分岐させる
 
-## 4. Training Plans
-
-- **gap_detected=true**: recent_runs ベースライン使用
-- **Schedule**: 曜日検証必須。連続ラン制限（3-4回/週→3日連続禁止、5回→4日連続禁止、6回→週1休養+高強度連続禁止）
-- **HR zone target**: Garmin native zones 内に収まること
-- **Intent**: 「プランを作って」= `/weekly-review`。コード分析ではない
-
-## 5. Data Safety
+## 4. Data Safety
 
 - **data/ と result/ は git 未管理 — 削除したら復元不可能**
 - 削除前: `ls -la` で中身確認 → ユーザーデータ有無判断 → ユーザー確認
 - `rm -rf` をファイル有無未確認で実行禁止
 - 誤配置ファイル → 正しいパスに移動してから削除
 
-## 6. 週次プランの正本
-
-- **日別プランの正本は `weekly_prescriptions` の最新バッチだけ**（セッション・目標値・判定 `rating`・コメント `rationale`）。週次レビューの散文（`recommendations` / `overall`）は**同じ `review_id` に対する背景**であって、日別プランの別ソースではない
-- `get_weekly_review()` の `review_data.verdict` は保存値ではなく**処方バッチから導出**される（`verdict_source` = `prescriptions` / `stored`、`prescription_batch_id` 併記）。レビューに `verdict` を保存しようとすると拒否される
-- **プランを改訂するときは必ず版をペアで更新**: 新しいレビュー版（`save_weekly_review`、`review_data.revision_note` に理由）→ その `review_id` で `save_weekly_prescriptions` の順。処方だけの再保存は拒否される。Garmin 登録済みの行は、時計に送る中身（タイトルとステップ）が変わらなければ新しい版に登録が引き継がれる（#1447）。`save_weekly_prescriptions` の返り値 `needs_reregistration` に挙がった行（中身が変わった行）だけ `schedule_weekly_prescriptions(dry_run=False)` で作り直す（Garmin への書き込みなので実行前にユーザーに確認）
-- **読む側の版チェック**: 処方行の `review_id` とレビューの `review_id` が一致しないときは**処方が正**。そのレビューの日別の言及は使わない
-- **Garmin カレンダー**: `[MCP]` 項目はこちらの処方の写し（正本は処方行）、`fbtAdaptiveWorkout` は参考情報にとどめる
-
-## 7. 過去の型を確かめるときの比較
+## 5. 過去の型を確かめるときの比較
 
 - §3 の適用条件を確かめる比較は同じ基準で: 同じ暦期間か同じイベント前の同じ長さで並べ、基準を明示し、予定値は実績と分ける。週量平均だけでなく型が依存する条件（ロング本数・最長・直前の途切れ・レース後の伸び）を並べる
