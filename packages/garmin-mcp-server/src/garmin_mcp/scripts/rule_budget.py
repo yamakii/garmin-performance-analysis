@@ -40,8 +40,9 @@ from typing import Any
 
 BUDGET_FILE = ".claude/rule-budget.json"
 
-# scripts/rule_budget.py -> garmin_mcp -> src -> garmin-mcp-server -> packages -> repo root
-_DEFAULT_ROOT = Path(__file__).resolve().parents[4]
+# scripts/rule_budget.py: parents[0] scripts, [1] garmin_mcp, [2] src,
+# [3] garmin-mcp-server, [4] packages, [5] repo root
+_DEFAULT_ROOT = Path(__file__).resolve().parents[5]
 
 
 class Source:

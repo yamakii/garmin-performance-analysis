@@ -83,6 +83,13 @@ def test_check_passes_on_repo() -> None:
 
 
 @pytest.mark.unit
+def test_default_root_is_repo_root() -> None:
+    """The documented command (no --root) finds .claude/rule-budget.json."""
+    assert rule_budget._DEFAULT_ROOT == _REPO_ROOT
+    assert rule_budget.main([]) == 0
+
+
+@pytest.mark.unit
 def test_check_fails_over_ceiling(tmp_path: Path) -> None:
     """Adding 2 KB to a skill without removing anything fails coach_skills."""
     root = _make_root(tmp_path)
