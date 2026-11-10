@@ -1,0 +1,38 @@
+{
+  "_doc": "Byte budget for the text that shapes the coach (Epic #1544). Checked by packages/garmin-mcp-server/tests/docs/test_rule_budget.py; reset with `uv run python -m garmin_mcp.scripts.rule_budget --write`. Raising a ceiling is an owner decision (.claude/rules/dev/coach-incident-protocol.md).",
+  "slack_bytes": 1024,
+  "max_headroom_bytes": 2048,
+  "layers": {
+    "always_loaded": {
+      "kind": "unscoped_rules",
+      "ceiling_bytes": 19204
+    },
+    "run_note_contract": {
+      "kind": "contract",
+      "path": "packages/garmin-mcp-server/src/garmin_mcp/validation/contracts.py",
+      "section": "run_note",
+      "ceiling_bytes": 19924
+    },
+    "run_note_agent": {
+      "kind": "files",
+      "paths": [
+        ".claude/agents/run-note-analyst.md"
+      ],
+      "ceiling_bytes": 13364
+    },
+    "coach_skills": {
+      "kind": "files",
+      "paths": [
+        ".claude/skills/analyze-activity/SKILL.md",
+        ".claude/skills/coach/SKILL.md",
+        ".claude/skills/daily-checkin/SKILL.md",
+        ".claude/skills/run-debrief/SKILL.md",
+        ".claude/skills/weekly-review/SKILL.md",
+        ".claude/skills/plan-block/SKILL.md",
+        ".claude/skills/schedule-workout/SKILL.md",
+        ".claude/skills/set-goal/SKILL.md"
+      ],
+      "ceiling_bytes": 160466
+    }
+  }
+}

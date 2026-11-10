@@ -80,6 +80,18 @@ must not conclude without checking. Never write the wording of one conclusion as
 Where the right answer differs between similar runs, add both as a contrastive pair
 (`.claude/rules/dev/coach-incident-protocol.md`).
 
+## Incident log and indicators (Epic #1544)
+
+Every coach incident becomes a case (`.claude/rules/dev/coach-incident-protocol.md`), so the cases are
+also the incident log. The optional fields `logged`, `source` (`owner` | `self` | `eval`), `triage`
+(`code` | `principle` | `missing_principle` | `variance`) and `recurs_of` (an earlier case id) are never
+sent to a model. `node $F/indicators.mjs [--since YYYY-MM-DD]` prints, with no model calls:
+
+- incidents and owner corrections per ISO week, the count per triage class and the recurrence rate;
+- eval regressions: cases that passed in an earlier variant and fail in the latest variant that ran them.
+
+The rule-size side is `garmin_mcp.scripts.rule_budget` (`--history` for the weekly trend).
+
 ## Running
 
 Every case's `claude -p` runs with `MCP_CONNECTION_NONBLOCKING=false`, so the session waits for
