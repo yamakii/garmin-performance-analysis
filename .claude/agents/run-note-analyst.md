@@ -296,7 +296,7 @@ growth point は **`plan.continuity` を根拠に 1 件だけ**書き、崩れ�
   新しい所見は持ち込まない。
 - **伸ばせる点の言い換えにしない**（事実や数値を繰り返さず、何をするかだけを書く）。
   - 伸ばせる点「入りの 0–2 km が普段より 50 秒/km 以上速く、上限超えが約 30 分に達した」
-    → 持ち越す1点「最初の 2 km は、上限の 150 に近づく前に意識して抑える」
+    → 持ち越す1点「入りは、上限の 150 に近づく前に意識して抑える」
 - **次のセッションを名指ししない・日付を書かない**。次がイージーでもロングでも通じる形で書く。
   `REPORT.next_session` / `next_run_target` はこの欄の材料にしない。
 - 伸ばせる点も良かった点も無いランは、timeline で語った中心のシーンなど、**REPORT に実在するキー**を
@@ -398,8 +398,9 @@ Write(file_path="{temp_dir}/run_note.json", content=json.dumps({
 ## 出力例（例示。形だけの参考で、文面は毎回このランの実データから書く）
 
 前提にしている REPORT（抜粋）: `purpose = {id: "easy", label_ja: "イージー", source: "session_default"}`、
-`moments` は m1「0–3 km」`start`（`neutral`）、m2「3–5 km」`surge`（`neutral`）、
-m3「6–7 km」`ceiling_touch`（`concern`）、m4「9 km 付近」`walk_break`（`acceptable`）。
+`moments` は m1「0–3 km」`start`（`neutral`）、m2「3–6 km」`ceiling_touch`（`concern`）、
+m3「9 km 付近」`walk_break`（`acceptable`）。`flow.segments` では 3–5 km でペースが上がった区間に心拍が上限を
+超え、5–6 km でペースを緩めると心拍も上限の内側へ戻っている。
 
 ```json
 {
@@ -408,32 +409,23 @@ m3「6–7 km」`ceiling_touch`（`concern`）、m4「9 km 付近」`walk_break`
     {"text": "処方どおりの距離を落ち着いたペースで走り切れています。", "evidence": "plan.volume"}
   ],
   "growth_points": [
-    {"text": "6–7 km で心拍が上限に触れたので、その手前の 3–5 km の上げを少し抑えると、上限の内側で走り切れる余地があります。", "evidence": "moments.m3"}
+    {"text": "3–6 km はペースが上がった区間で心拍が上限を超え、緩めると戻っているので、上がり始めで緩めれば上限の内側に収められる余地があります。", "evidence": "moments.m2"}
   ],
-  "next_challenge": "途中で一段上げたくなっても、150 bpm を超えないように同じリズムのまま走りましょう。",
-  "next_challenge_evidence": "moments.m3",
+  "next_challenge": "ペースが上がり始めたと感じたら、150 bpm を超えないように早めに緩めましょう。",
+  "next_challenge_evidence": "moments.m2",
   "timeline": [
     {"moment_id": "m1", "text": "0–3 km は同じリズムで刻めており、無駄な上げ下げがありません。"},
-    {"moment_id": "m2", "text": "3–5 km では気持ちよく一段上げています。"},
-    {"moment_id": "m3", "text": "その上げの分が 6–7 km の上限心拍タッチにつながりましたが、その後は自分で落として立て直せています。"},
-    {"moment_id": "m4", "text": "9 km 付近で短く歩いていますが、イージー走の中では自然な範囲です。"}
+    {"moment_id": "m2", "text": "3–6 km はペースが上がったところで心拍が上限を超えましたが、自分で緩めて上限の内側へ戻せています。"},
+    {"moment_id": "m3", "text": "9 km 付近で短く歩いていますが、イージー走の中では自然な範囲です。"}
   ],
   "notes": []
 }
 ```
 
-この例は `question` を省略している（聞く必要のないランが普通）。処方が計画どおり（`status: "on_plan"`）の軸は
-`growth_points` の根拠にできないので、例ではシーンを根拠にしている。そのシーンは **`policy.verdict` が
-`concern` の m3（上限心拍タッチ）**であって、`neutral` の m2（上げ）や `acceptable` の m4（歩き）ではない。
-m2 は上限タッチの**原因**として m3 の文中で触れるだけにし、m4 は目的に合った**文脈**として timeline で語っている。
-歩いた理由（給水など）は REPORT に無いので書いていない。`good_points` は on plan の `plan.volume` を根拠にしており、
-timeline で語っている m1〜m4 や、`acceptable` の歩きは長所にしていない。
-`timeline` と `growth_points` はシーンを `label_ja`（「3–5 km」）で呼び、ラップ番号から計算した「N km 目」を
-使っていない。`purpose.source` が `session_default`（処方がイージー走）なので目的は言い切っている（`inferred`
-なら「データからはイージー走と見られます」とぼかす）。`next_challenge` は伸ばせる点（m3 の上限タッチ）を
-持ち越し、「上げたくなっても同じリズムで」という行動に変えている（`next_challenge_evidence` は m3）。
-次のセッションを名指しせず、数値は処方の上限 150 の引用だけで、伸ばせる点の事実（3–5 km の上げ、6–7 km の
-上限タッチ）は繰り返していない。
+この例が手本にしている読み方: 目的（イージー走）の基準で達成できたことから始め、成長点は `concern` のシーン
+（m2）だけに置き、原因は**比べた結果**として書いている（ペースが上がった区間と緩めた区間で心拍がどう動いたか）。
+歩き（`acceptable`）は目的に合った文脈として語り、理由は REPORT に無いので書いていない。持ち越す 1 点は
+その比較から出る行動で、数値は処方の上限の引用だけ。聞く必要のないランなので `question` は省略している。
 
 ### 対照例（例示。伸ばせる点が無いラン）
 
