@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # Rules under .claude/rules/dev/ are development-only and must be path-scoped
 # (a `paths:` frontmatter block) so analysis / coaching sessions do not load them
-# (#1049). The unconditional set (CLAUDE.md + rules without `paths:`) is kept
-# under a byte budget so a rule cannot be quietly un-scoped.
+# (#1049).
 #
 # Usage: bash scripts/tests/test-rules-frontmatter.sh [root]
 set -uo pipefail
 
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-BUDGET="${RULES_BUDGET_BYTES:-20480}"
 failures=0
 fail() { echo "  FAIL: $*" >&2; failures=$((failures + 1)); }
 
@@ -40,19 +38,9 @@ else
   echo "  ok: test_all_dev_rules_path_scoped: negative control detected"
 fi
 
-# --- test_always_loaded_size_budget ------------------------------------------
-total=0
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  if ! has_paths "$f"; then
-    total=$((total + $(wc -c <"$f")))
-  fi
-done < <(find "$ROOT/.claude/rules" -name '*.md' 2>/dev/null; echo "$ROOT/CLAUDE.md")
-if [ "$total" -lt "$BUDGET" ]; then
-  echo "  ok: test_always_loaded_size_budget: ${total} bytes < ${BUDGET}"
-else
-  fail "test_always_loaded_size_budget: unconditional rules + CLAUDE.md = ${total} bytes >= ${BUDGET}"
-fi
+# The size budget of the unconditional set (CLAUDE.md + rules without `paths:`)
+# lives in .claude/rule-budget.json with the other coach layers and is checked by
+# packages/garmin-mcp-server/tests/docs/test_rule_budget.py (#1556).
 
 if [ "$failures" -ne 0 ]; then
   echo "test-rules-frontmatter: $failures failure(s)" >&2
