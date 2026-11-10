@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { caseEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
+import { caseEnv, combine, deterministicChecks, garminToolsReached, judge, judgeUserPrompt, outcomesFor, rubricScores, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
 import { caseProblem, cliPaths, loadCases, loadRunNotePrompt, toolPermissions, withBackoff } from '../../hillclimb/coach-review/run-eval.mjs'
 
 const REPORT = {
@@ -102,21 +102,59 @@ test('test_combine_case_pass_requires_all_applicable', () => {
   assert.equal(combine({ output_ok: null }, { must: [], must_not: [] }).case_pass, null)
 })
 
-test('test_judge_skips_model_without_items_and_maps_verdicts', async () => {
+test('test_judge_maps_verdicts_and_judges_every_case', async () => {
   let calls = 0
+  let verdict = { must: [{ pass: true, reason: 'r' }], must_not: [{ pass: false, reason: 'quoted' }], rubric: [], notes: 'n' }
   const run = async () => {
     calls++
-    return JSON.stringify({
-      structured_output: { must: [{ pass: true, reason: 'r' }], must_not: [{ pass: false, reason: 'quoted' }], notes: 'n' },
-      modelUsage: { 'claude-fable-5-1': {} },
-    })
+    return JSON.stringify({ structured_output: verdict, modelUsage: { 'claude-fable-5-1': {} } })
   }
-  const empty = await judge(runNoteCase({}), note(), {}, { run })
-  assert.deepEqual([empty.must, empty.must_not, calls], [[], [], 0])
   const j = await judge(runNoteCase({ must: ['a'], must_not: ['b'] }), note(), {}, { run })
   assert.deepEqual([j.must, j.must_not, calls], [[true], [false], 1])
   assert.equal(combine({ output_ok: true }, j).must_not_ok, false)
   await assert.rejects(judge(runNoteCase({ must: ['a', 'b'] }), note(), {}, { run }), /expected 2\/0/)
+  // a case with no items is still judged: the outcome rubric applies to every output (#1546)
+  verdict = { must: [], must_not: [], rubric: [{ outcome: 'O1', score: 2, reason: 'r' }], notes: '' }
+  const empty = await judge(runNoteCase({}), note(), {}, { run })
+  assert.deepEqual([empty.must, empty.must_not, empty.rubric.O1, calls], [[], [], 2, 3])
+  assert.equal(combine({ output_ok: true }, empty).must_ok, null)
+})
+
+test('test_combine_rubric_scores', async () => {
+  const run = async () =>
+    JSON.stringify({
+      structured_output: {
+        must: [], must_not: [], notes: '',
+        rubric: [
+          { outcome: 'O1', score: 2, reason: 'starts from the purpose' },
+          { outcome: 'O2', score: 1, reason: 'one cause without its comparison' },
+          { outcome: 'O3', score: 7, reason: 'out of range' },
+        ],
+      },
+    })
+  const j = await judge(runNoteCase({}), note(), {}, { run })
+  const graded = combine({ output_ok: true }, j)
+  assert.equal(graded.rubric.O1, 2)
+  assert.equal(graded.rubric.O2, 1)
+  // an out-of-range or missing score reads null, never 0
+  assert.equal(graded.rubric.O3, null)
+  assert.equal(graded.rubric.O4, null)
+  assert.equal(graded.explanation.rubric.O2, 'one cause without its comparison')
+  // the rubric is reported beside case_pass, not part of it
+  assert.equal(graded.case_pass, true)
+  assert.equal(combine({ output_ok: true }, null).rubric, null)
+})
+
+test('test_rubric_not_applicable_outcomes', () => {
+  const conv = { id: 'q', kind: 'conversation', pattern: 'E', prompt: '?', expect: {} }
+  assert.deepEqual(Object.keys(rubricScores('run_note', [])), ['O1', 'O2', 'O3', 'O4', 'O5', 'O6'])
+  assert.deepEqual(Object.keys(rubricScores('conversation', [])), ['O2', 'O5', 'O6', 'O7'])
+  assert.deepEqual(outcomesFor('conversation').map((o) => o.id), ['O2', 'O5', 'O6', 'O7'])
+  // the judge is only asked for the outcomes of the case's kind
+  const prompt = judgeUserPrompt(conv, 'answer', {})
+  assert.match(prompt, /O7 intent/)
+  assert.doesNotMatch(prompt, /O1 meaning|O4 one thing/)
+  assert.match(judgeUserPrompt(runNoteCase({}), note(), {}), /O1 meaning/)
 })
 
 test('test_load_cases_prefers_local', () => {

@@ -7,6 +7,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { OUTCOMES } from './grade.mjs'
 
 const flow = process.argv[2] ?? dirname(fileURLToPath(import.meta.url))
 const state = JSON.parse(readFileSync(join(flow, '_state.json'), 'utf8'))
@@ -62,6 +63,18 @@ for (const v of variants) {
   }
   const cells = Object.keys(byPattern).sort().map((p) => `${p} ${fmt(mean(byPattern[p]))} (${byPattern[p].length})`)
   console.log(`  ${v}: ${cells.join(', ') || '-'}`)
+}
+
+// Outcome rubric (#1546): mean score 0-2 per outcome over the rows that scored it.
+console.log('\noutcome rubric (mean 0-2, n scored):')
+console.log('| variant | ' + OUTCOMES.map((o) => `${o.id} ${o.label}`).join(' | ') + ' |')
+console.log('|' + ' --- |'.repeat(OUTCOMES.length + 1))
+for (const v of variants) {
+  const cells = OUTCOMES.map((o) => {
+    const xs = byVariant[v].rows.map((r) => r.grade?.rubric?.[o.id]).filter((x) => typeof x === 'number')
+    return xs.length ? `${fmt(mean(xs))} (${xs.length})` : '-'
+  })
+  console.log(`| ${v} | ${cells.join(' | ')} |`)
 }
 
 const base = byVariant.baseline

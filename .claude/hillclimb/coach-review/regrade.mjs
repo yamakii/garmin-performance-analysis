@@ -7,8 +7,9 @@
 //   node .claude/hillclimb/coach-review/regrade.mjs <variant> [--rejudge]
 //
 // Reads <variant>/out/<id>_rep<k>.{run_note.json,report.json,answer.md,judge_context.json}.
-// Without --rejudge the judge's must / must_not results are carried over.
-// --rejudge re-runs the judge on every row (one judge call per row).
+// Without --rejudge the judge's must / must_not results and outcome rubric are
+// carried over. --rejudge re-runs the judge on every row (one judge call per
+// row), e.g. to add the outcome rubric (#1546) to rows graded before it existed.
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -58,9 +59,10 @@ for (const r of rows) {
   const { explanation, ...grade } = combine(det, judged)
   if (!rejudge) {
     // Judge results carried over exactly; case_pass recomputed over them.
-    for (const k of ['must_ok', 'must_not_ok', 'judge_notes']) explanation[k] = r.explanation?.[k]
+    for (const k of ['must_ok', 'must_not_ok', 'judge_notes', 'rubric']) explanation[k] = r.explanation?.[k] ?? null
     grade.must_ok = r.grade?.must_ok ?? null
     grade.must_not_ok = r.grade?.must_not_ok ?? null
+    grade.rubric = r.grade?.rubric ?? null
     grade.case_pass = casePass(grade)
   }
   if (JSON.stringify(grade) !== JSON.stringify(r.grade)) changed++
