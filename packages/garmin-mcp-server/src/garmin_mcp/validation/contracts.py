@@ -35,9 +35,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "0-3 items of {text, evidence}: one sentence each with the "
                     "evidence key of the number that supports it. A strength "
                     "rests on a signal outside its normal range on the "
-                    "favourable side, an on-plan axis, a neutral moment the "
-                    "timeline does not narrate, or vs_previous / recurrence / "
-                    "conditions / context. Never a within-range signal, an "
+                    "favourable side, an on-plan axis, or vs_previous / "
+                    "recurrence / conditions / context. Never a within-range signal, an "
                     "'acceptable' or 'concern' moment, or a scene the timeline "
                     "already tells. Leave it empty rather than invent one"
                 ),
@@ -45,8 +44,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "growth_points": {
                 "type": "array",
                 "description": (
-                    "0-2 items of {text, evidence}, framed as room to grow or a "
-                    "maintenance target, never pass/fail"
+                    "0-2 items of {text, evidence}, framed as room to grow, "
+                    "never pass/fail; empty when nothing qualifies"
                 ),
             },
             "next_challenge": {
@@ -55,7 +54,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                     "持ち越す 1 点: ONE sentence, 10-120 chars -- one of "
                     "today's growth_points (or, with none, a good point to keep) "
                     "turned into one behaviour cue for the runs ahead "
-                    "('最初の 2 km は上限の 150 に近づく前に抑える'). Not a "
+                    "('入りは上限の 150 に近づく前に意識して抑える'). Not a "
                     "restatement of the point, not a target for a named or "
                     "dated session, and no numbers except the prescription's "
                     "own values quoted as a guard"
@@ -66,7 +65,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "description": (
                     "The evidence key of the good point or growth point the "
                     "next_challenge carries over -- it must equal the evidence "
-                    "of one of today's good_points / growth_points"
+                    "of one of today's good_points / growth_points; only when "
+                    "both are empty, the key of the scene the timeline centres on"
                 ),
             },
             "timeline": {
@@ -131,7 +131,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         # noise at best and a contradiction at worst.
         "never_write": [
             "Numeric readouts already shown in the figures (pace / HR / GCT "
-            "tables repeated as prose)",
+            "tables repeated as prose) -- a number that carries a comparison "
+            "or a prescription guard is not a readout",
             "Restated deterministic verdicts such as '接地時間は理想範囲内です' "
             "-- the range badge already says it",
             "Generic criteria or textbook thresholds with no bearing on this run",
@@ -140,7 +141,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "point, a note that repeats the timeline, or a low-readiness "
             "morning stated in story and again in good_points)",
             "A pass/fail judgement of the athlete -- growth points are room to "
-            "grow or a maintenance target",
+            "grow, a kept good point is a maintenance target",
             "A scene, cause or comparison that no evidence key supports",
             "A cause the report does not carry -- a drink, a traffic light, how "
             "the legs felt -- filled in to explain a scene",
@@ -164,9 +165,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "A cause named without the comparison it rests on -- say what was "
             "compared (the segments before and after a pace change, today "
             "against the athlete's normal range) and that the earlier causes "
-            "in the attribution order did not explain it; 'HR was high "
-            "whatever the pace' needs segments where the pace dropped and HR "
-            "did not",
+            "in the attribution order did not explain it",
         ],
         # How an ``evidence`` / ``moment_id`` / ``signal`` key is resolved by
         # ``validators.check_run_note_grounding`` at merge time.
@@ -357,33 +356,14 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "start / fast_start / surge / ceiling_touch / walk_break / "
                 "climb / fade / strong_finish / progression / steady for "
                 "unit='km' scenes, and warmup / rep / rest / main / cooldown / "
-                "work_set / strides for unit='step' scenes. An easy / "
-                "long_easy / recovery run never carries a surge scene: its "
-                "pace is left to the conditions, and a pickup that mattered "
-                "crossed the ceiling (ceiling_touch). Likewise a fast_start "
-                "whose HR stayed under the ceiling is neutral on a run that "
-                "guards HR: it is read against the run's own median, so it "
-                "also fires when the athlete only slowed later, and it is "
-                "never a growth point -- read its facts (avg_hr against the "
-                "ceiling) before saying the start was too quick. Blame a "
-                "ceiling_touch on the start only when the opening stretch's HR "
-                "was already near the ceiling (flow.segments avg_hr). Before "
-                "saying why HR sat high, check whether HR followed the pace: "
-                "compare flow.segments avg_hr before and after corrected_at_km "
-                "(and around any later pace change) with how far the pace "
-                "moved. HR that came down when the pace came down, and rose "
-                "again when it picked up, followed the pace -- the scene is "
-                "the pickups, and that is what to say. Only HR that held while "
-                "the pace clearly dropped did not follow it; even then walk "
-                "the attribution order (terrain, athlete_context, weather, "
-                "recovery) before naming the day's state, and hedge it. "
-                "signals.hr_vs_expected says whether the run's HR was high "
-                "for its pace overall: outside on the high side supports it, "
-                "within / edge means the athlete's usual HR for that pace. "
-                "Name the comparison the attribution rests on, and let the "
-                "lever follow from it (easing the pace for HR that followed "
-                "the pace, a short walk as the prescription allows for HR "
-                "that did not). A strides scene "
+                "work_set / strides for unit='step' scenes. A cause told for "
+                "a scene names the comparison it rests on (flow.segments "
+                "before and after it, signals against the normal range) and "
+                "walks the attribution order -- intensity, terrain "
+                "(conditions), stated circumstances, weather, recovery -- "
+                "before settling on a later one; what the report cannot "
+                "separate is hedged. The lever for the next run follows from "
+                "that comparison. A strides scene "
                 "('流し（4本）') is the whole set of strides and their jogs -- "
                 "narrate it as one item (see evaluation_policy.strides). On a "
                 "rep session "
@@ -458,8 +438,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "policy.verdict == 'concern' may become a growth point; an "
             "'acceptable' or 'neutral' moment is context, never a flaw",
             "A good point rests on a favourable out-of-range signal, an on-plan "
-            "axis, a neutral moment the timeline does not narrate, or a "
-            "background source; write none rather than praise a within-range "
+            "axis or a background source; write none rather than praise a within-range "
             "value or an allowed scene",
             "When plan.hr_ceiling.seconds_over > 0, never say the HR ceiling "
             "was not exceeded; when plan.hr_ceiling.pct_over > 5, plan.hr_ceiling "
