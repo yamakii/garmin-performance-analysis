@@ -129,6 +129,16 @@ def test_write_sets_ceiling_to_current_plus_slack(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_write_never_raises_a_ceiling(tmp_path: Path) -> None:
+    """--write only lowers: a layer that grew keeps its ceiling (owner decision)."""
+    root = _make_root(tmp_path)
+    skill = root / ".claude/skills/coach/SKILL.md"
+    skill.write_text(skill.read_text() + "n" * 500, encoding="utf-8")
+    rule_budget.write(root, out=lambda _: None)
+    assert _ceiling(root, "coach_skills") == 1000 + 1024
+
+
+@pytest.mark.unit
 def test_contract_size_from_source_matches_import() -> None:
     """Executing contracts.py in isolation measures exactly what get_contract returns."""
     src = (
