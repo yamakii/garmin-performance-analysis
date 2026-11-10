@@ -18,7 +18,7 @@
       "paths": [
         ".claude/agents/run-note-analyst.md"
       ],
-      "ceiling_bytes": 13364
+      "ceiling_bytes": 11738
     },
     "coach_skills": {
       "kind": "files",
