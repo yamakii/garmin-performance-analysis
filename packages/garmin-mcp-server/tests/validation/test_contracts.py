@@ -268,15 +268,34 @@ def test_contract_fast_start_under_ceiling_neutral():
 
 @pytest.mark.unit
 def test_contract_ceiling_touch_attribution():
-    """A ceiling touch is blamed on the start only when the start ran hot (#1517)."""
+    """A ceiling touch is attributed by checking whether HR followed the pace.
+
+    #1517 blamed the start only when it ran hot; #1542 replaced its canned
+    conclusion ('say that HR rose whatever the pace', 'never ease off earlier')
+    with the comparison the attribution has to rest on.
+    """
     import json
 
     text = json.dumps(get_contract("run_note"), ensure_ascii=False)
 
     assert "only when the opening stretch's HR was already near the ceiling" in text
-    assert "segments after corrected_at_km" in text
-    assert "the start was not the cause" in text
-    assert "never 'ease off earlier'" in text
+    for phrase in (
+        "followed the pace",
+        "flow.segments avg_hr before and after corrected_at_km",
+        "signals.hr_vs_expected",
+        "attribution order",
+    ):
+        assert phrase in text
+    assert "say that HR rose whatever the pace" not in text
+    assert "never 'ease off earlier'" not in text
+
+
+@pytest.mark.unit
+def test_contract_never_write_bans_cause_without_comparison():
+    """A cause must name the comparison it rests on (#1542)."""
+    contract = get_contract("run_note")
+
+    assert any("without the comparison" in line for line in contract["never_write"])
 
 
 @pytest.mark.unit
