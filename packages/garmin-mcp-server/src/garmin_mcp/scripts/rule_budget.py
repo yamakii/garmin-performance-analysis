@@ -167,14 +167,20 @@ def check(root: Path, out: Callable[[str], None] = print) -> list[str]:
 
 
 def write(root: Path, out: Callable[[str], None] = print) -> None:
-    """Reset every ceiling to the layer's current size plus ``slack_bytes``."""
+    """Lower every ceiling to the layer's current size plus ``slack_bytes``.
+
+    Never raises a ceiling: raising one is an owner decision made by editing the
+    budget file in a PR. A first write (ceiling 0) sets it from the measurement.
+    """
     budget = load_budget(root)
     src = Source(root)
     for name, layer in budget["layers"].items():
         size = measure_layer(src, layer)
         if size is None:
             raise SystemExit(f"{name}: could not be measured")
-        layer["ceiling_bytes"] = size + budget["slack_bytes"]
+        target = size + budget["slack_bytes"]
+        current = layer.get("ceiling_bytes") or 0
+        layer["ceiling_bytes"] = min(current, target) if current else target
         out(f"  {name}: ceiling -> {layer['ceiling_bytes']}")
     (root / BUDGET_FILE).write_text(
         json.dumps(budget, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
