@@ -60,6 +60,25 @@ specifics enter only through each case's `expect` strings, which stay local.
   over the case's `expect.must` / `expect.must_not`. The judge sees the run report
   and CONTEXT (run_note) or the probe's tool results (conversation).
 - `case_pass` (the headline): every applicable metric passes. `null` means not applicable.
+- Outcome rubric (#1546, Epic #1544): the judge also scores, 0 / 1 / 2, the outcomes a good
+  coach output achieves from the athlete's side (`OUTCOMES` in `grade.mjs`):
+  - O1 meaning (run_note)
+  - O2 trust (both kinds)
+  - O3 weighting (run_note)
+  - O4 one thing to carry (run_note)
+  - O5 own context (both kinds)
+  - O6 delivery (both kinds)
+  - O7 intent (conversation)
+
+  Every case is judged for these, including cases that have no `must` / `must_not` items. The
+  scores land in `grade.rubric`, with reasons in `explanation.rubric`. An unscored outcome reads
+  `null`. The rubric sits beside `case_pass` and is not part of it. `compare.mjs` prints the mean
+  per outcome. Rows graded before the rubric existed get it from `regrade.mjs <variant> --rejudge`.
+
+Case expectations are written in principle form: what the output must base a claim on, or what it
+must not conclude without checking. Never write the wording of one conclusion as an expectation.
+Where the right answer differs between similar runs, add both as a contrastive pair
+(`.claude/rules/dev/coach-incident-protocol.md`).
 
 ## Running
 
