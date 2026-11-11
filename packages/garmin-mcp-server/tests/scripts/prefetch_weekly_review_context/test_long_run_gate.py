@@ -179,12 +179,14 @@ def test_cutback_due_event_window_true_inside_window_yellow() -> None:
     assert long_run["cutback_due_event_window"] is True
     # The streak gate is independent and stays false on an empty series.
     assert long_run["cutback_due_long_run"] is False
-    # The slimmed block carries exactly the five fields the rule is stated in.
+    # The slimmed block carries the five fields the rule is stated in, plus
+    # the proven long run the ceiling reads against (#1571).
     assert long_run["event_window"] == {
         "last_event": window["last_event"],
         "days_since_event": 12,
         "in_window": True,
         "ceiling_km": 21.2,
+        "proven_long_run": None,
         "verdict": "yellow",
     }
     # The window is judged as of today, not the week boundary.

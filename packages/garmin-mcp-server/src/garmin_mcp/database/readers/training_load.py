@@ -45,13 +45,62 @@ _CAUTION_MAX = 1.5
 
 _SAFE_BAND_JA = f"{_UNDERTRAINING_MAX}〜{_OPTIMAL_MAX}"
 
+# Japanese label per chronic-window week kind (``window_composition``).
+_WEEK_KIND_JA: dict[str, str] = {
+    "recovery": "回復期",
+    "taper": "テーパー",
+    "cutback": "カットバック",
+    "race": "レース",
+    "base": "基礎期",
+    "peak": "ピーク期",
+    "unregistered": "未登録",
+}
+_BUILD_KIND = "build"
 
-def _classify(acwr: float | None) -> tuple[str, str | None]:
+
+def _phase_sentence(
+    build_baseline: dict[str, Any] | None, composition: list[dict[str, Any]]
+) -> str | None:
+    """One sentence on the window composition and the build-baseline ratio.
+
+    Issue #1571: the ACWR reason says why to hold back; this sentence adds what
+    the 28-day denominator is made of and how the acute load compares with the
+    registered build weeks. ``None`` unless ``build_baseline.status == "ok"``.
+    """
+    if not isinstance(build_baseline, dict) or build_baseline.get("status") != "ok":
+        return None
+    ratio = build_baseline.get("ratio")
+    if ratio is None:
+        return None
+    others = [
+        str(w.get("kind") or "unregistered")
+        for w in composition
+        if str(w.get("kind") or "") != _BUILD_KIND
+    ]
+    tail = f"ビルド期の基準比では {float(ratio):.2f} 倍です。"
+    if not others:
+        return f"28日の分母はすべてビルド週で、{tail}"
+    labels: list[str] = []
+    for kind in others:
+        label = _WEEK_KIND_JA.get(kind, kind)
+        if label not in labels:
+            labels.append(label)
+    return f"28日の分母のうち{len(others)}週は{'・'.join(labels)}で、{tail}"
+
+
+def _classify(
+    acwr: float | None,
+    build_baseline: dict[str, Any] | None = None,
+    composition: list[dict[str, Any]] | None = None,
+) -> tuple[str, str | None]:
     """Map an ACWR value to its injury-risk status and the reason it applies.
 
     The reason (Issue #1524) lets a conservative gate say why it applies now:
     the ratio, the safe band and what would move it back. ``None`` for
     ``optimal`` (no gate) and ``insufficient_data`` (no chronic load to judge).
+    When the build baseline is ``ok`` the reason gains one sentence with the
+    chronic-window composition and the build-baseline ratio (Issue #1571); the
+    status never depends on it.
 
     Returns:
         ``(status, reason_ja)`` where status is undertraining / optimal /
@@ -62,18 +111,22 @@ def _classify(acwr: float | None) -> tuple[str, str | None]:
     if _UNDERTRAINING_MAX <= acwr <= _OPTIMAL_MAX:
         return "optimal", None
     ratio = f"{acwr:.2f}"
+    phase = _phase_sentence(build_baseline, composition or [])
     if acwr < _UNDERTRAINING_MAX:
-        return "undertraining", (
+        status = "undertraining"
+        reason = (
             f"直近7日の距離が過去28日の週平均の {ratio} 倍で、安全域 "
             f"{_SAFE_BAND_JA} を下回っています。週平均に近い距離に戻すと比が "
             f"{_UNDERTRAINING_MAX} 以上に戻ります。"
         )
-    status = "caution" if acwr <= _CAUTION_MAX else "high_risk"
-    return status, (
-        f"直近7日の距離が過去28日の週平均の {ratio} 倍で、安全域 "
-        f"{_SAFE_BAND_JA} を超えています。急な距離の増加は故障リスクを上げるため、"
-        f"次の7日の距離を抑えて比が {_OPTIMAL_MAX} 以下に戻れば解除されます。"
-    )
+    else:
+        status = "caution" if acwr <= _CAUTION_MAX else "high_risk"
+        reason = (
+            f"直近7日の距離が過去28日の週平均の {ratio} 倍で、安全域 "
+            f"{_SAFE_BAND_JA} を超えています。急な距離の増加は故障リスクを上げるため、"
+            f"次の7日の距離を抑えて比が {_OPTIMAL_MAX} 以下に戻れば解除されます。"
+        )
+    return status, reason + phase if phase else reason
 
 
 def _acwr_from_loads(acute_7d: float, chronic_28d_total: float) -> float | None:
@@ -146,8 +199,8 @@ class TrainingLoadReader(BaseDBReader):
         acute_total = sum(km for day, km in daily.items() if day >= acute_start)
 
         acwr = _acwr_from_loads(acute_total, chronic_total)
-        status, reason_ja = _classify(acwr)
         build_baseline, composition = self._phase_context(resolved_end, acute_total)
+        status, reason_ja = _classify(acwr, build_baseline, composition)
 
         return {
             "end_date": resolved_end.strftime("%Y-%m-%d"),

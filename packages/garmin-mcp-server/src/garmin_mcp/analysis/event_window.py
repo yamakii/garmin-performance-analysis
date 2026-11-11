@@ -197,6 +197,7 @@ def empty_post_event_window(
         "longest_since_km": None,
         "longest_since_activity_id": None,
         "overshoot_pct": None,
+        "proven_long_run": None,
         "verdict": "insufficient_data",
         "reason_ja": reason_ja,
     }
@@ -267,6 +268,7 @@ def compute_post_event_window(
     runs_since: list[dict[str, Any]],
     pre_event_longest_km: float | None,
     date: str,
+    proven_long_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Judge the protection window as of ``date``.
 
@@ -280,18 +282,24 @@ def compute_post_event_window(
             :data:`PRE_EVENT_LOOKBACK_DAYS` days before the event, or ``None``
             when it cannot be computed.
         date: Reference day (``YYYY-MM-DD``).
+        proven_long_run: The longest run already proven before ``date``
+            (``TrainingLoadReader.get_proven_long_run``), carried beside the
+            ceiling so the ceiling reads against what was proven (Issue
+            #1571). It never changes the verdict.
 
     Returns:
         ``{"date", "last_event", "days_since_event", "in_window", "ceiling_km",
         "longest_since_km", "longest_since_activity_id", "overshoot_pct",
-        "verdict", "reason_ja"}`` where ``verdict`` is one of ``green`` /
-        ``yellow`` / ``red`` / ``no_event`` / ``insufficient_data``.
+        "proven_long_run", "verdict", "reason_ja"}`` where ``verdict`` is one
+        of ``green`` / ``yellow`` / ``red`` / ``no_event`` /
+        ``insufficient_data``.
     """
     reference = _as_date(date)
     if reference is None:
         return empty_post_event_window(
             date, "基準日を解釈できず、保護期間を判定できません。"
         )
+    proven = proven_long_run if isinstance(proven_long_run, dict) else None
 
     past_events = []
     for event in events:
@@ -309,6 +317,7 @@ def compute_post_event_window(
             "longest_since_km": None,
             "longest_since_activity_id": None,
             "overshoot_pct": None,
+            "proven_long_run": proven,
             "verdict": "no_event",
             "reason_ja": _reason_ja("no_event", None, None, False, None, None, None),
         }
@@ -361,6 +370,7 @@ def compute_post_event_window(
         ),
         "longest_since_activity_id": longest_since_activity_id,
         "overshoot_pct": overshoot_pct,
+        "proven_long_run": proven,
         "verdict": verdict,
         "reason_ja": _reason_ja(
             verdict,

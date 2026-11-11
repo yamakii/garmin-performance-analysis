@@ -46,6 +46,9 @@ Output (JSON to stdout, one line):
                                           #   last_cutback_weeks_ago} over the
                                           #   same completed weeks (secondary gate)
       "acwr": {...}|null,                 # includes reason_ja (str|null)
+      "gate_counterweight": {...}|null,   # #1571: when any gate fires --
+                                          #   {fired, proven, goal_demand,
+                                          #   hold_cost_ja} from the standing
       "recovery": {"trend": {...}|null,   # trend.series trimmed to the last
                                           #   _RECOVERY_SERIES_KEEP_DAYS days
                                           #   (aggregates stay 8-week)
@@ -119,6 +122,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from garmin_mcp.analysis.derivations import (
+    LONG_RUN_CUTBACK_TRIGGER_WEEKS,
     count_consecutive_build_weeks,
     detect_garmin_conflicts,
     format_gear_label,
@@ -127,6 +131,7 @@ from garmin_mcp.analysis.derivations import (
     summarize_adherence,
     weeks_since_last_cutback,
 )
+from garmin_mcp.analysis.gate_counterweight import build_counterweight
 from garmin_mcp.analysis.progression_gate import build_long_run_progression_gate
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.readers.metadata import collect_week_gear_usage
@@ -160,6 +165,11 @@ _LONG_RUN_GATE_MIN_KM = 10.0
 _EVENT_WINDOW_CUTBACK = ("yellow", "red")
 # Energy-balance window in days (Issue #1435): one review week.
 _ENERGY_WINDOW_DAYS = 7
+# ACWR statuses that fire the load gate (Issue #1571 counterweight).
+_ACWR_GATE_STATUSES = ("caution", "high_risk")
+# Weekly-volume streak at which the secondary cutback gate fires (the
+# weekly-review skill's ``consecutive_build_weeks >= 3``).
+_VOLUME_CUTBACK_WEEKS = LONG_RUN_CUTBACK_TRIGGER_WEEKS
 
 
 def _safe[T](fn: Callable[[], T]) -> T | None:
@@ -367,12 +377,56 @@ def _volume_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str, 
     }
 
 
+def _fired_gates(load_trend: Any, acwr: Any) -> list[str]:
+    """The conservative gates that fire in this bundle (Issue #1571).
+
+    Read from the deterministic gate outputs already in the bundle: ACWR
+    caution / high_risk, the long-run cutback streak, the volume streak reaching
+    :data:`_VOLUME_CUTBACK_WEEKS` and an in-window yellow / red event window.
+    """
+    fired: list[str] = []
+    if isinstance(acwr, dict) and acwr.get("status") in _ACWR_GATE_STATUSES:
+        fired.append("acwr")
+    trend = load_trend if isinstance(load_trend, dict) else {}
+    long_run = trend.get("long_run") or {}
+    volume = trend.get("volume") or {}
+    if long_run.get("cutback_due_long_run"):
+        fired.append("cutback_long_run")
+    if int(volume.get("consecutive_build_weeks") or 0) >= _VOLUME_CUTBACK_WEEKS:
+        fired.append("cutback_volume")
+    if long_run.get("cutback_due_event_window"):
+        fired.append("event_window")
+    return fired
+
+
+def _gate_counterweight(
+    db_path: str, on_date: str, fired: list[str], user_id: str
+) -> dict[str, Any] | None:
+    """The counterweight facts beside the fired gates (Issue #1571).
+
+    Built from the current-standing view as of ``on_date``. ``None`` when no
+    gate fires (or the standing could not be read); the gates themselves are
+    reported unchanged elsewhere in the bundle.
+    """
+    if not fired:
+        return None
+    from garmin_mcp.database.readers.standing import StandingReader
+
+    standing = _safe(
+        lambda: StandingReader(db_path).get_current_standing(on_date, user_id=user_id)
+    )
+    if not isinstance(standing, dict):
+        return None
+    return build_counterweight(standing, fired) or None
+
+
 def _slim_event_window(window: dict[str, Any] | None) -> dict[str, Any] | None:
     """Keep only the fields the review quotes from the protection window.
 
     The full reader result carries the ``reason_ja`` prose and the ceiling's
     source activity, which the review re-words anyway; the bundle ships the five
-    fields the cutback rule is stated in.
+    fields the cutback rule is stated in, plus the proven long run the ceiling
+    reads against (Issue #1571).
     """
     if window is None:
         return None
@@ -381,6 +435,7 @@ def _slim_event_window(window: dict[str, Any] | None) -> dict[str, Any] | None:
         "days_since_event": window.get("days_since_event"),
         "in_window": window.get("in_window"),
         "ceiling_km": window.get("ceiling_km"),
+        "proven_long_run": window.get("proven_long_run"),
         "verdict": window.get("verdict"),
     }
 
@@ -778,6 +833,11 @@ def prefetch_weekly_review_context(
             else None
         )
     acwr = _safe(lambda: reader.get_acwr(end_date=str(today_d)))
+    # Both sides of every fired gate (Issue #1571): proven capacity, what the
+    # goal still requires and what holding this week back would cost.
+    gate_counterweight = _gate_counterweight(
+        db_path_str, str(today_d), _fired_gates(load_trend, acwr), user_id
+    )
 
     # Recovery: RHR/HRV trend, morning go/no-go status, personal-baseline z,
     # and what W-1's longest run cost over the following two mornings (#1222).
@@ -913,6 +973,7 @@ def prefetch_weekly_review_context(
         "fitness_summary": fitness_summary,
         "load_trend": load_trend,
         "acwr": acwr,
+        "gate_counterweight": gate_counterweight,
         "recovery": recovery,
         "symptoms": symptoms,
         "energy_balance": energy_balance,
