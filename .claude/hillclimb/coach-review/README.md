@@ -43,7 +43,11 @@ Each case names the generic failure pattern it guards against:
 - **B**: evidence quality not self-checked (cross-sensor or cross-period comparisons, derived values treated as confirmation);
 - **C**: an uncalibrated stance (conservative by default, full reversal on pushback);
 - **D**: context the athlete stated is lost;
-- **E**: scope drift.
+- **E**: scope drift;
+- **F**: correct but narrow: the facts are right but the answer never connects them to the athlete's goal or plan.
+
+Each case also names its `surface`, where the output was produced: `run_note`, or the skill that
+answered (`run-debrief`, `coach`, `daily-checkin`, `weekly-review`, `plan-block`, `schedule-workout`).
 
 The judge rubric in `grade.mjs` only knows these abstract patterns. Athlete
 specifics enter only through each case's `expect` strings, which stay local.
@@ -62,7 +66,7 @@ specifics enter only through each case's `expect` strings, which stay local.
 - `case_pass` (the headline): every applicable metric passes. `null` means not applicable.
 - Outcome rubric (#1546, Epic #1544): the judge also scores, 0 / 1 / 2, the outcomes a good
   coach output achieves from the athlete's side (`OUTCOMES` in `grade.mjs`):
-  - O1 meaning (run_note)
+  - O1 meaning (both kinds: what the run or question means for the week, block and goal)
   - O2 trust (both kinds)
   - O3 weighting (run_note)
   - O4 one thing to carry (run_note)
@@ -83,11 +87,15 @@ Where the right answer differs between similar runs, add both as a contrastive p
 ## Incident log and indicators (Epic #1544)
 
 Every coach incident becomes a case (`.claude/rules/dev/coach-incident-protocol.md`), so the cases are
-also the incident log. The optional fields `logged`, `source` (`owner` | `self` | `eval`), `triage`
-(`code` | `principle` | `missing_principle` | `variance`) and `recurs_of` (an earlier case id) are never
-sent to a model. `node $F/indicators.mjs [--since YYYY-MM-DD]` prints, with no model calls:
+also the incident log. The fields `logged`, `source` (`owner` | `self` | `eval`), `triage`
+(`code` | `principle` | `missing_principle` | `variance`), `surface` and the optional `recurs_of` (an
+earlier case id) are never sent to a model. A new case must carry `logged`, `source`, `triage` and
+`surface`; the runner refuses a case without them. Only a case recorded before the incident log may set
+`legacy: true` instead (fill in `surface` there too when it is known).
+`node $F/indicators.mjs [--since YYYY-MM-DD]` prints, with no model calls:
 
 - incidents and owner corrections per ISO week, the count per triage class and the recurrence rate;
+- coverage: cases per surface × pattern, and the surfaces that have no case yet;
 - eval regressions: cases that passed in an earlier variant and fail in the latest variant that ran them.
 
 The rule-size side is `garmin_mcp.scripts.rule_budget` (`--history` for the weekly trend).

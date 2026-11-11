@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PATTERNS, SURFACES } from './grade.mjs'
 
 // >>> testable
 const SOURCES = ['owner', 'self', 'eval']
@@ -53,6 +54,25 @@ export function incidentIndicators(cases, since = '0000-00-00') {
     by_triage: byTriage,
     recurrence_rate: logged.length ? recurrences / logged.length : null,
   }
+}
+
+// Case counts per surface and failure pattern, over cases that name a surface:
+// { [surface]: { [pattern]: number } }. Surfaces with no case are absent here and
+// listed by uncoveredSurfaces().
+export function coverage(cases) {
+  const out = {}
+  for (const c of cases) {
+    if (!c.surface) continue
+    const row = (out[c.surface] ??= {})
+    row[c.pattern] = (row[c.pattern] ?? 0) + 1
+  }
+  return out
+}
+
+// Surfaces (SURFACES order) that no case covers yet.
+export function uncoveredSurfaces(cases) {
+  const cov = coverage(cases)
+  return SURFACES.filter((s) => !cov[s])
 }
 
 // variants: [{ name, rows: [{ prompt_id, grade: { case_pass } }] }] in run order.
@@ -106,6 +126,19 @@ function main(argv) {
   console.log(`by triage: ${Object.entries(inc.by_triage).map(([k, v]) => `${k} ${v}`).join(', ')}`)
   console.log('\n| week | incidents | owner corrections | recurrences |\n| --- | --- | --- | --- |')
   for (const [w, s] of Object.entries(inc.weeks)) console.log(`| ${w} | ${s.incidents} | ${s.owner} | ${s.recurrences} |`)
+
+  const cov = coverage(cases)
+  const missing = uncoveredSurfaces(cases)
+  console.log('\n## Coverage (cases per surface × failure pattern)')
+  console.log(`| surface | ${PATTERNS.join(' | ')} | total |\n| --- |${PATTERNS.map(() => ' --- |').join('')} --- |`)
+  for (const s of SURFACES) {
+    const row = cov[s] ?? {}
+    const total = Object.values(row).reduce((a, b) => a + b, 0)
+    console.log(`| ${s} | ${PATTERNS.map((p) => row[p] ?? 0).join(' | ')} | ${total} |`)
+  }
+  const noSurface = cases.filter((c) => !c.surface).length
+  if (noSurface) console.log(`(${noSurface} case(s) without a surface, not counted)`)
+  console.log(`surfaces with 0 cases: ${missing.length ? missing.join(', ') : 'none'}`)
 
   const variants = readdirSync(flow)
     .filter((d) => /^(baseline|v[1-9]\d*)$/.test(d))

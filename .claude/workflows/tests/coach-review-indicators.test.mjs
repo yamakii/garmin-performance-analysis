@@ -2,7 +2,7 @@
 // Synthetic cases only - no athlete data.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { evalRegressions, incidentIndicators, logProblem, weekOf } from '../../hillclimb/coach-review/indicators.mjs'
+import { coverage, evalRegressions, incidentIndicators, logProblem, uncoveredSurfaces, weekOf } from '../../hillclimb/coach-review/indicators.mjs'
 
 const CASES = [
   { id: 'a', logged: '2026-11-03', source: 'owner', triage: 'principle' },
@@ -44,6 +44,23 @@ test('logProblem rejects bad fields and dangling recurs_of', () => {
   assert.match(logProblem({ id: 'a', triage: 'rule' }, ids), /triage/)
   assert.match(logProblem({ id: 'a', recurs_of: 'zz' }, ids), /not a case id/)
   assert.match(logProblem({ id: 'a', recurs_of: 'a' }, ids), /itself/)
+})
+
+test('test_coverage_counts_surface_by_pattern', () => {
+  const cases = [
+    { id: 'a', surface: 'coach', pattern: 'C' },
+    { id: 'b', surface: 'coach', pattern: 'C' },
+    { id: 'c', surface: 'run_note', pattern: 'A' },
+    { id: 'd', pattern: 'B', legacy: true }, // no surface: not counted
+  ]
+  assert.deepEqual(coverage(cases), { coach: { C: 2 }, run_note: { A: 1 } })
+})
+
+test('test_coverage_reports_missing_surfaces', () => {
+  const missing = uncoveredSurfaces([{ id: 'a', surface: 'coach', pattern: 'F' }])
+  assert.deepEqual(missing, ['run_note', 'run-debrief', 'daily-checkin', 'weekly-review', 'plan-block', 'schedule-workout'])
+  assert.ok(!missing.includes('coach'))
+  assert.equal(coverage([{ id: 'a', surface: 'coach', pattern: 'F' }])['plan-block'], undefined)
 })
 
 test('evalRegressions flags a case that passed earlier and fails in its latest variant', () => {
