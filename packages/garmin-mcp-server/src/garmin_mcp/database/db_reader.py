@@ -1192,6 +1192,20 @@ class GarminDBReader:
         """
         return self.training_load.get_load_trend(lookback_weeks, end_date)
 
+    def get_proven_long_run(
+        self, before_date: str, lookback_days: int = 180
+    ) -> dict[str, Any] | None:
+        """Get the longest run in the ``lookback_days`` before ``before_date``.
+
+        Args:
+            before_date: ``YYYY-MM-DD``; the run must be strictly earlier.
+            lookback_days: Window length in days (default 180).
+
+        Returns:
+            ``{"duration_sec", "distance_km", "activity_date"}`` or ``None``.
+        """
+        return self.training_load.get_proven_long_run(before_date, lookback_days)
+
     # ========== Durability Methods ==========
 
     def get_activity_durability(self, activity_id: int) -> dict[str, Any] | None:

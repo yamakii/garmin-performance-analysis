@@ -292,6 +292,52 @@ class TrainingLoadReader(BaseDBReader):
 
         return {"weeks": weeks, "load_metric": LOAD_METRIC}
 
+    def get_proven_long_run(
+        self, before_date: str, lookback_days: int = 180
+    ) -> dict[str, Any] | None:
+        """The longest run already run in the window before ``before_date``.
+
+        The long-run cutback streak counts only extensions beyond this run
+        (Issue #1568): a ladder climbing back inside a distance the athlete has
+        already run is not new stress. The window is ``[before_date -
+        lookback_days, before_date)``, so a distance proven more than about six
+        months ago no longer exempts a step. Races are included.
+
+        Args:
+            before_date: ``YYYY-MM-DD``; the run must be strictly earlier.
+            lookback_days: Window length in days (default 180).
+
+        Returns:
+            ``{"duration_sec", "distance_km", "activity_date"}`` of the run
+            with the longest ``total_time_seconds`` (ties: the later date), or
+            ``None`` when the window holds no run with a duration.
+        """
+        end = datetime.strptime(before_date, "%Y-%m-%d").date()
+        start = end - timedelta(days=lookback_days)
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT total_time_seconds, total_distance_km, activity_date
+                FROM activities
+                WHERE activity_date >= ? AND activity_date < ?
+                  AND total_time_seconds IS NOT NULL
+                  AND total_time_seconds > 0
+                ORDER BY total_time_seconds DESC, activity_date DESC
+                LIMIT 1
+                """,
+                [start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")],
+            ).fetchone()
+        if row is None:
+            return None
+        duration_sec, distance_km, activity_date = row
+        return {
+            "duration_sec": int(duration_sec),
+            "distance_km": (
+                round(float(distance_km), 2) if distance_km is not None else None
+            ),
+            "activity_date": str(activity_date)[:10],
+        }
+
     def _resolve_end_date(self, end_date: str | None) -> date | None:
         """Return the reference end date as a ``date``.
 

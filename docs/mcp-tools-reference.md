@@ -898,11 +898,11 @@ Get persisted hiking (山行) summaries with activity_date in [start_date, end_d
 
 CLI: `garmin-db plan save-blocks`
 
-Save the mesocycle ledger (training blocks) to DuckDB. Blocks are replaced wholesale per user_id (洗い替え, same as the athlete profile), so always pass the full list including unchanged blocks; sequence follows list order. Every save also appends a JSON snapshot of the whole list, so a previous plan stays recoverable. Validates the date range (start_date <= end_date), the phase, and that each long-run ladder step carries week_start plus exactly one of target_km / target_minutes. Returns {status, count, version_id}.
+Save the mesocycle ledger (training blocks) to DuckDB. Blocks are replaced wholesale per user_id (洗い替え, same as the athlete profile), so always pass the full list including unchanged blocks; sequence follows list order. Every save also appends a JSON snapshot of the whole list, so a previous plan stays recoverable. Validates the date range (start_date <= end_date), the phase, and that each long-run ladder step carries week_start plus exactly one of target_km / target_minutes and, when it records an owner cutback_override, a non-empty reason and a decided_on date. Returns {status, count, version_id}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `blocks` | array[object] | **required** | Full ordered list of training blocks (洗い替え — unchanged blocks must be included). Each block: phase (base|build|peak|taper|race|recovery|cutback), title, start_date, end_date (YYYY-MM-DD), and optionally purpose, weight_mode (絞る|維持), quality_sessions_per_week, quality_types (list), long_run_ladder (list of {week_start, target_km OR target_minutes, hr_ceiling, kind, note}), cutback_rule (object), notes. |
+| `blocks` | array[object] | **required** | Full ordered list of training blocks (洗い替え — unchanged blocks must be included). Each block: phase (base|build|peak|taper|race|recovery|cutback), title, start_date, end_date (YYYY-MM-DD), and optionally purpose, weight_mode (絞る|維持), quality_sessions_per_week, quality_types (list), long_run_ladder (list of {week_start, target_km OR target_minutes, hr_ceiling, kind, note, and optionally cutback_override {reason (non-empty), decided_on (YYYY-MM-DD)} -- the owner's decision that this week takes no long-run cutback, validated when present}), cutback_rule (object), notes. |
 | `user_id` | string | optional | Ledger owner identifier (default: 'default') |
 
 ### `get_training_blocks`
