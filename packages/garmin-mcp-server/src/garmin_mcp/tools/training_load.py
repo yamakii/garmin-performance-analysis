@@ -100,7 +100,15 @@ LOAD_TOOLS: list[ToolDef] = [
             "chronic_load_28d_weekly, acwr (null when there is no chronic "
             "baseline), and a status (undertraining <0.8 / optimal 0.8-1.3 / "
             "caution 1.3-1.5 / high_risk >1.5 / insufficient_data). "
-            "HR-independent: works even when avg_heart_rate is null."
+            "Beside the raw ACWR (never folded into acwr or status) it reports "
+            "build_baseline {status ok/insufficient/no_blocks, weekly_km = mean "
+            "of the most recent (at most 8) registered build weeks in the last "
+            "26 completed weeks, weeks_used, ratio = acute_load_7d / weekly_km, "
+            "note_ja} and window_composition, the 4 calendar weeks inside the "
+            "chronic window as {week_start, load_km, kind} where kind comes "
+            "from the training blocks (build / cutback / taper / race / "
+            "recovery / ... / unregistered), so a deload inside the window is "
+            "visible. HR-independent: works even when avg_heart_rate is null."
         ),
         params=GetAcwrParams,
         handler=_get_acwr,
