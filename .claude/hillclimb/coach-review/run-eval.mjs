@@ -34,7 +34,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { caseEnv, cleanEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from './grade.mjs'
+import { INCIDENT_FIELDS, PATTERNS, SURFACES, caseEnv, cleanEnv, combine, deterministicChecks, garminToolsReached, judge, writeDenied } from './grade.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO = resolve(HERE, '../../..')
@@ -56,18 +56,27 @@ export function loadCases(flowDir, { warn = (m) => console.error(m) } = {}) {
   const cases = JSON.parse(readFileSync(path, 'utf8'))
   if (!Array.isArray(cases)) throw new Error(`${path}: expected an array of cases`)
   for (const c of cases) {
-    const problem = caseProblem(c)
+    const problem = validateCase(c)
     if (problem) throw new Error(`${path}: case ${JSON.stringify(c?.id ?? null)}: ${problem}`)
   }
   return { cases, path, synthetic }
 }
 
 // The subset of cases.schema.json the runner relies on (no schema library here).
-export function caseProblem(c) {
+// -> error message, or null when the case is usable.
+export function validateCase(c) {
   if (!c || typeof c !== 'object') return 'not an object'
   if (typeof c.id !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(c.id)) return 'id must be a path-safe string'
   if (!['run_note', 'conversation'].includes(c.kind)) return `unknown kind ${JSON.stringify(c.kind)}`
-  if (!['A', 'B', 'C', 'D', 'E'].includes(c.pattern)) return `pattern must be one of A-E`
+  if (!PATTERNS.includes(c.pattern)) return `pattern must be one of ${PATTERNS.join('/')}`
+  if (c.legacy != null && typeof c.legacy !== 'boolean') return 'legacy must be a boolean'
+  if (c.surface != null && !SURFACES.includes(c.surface))
+    return `unknown surface ${JSON.stringify(c.surface)} (one of ${SURFACES.join('/')})`
+  if (c.legacy !== true) {
+    const missing = INCIDENT_FIELDS.filter((k) => c[k] == null || c[k] === '')
+    if (missing.length)
+      return `missing incident field(s) ${missing.join(', ')}: a new case records ${INCIDENT_FIELDS.join(', ')} (coach-incident-protocol.md); only a case from before the incident log may set legacy: true instead`
+  }
   if (!c.expect || typeof c.expect !== 'object') return 'expect is required'
   for (const k of ['must', 'must_not', 'forbid_regex', 'forbid_growth_point_moment_kinds', 'required_evidence_prefixes'])
     if (c.expect[k] != null && !(Array.isArray(c.expect[k]) && c.expect[k].every((s) => typeof s === 'string')))
@@ -474,7 +483,7 @@ async function main() {
           return { run, g, latency_s }
         })(), args.timeoutS, `${c.id} rep${rep}`)
         const row = {
-          prompt_id: c.id, rep, kind: c.kind, pattern: c.pattern,
+          prompt_id: c.id, rep, kind: c.kind, pattern: c.pattern, surface: c.surface ?? null,
           // the athlete's wording stays in the gitignored output dir only
           prompt: c.kind === 'conversation' ? c.prompt : `run_note ${c.activity_id} ${c.date}`,
           meta: { ...(appRetry.count ? { retries: appRetry.count } : {}), ...(judgeRetry.count ? { judge_retries: judgeRetry.count } : {}),

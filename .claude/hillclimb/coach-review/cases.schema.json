@@ -11,7 +11,9 @@
     "properties": {
       "id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$", "description": "Path-safe case id (also the trace / output file stem)" },
       "kind": { "enum": ["run_note", "conversation"] },
-      "pattern": { "enum": ["A", "B", "C", "D", "E"], "description": "The generic failure pattern the case guards against (see README)" },
+      "pattern": { "enum": ["A", "B", "C", "D", "E", "F"], "description": "The generic failure pattern the case guards against (see README)" },
+      "surface": { "enum": ["run_note", "run-debrief", "coach", "daily-checkin", "weekly-review", "plan-block", "schedule-workout"], "description": "Where the output was produced: the run_note section or a coaching skill (indicators.mjs coverage)" },
+      "legacy": { "type": "boolean", "description": "true only for a case recorded before the incident log; exempts it from logged / source / triage / surface" },
       "activity_id": { "type": "integer", "description": "run_note: the activity to review" },
       "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "run_note: the activity date" },
       "prompt": { "type": "string", "minLength": 1, "description": "conversation only: the athlete's question" },
@@ -40,6 +42,10 @@
       {
         "if": { "properties": { "kind": { "const": "conversation" } } },
         "then": { "required": ["prompt"] }
+      },
+      {
+        "if": { "properties": { "legacy": { "const": true } }, "required": ["legacy"] },
+        "else": { "required": ["logged", "source", "triage", "surface"] }
       }
     ]
   }

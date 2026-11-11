@@ -2,12 +2,12 @@
 // coach-review eval (.claude/hillclimb/coach-review/). Synthetic data only - no
 // athlete data. The judge (a model call) is exercised only with a stub.
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { caseEnv, combine, deterministicChecks, garminToolsReached, judge, judgeUserPrompt, outcomesFor, rubricScores, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
-import { caseProblem, cliPaths, loadCases, loadRunNotePrompt, toolPermissions, withBackoff } from '../../hillclimb/coach-review/run-eval.mjs'
+import { JUDGE_SYSTEM, OUTCOMES, caseEnv, combine, deterministicChecks, garminToolsReached, judge, judgeUserPrompt, outcomesFor, rubricScores, writeDenied } from '../../hillclimb/coach-review/grade.mjs'
+import { cliPaths, validateCase, loadCases, loadRunNotePrompt, toolPermissions, withBackoff } from '../../hillclimb/coach-review/run-eval.mjs'
 
 const REPORT = {
   moments: [
@@ -148,20 +148,54 @@ test('test_combine_rubric_scores', async () => {
 test('test_rubric_not_applicable_outcomes', () => {
   const conv = { id: 'q', kind: 'conversation', pattern: 'E', prompt: '?', expect: {} }
   assert.deepEqual(Object.keys(rubricScores('run_note', [])), ['O1', 'O2', 'O3', 'O4', 'O5', 'O6'])
-  assert.deepEqual(Object.keys(rubricScores('conversation', [])), ['O2', 'O5', 'O6', 'O7'])
-  assert.deepEqual(outcomesFor('conversation').map((o) => o.id), ['O2', 'O5', 'O6', 'O7'])
+  assert.deepEqual(Object.keys(rubricScores('conversation', [])), ['O1', 'O2', 'O5', 'O6', 'O7'])
   // the judge is only asked for the outcomes of the case's kind
   const prompt = judgeUserPrompt(conv, 'answer', {})
   assert.match(prompt, /O7 intent/)
-  assert.doesNotMatch(prompt, /O1 meaning|O4 one thing/)
-  assert.match(judgeUserPrompt(runNoteCase({}), note(), {}), /O1 meaning/)
+  assert.match(prompt, /O1 meaning/)
+  assert.doesNotMatch(prompt, /O3 weighting|O4 one thing/)
+  assert.doesNotMatch(judgeUserPrompt(runNoteCase({}), note(), {}), /O7 intent/)
+})
+
+test('test_outcomes_for_conversation_includes_o1', () => {
+  assert.deepEqual(outcomesFor('conversation').map((o) => o.id), ['O1', 'O2', 'O5', 'O6', 'O7'])
+  assert.deepEqual(OUTCOMES.find((o) => o.id === 'O1').kinds, ['run_note', 'conversation'])
+})
+
+test('test_outcomes_for_run_note_unchanged', () => {
+  assert.deepEqual(outcomesFor('run_note').map((o) => o.id), ['O1', 'O2', 'O3', 'O4', 'O5', 'O6'])
+})
+
+test('test_judge_system_names_pattern_f', () => {
+  assert.match(JUDGE_SYSTEM, /F\. correct but narrow/)
+})
+
+test('test_validate_new_case_requires_incident_fields', () => {
+  const kase = { id: 'x', kind: 'conversation', pattern: 'F', prompt: 'q', expect: {} }
+  const err = validateCase(kase)
+  assert.match(err, /logged/)
+  assert.match(err, /surface/)
+  const complete = { ...kase, logged: '2026-11-12', source: 'owner', triage: 'principle', surface: 'coach' }
+  assert.equal(validateCase(complete), null)
+  assert.match(validateCase({ ...complete, triage: undefined }), /missing incident field\(s\) triage/)
+})
+
+test('test_validate_legacy_case_skips_incident_fields', () => {
+  const kase = { id: 'x', kind: 'conversation', pattern: 'F', prompt: 'q', expect: {}, legacy: true }
+  assert.equal(validateCase(kase), null)
+  assert.match(validateCase({ ...kase, legacy: 'yes' }), /legacy must be a boolean/)
+})
+
+test('test_validate_rejects_unknown_surface', () => {
+  const kase = { id: 'x', kind: 'conversation', pattern: 'F', prompt: 'q', expect: {}, legacy: true, surface: 'chat' }
+  assert.match(validateCase(kase), /unknown surface "chat"/)
 })
 
 test('test_load_cases_prefers_local', () => {
   const dir = mkdtempSync(join(tmpdir(), 'coach-review-cases-'))
   try {
-    const example = [{ id: 'ex', kind: 'conversation', pattern: 'A', prompt: 'q?', expect: {} }]
-    const local = [{ id: 'real', kind: 'run_note', pattern: 'B', activity_id: 42, date: '2026-01-01', expect: {} }]
+    const example = [{ id: 'ex', kind: 'conversation', pattern: 'A', prompt: 'q?', expect: {}, legacy: true }]
+    const local = [{ id: 'real', kind: 'run_note', pattern: 'B', activity_id: 42, date: '2026-01-01', expect: {}, legacy: true }]
     writeFileSync(join(dir, 'cases.example.json'), JSON.stringify(example))
     writeFileSync(join(dir, 'cases.local.json'), JSON.stringify(local))
     const warnings = []
@@ -182,12 +216,13 @@ test('test_load_cases_prefers_local', () => {
 })
 
 test('test_shipped_example_cases_are_valid', () => {
-  const { cases } = loadCases(new URL('../../hillclimb/coach-review/', import.meta.url).pathname, { warn: () => {} })
+  // the shipped example itself, not a local cases file that may sit beside it
+  const cases = JSON.parse(readFileSync(new URL('../../hillclimb/coach-review/cases.example.json', import.meta.url), 'utf8'))
   assert.ok(cases.length >= 2)
-  for (const c of cases) assert.equal(caseProblem(c), null, c.id)
+  for (const c of cases) assert.equal(validateCase(c), null, c.id)
   assert.deepEqual([...new Set(cases.map((c) => c.kind))].sort(), ['conversation', 'run_note'])
-  assert.match(caseProblem({ id: 'x', kind: 'run_note', pattern: 'A', expect: {} }), /activity_id/)
-  assert.match(caseProblem({ id: 'x', kind: 'conversation', pattern: 'Z', prompt: 'q', expect: {} }), /pattern/)
+  assert.match(validateCase({ id: 'x', kind: 'run_note', pattern: 'A', expect: {}, legacy: true }), /activity_id/)
+  assert.match(validateCase({ id: 'x', kind: 'conversation', pattern: 'Z', prompt: 'q', expect: {} }), /pattern/)
 })
 
 test('test_run_note_prompt_comes_from_the_workflow', () => {

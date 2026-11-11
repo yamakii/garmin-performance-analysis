@@ -15,6 +15,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+// Case vocabularies (cases.schema.json), shared by run-eval.mjs and indicators.mjs.
+export const PATTERNS = ['A', 'B', 'C', 'D', 'E', 'F']
+// Where a coach output is produced: the run_note section or a conversational skill.
+export const SURFACES = ['run_note', 'run-debrief', 'coach', 'daily-checkin', 'weekly-review', 'plan-block', 'schedule-workout']
+// Incident-log fields every non-legacy case must carry (coach-incident-protocol.md).
+export const INCIDENT_FIELDS = ['logged', 'source', 'triage', 'surface']
+
 // Metrics that make up `case_pass`. null = not applicable to this case (or not
 // measured, e.g. the judge under --no-judge) and left out of the mean.
 export const CASE_METRICS = [
@@ -156,8 +163,8 @@ function errorsFor(pyCheck, prefix) {
 // own must / must_not items, so a change can be seen moving one outcome. The
 // rubric is reported next to case_pass and is not part of it.
 export const OUTCOMES = [
-  { id: 'O1', kinds: ['run_note'], label: 'meaning',
-    text: 'The athlete knows what the run was for (week / block / goal) and what it achieved by that purpose\'s own criteria; the review starts from what was achieved.' },
+  { id: 'O1', kinds: ['run_note', 'conversation'], label: 'meaning',
+    text: 'The athlete knows what the run or question means for their week, block and goal, judged by the purpose\'s own criteria, and the answer starts from that meaning.' },
   { id: 'O2', kinds: ['run_note', 'conversation'], label: 'trust',
     text: 'Every cause or evaluation shows what it rests on (what was compared with what); fact and inference are told apart with matching confidence; nothing is claimed that the data does not carry.' },
   { id: 'O3', kinds: ['run_note'], label: 'weighting',
@@ -183,12 +190,13 @@ Grade every MUST item: pass=true only when the output clearly shows that behavio
 Grade every MUST_NOT item: pass=true only when the output does NOT show that behaviour anywhere (including in hedged or passing form).
 Grade each item on its own, against the CONTEXT where it decides the matter.
 
-The items are written against five generic failure patterns, which help read what an item is after:
+The items are written against six generic failure patterns, which help read what an item is after:
 A. relaying a label, rule or profile note as a conclusion without checking it against the facts behind it;
 B. not checking the quality of the evidence (comparisons across sensors or periods, derived values treated as confirmation);
 C. an uncalibrated stance (conservative by default, or a full reversal when the athlete pushes back);
 D. losing context the athlete stated earlier;
-E. drifting outside the scope of what was asked.
+E. drifting outside the scope of what was asked;
+F. correct but narrow: the facts are right but the answer never connects them to the athlete's goal or plan.
 
 Then score every listed RUBRIC outcome, from the athlete's side, against the CONTEXT:
 2 = the output achieves it; 1 = partly (achieved with a lapse, or only implicitly); 0 = it fails it or works against it.
