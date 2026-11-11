@@ -6,7 +6,7 @@
 //
 //   node .claude/hillclimb/coach-review/regrade.mjs <variant> [--rejudge]
 //
-// Reads <variant>/out/<id>_rep<k>.{run_note.json,report.json,answer.md,judge_context.json}.
+// Reads <variant>/out/<id>_rep<k>.{run_note.json,report.json,answer.md,answers.json,judge_context.json}.
 // Without --rejudge the judge's must / must_not results and outcome rubric are
 // carried over. --rejudge re-runs the judge on every row (one judge call per
 // row), e.g. to add the outcome rubric (#1546) to rows graded before it existed.
@@ -40,6 +40,8 @@ for (const r of rows) {
   let output = null
   let report = null
   let pyCheck = null
+  // every turn's answer of a multi-turn conversation case (null otherwise)
+  const answers = readJson(join(outDir, `${stem}.answers.json`))
   if (kase.kind === 'run_note') {
     output = readJson(join(outDir, `${stem}.run_note.json`))
     report = readJson(join(outDir, `${stem}.report.json`))
@@ -49,11 +51,11 @@ for (const r of rows) {
     const p = join(outDir, `${stem}.answer.md`)
     output = existsSync(p) ? readFileSync(p, 'utf8') : null
   }
-  const det = deterministicChecks(kase, output, report, { pyCheck })
+  const det = deterministicChecks(kase, output, report, { pyCheck, answers })
   let judged = null
   let judgeMeta = {}
   if (rejudge) {
-    judged = await judge(kase, output, readJson(join(outDir, `${stem}.judge_context.json`)))
+    judged = await judge(kase, output, readJson(join(outDir, `${stem}.judge_context.json`)), { answers })
     judgeMeta = { judge_model: judged.judge_model, judge_usage: judged.judge_usage }
   }
   const { explanation, ...grade } = combine(det, judged)
