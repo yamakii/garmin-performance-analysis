@@ -401,6 +401,9 @@ def test_acwr_unchanged_rolling(mocker) -> None:
     for i in range(7, 28):  # days 8-28: 5 km each
         daily[end - timedelta(days=i)] = 5.0
     mocker.patch.object(reader, "_daily_loads", return_value=daily)
+    # The phase context (Issue #1567) is reported beside the ACWR and never
+    # feeds it; stub it so this test stays DB-free.
+    mocker.patch.object(reader, "_phase_context", return_value=({}, []))
 
     result = reader.get_acwr(end_date="2026-06-24")
 

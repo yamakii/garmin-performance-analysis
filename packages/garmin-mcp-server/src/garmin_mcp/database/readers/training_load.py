@@ -22,12 +22,20 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from garmin_mcp.analysis.build_baseline import (
+    compute_build_baseline,
+    window_composition,
+)
 from garmin_mcp.database.readers.base import BaseDBReader
+from garmin_mcp.database.readers.plan import PlanReader
 from garmin_mcp.utils.week import get_week_start_day, week_start
 
 logger = logging.getLogger(__name__)
 
 LOAD_METRIC = "distance_km"
+
+# Completed weeks searched for registered build weeks (Issue #1567).
+_BASELINE_LOOKBACK_WEEKS = 26
 
 # Status thresholds on the ACWR value (acute / chronic-weekly).
 _UNDERTRAINING_MAX = 0.8
@@ -107,6 +115,13 @@ class TrainingLoadReader(BaseDBReader):
             - ``reason_ja``: str | None -- the ratio, the safe band and what
               would move it back; None for optimal / insufficient_data
             - ``load_metric``: ``"distance_km"``
+            - ``build_baseline``: dict | None -- the mean weekly km of the most
+              recent registered build weeks and ``acute / that`` (Issue
+              #1567, see ``analysis.build_baseline``). Reported beside the ACWR;
+              ``acwr`` / ``status`` never use it. None when there is no data.
+            - ``window_composition``: list of {week_start, load_km, kind} for
+              the 4 calendar weeks inside the chronic window (kind = build /
+              cutback / taper / race / recovery / ... / unregistered)
         """
         resolved_end = self._resolve_end_date(end_date)
         if resolved_end is None:
@@ -118,6 +133,8 @@ class TrainingLoadReader(BaseDBReader):
                 "status": "insufficient_data",
                 "reason_ja": None,
                 "load_metric": LOAD_METRIC,
+                "build_baseline": None,
+                "window_composition": [],
             }
 
         # 28-day window ending on resolved_end (inclusive): 28 days total.
@@ -130,6 +147,7 @@ class TrainingLoadReader(BaseDBReader):
 
         acwr = _acwr_from_loads(acute_total, chronic_total)
         status, reason_ja = _classify(acwr)
+        build_baseline, composition = self._phase_context(resolved_end, acute_total)
 
         return {
             "end_date": resolved_end.strftime("%Y-%m-%d"),
@@ -139,7 +157,50 @@ class TrainingLoadReader(BaseDBReader):
             "status": status,
             "reason_ja": reason_ja,
             "load_metric": LOAD_METRIC,
+            "build_baseline": build_baseline,
+            "window_composition": composition,
         }
+
+    def _phase_context(
+        self, resolved_end: date, acute_total: float
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Build baseline and chronic-window composition (Issue #1567).
+
+        Reported beside the raw ACWR, never folded into it. Weekly loads are
+        calendar weeks aligned to ``athlete_profile.week_start_day``; the
+        newest (partial, current) week is left out of the baseline because it
+        overlaps the acute window, and is the last row of the composition.
+        """
+        with self._get_connection() as conn:
+            start_day = get_week_start_day(conn)
+
+        current_week_start = week_start(resolved_end, start_day)
+        n_weeks = _BASELINE_LOOKBACK_WEEKS + 1
+        oldest_week_start = current_week_start - timedelta(days=7 * (n_weeks - 1))
+        daily = self._daily_loads(oldest_week_start, resolved_end)
+
+        weekly_loads: list[dict[str, Any]] = []
+        for i in range(n_weeks - 1, -1, -1):
+            bucket_start = current_week_start - timedelta(days=7 * i)
+            bucket_end = min(bucket_start + timedelta(days=6), resolved_end)
+            load = sum(
+                km for day, km in daily.items() if bucket_start <= day <= bucket_end
+            )
+            weekly_loads.append(
+                {
+                    "week_start": bucket_start.strftime("%Y-%m-%d"),
+                    "load_km": round(load, 2),
+                }
+            )
+
+        blocks = PlanReader(str(self.db_path)).get_training_blocks()
+        baseline = compute_build_baseline(
+            weekly_loads[:-1],
+            blocks,
+            acute_total,
+            lookback_weeks=_BASELINE_LOOKBACK_WEEKS,
+        )
+        return baseline, window_composition(weekly_loads, blocks)
 
     def get_load_trend(
         self, lookback_weeks: int = 12, end_date: str | None = None
