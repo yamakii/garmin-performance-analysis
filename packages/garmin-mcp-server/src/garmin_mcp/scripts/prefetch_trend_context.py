@@ -64,7 +64,10 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Any
 
-from garmin_mcp.analysis.derivations import compute_trend_headline_metrics
+from garmin_mcp.analysis.derivations import (
+    compute_trend_headline_metrics,
+    long_run_streak_start,
+)
 from garmin_mcp.database.connection import get_connection, get_db_path
 
 # Metrics folded into ``metric_trends`` (per the monthly-granularity table:
@@ -107,6 +110,20 @@ def _safe[T](fn: Callable[[], T]) -> T | None:
         return fn()
     except Exception:
         return None
+
+
+def _proven_long_run(reader: Any, load_trend: Any) -> dict[str, Any] | None:
+    """The proven long run before the long-run streak began (Issue #1568).
+
+    ``None`` when there is no streak to exempt, no run in the lookback, or the
+    reader fails (the gate then counts every extension, as before).
+    """
+    weeks = load_trend.get("weeks") if isinstance(load_trend, dict) else None
+    start = long_run_streak_start(weeks or [])
+    if start is None:
+        return None
+    proven = _safe(lambda: reader.get_proven_long_run(start))
+    return proven if isinstance(proven, dict) else None
 
 
 def _resolve_activity_ids(conn: Any, period_start: str, period_end: str) -> list[int]:
@@ -312,8 +329,12 @@ def prefetch_trend_context(
         "heat_adjusted_trend": heat_adjusted_trend,
     }
 
+    # Proven long run (Issue #1568): measured before the streak's first counted
+    # week, so extensions back inside an already-run distance are not counted.
+    proven_long_run = _proven_long_run(reader, load_trend)
+
     # Deterministic fold: headline metrics + top-level fusion flags (Issue #790).
-    headline_metrics = compute_trend_headline_metrics(bundle)
+    headline_metrics = compute_trend_headline_metrics(bundle, proven_long_run)
     bundle["headline_metrics"] = headline_metrics
     bundle["fusion_flags"] = headline_metrics["fusion_flags"]
 

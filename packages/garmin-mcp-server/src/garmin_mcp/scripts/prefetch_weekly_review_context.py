@@ -31,6 +31,9 @@ Output (JSON to stdout, one line):
                                           #   long_run_build_weeks,
                                           #   cutback_due_long_run,
                                           #   cutback_reason_ja (str|null),
+                                          #   proven_long_run (#1568: streak
+                                          #     counts only steps beyond it),
+                                          #   proven_exempt_weeks,
                                           #   cutback_due_event_window,
                                           #   event_window: {last_event,
                                           #     days_since_event, in_window,
@@ -66,6 +69,9 @@ Output (JSON to stdout, one line):
         "quality_sessions_per_week": int|null,
         "quality_types": [...]
       },
+      "cutback_override": {"reason", "decided_on"}|null,
+                                          # owner decision on W's ladder step
+                                          #   (#1568): present -> no cutback
       "prescriptions_prev_week": {        # W-1 rows + deterministic adherence
         "rows": [...],
         "adherence": {"prescribed": n, "done": n, "replaced": n,
@@ -113,13 +119,11 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from garmin_mcp.analysis.derivations import (
-    LONG_RUN_CUTBACK_TRIGGER_WEEKS,
-    _cutback_reason_ja,
     count_consecutive_build_weeks,
-    count_long_run_build_weeks,
     detect_garmin_conflicts,
     format_gear_label,
-    long_run_extension_weeks,
+    long_run_cutback_gate,
+    long_run_streak_start,
     summarize_adherence,
     weeks_since_last_cutback,
 )
@@ -234,6 +238,7 @@ def _long_run_gate(
     load_trend: dict[str, Any],
     week_start_date: str,
     event_window: dict[str, Any] | None = None,
+    proven_long_run: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compute the long-run cutback gate over the weeks **completed** before W.
 
@@ -265,40 +270,79 @@ def _long_run_gate(
         event_window: A ``get_post_event_window`` result, or ``None`` when the
             collector failed (the event gate then reads ``False`` and the
             slimmed block is ``None``).
+        proven_long_run: The proven long run before the streak began (Issue
+            #1568, :func:`_proven_long_run`); extensions inside it do not
+            count. ``None`` counts every extension.
 
     Returns:
         ``{"weekly_longest_sec": [int|None, ...], "long_run_build_weeks": int,
         "cutback_due_long_run": bool, "cutback_reason_ja": str|None,
+        "proven_long_run": {...}|None, "proven_exempt_weeks": int,
         "cutback_due_event_window": bool, "event_window": {...}|None}`` where
         ``cutback_due_long_run`` is the streak reaching
         :data:`LONG_RUN_CUTBACK_TRIGGER_WEEKS` (``cutback_reason_ja`` names the
         counted weeks then, and is ``None`` otherwise) and
         ``cutback_due_event_window`` is an in-window ``yellow`` / ``red``.
     """
-    weeks = [
-        w
-        for w in (load_trend.get("weeks") or [])
-        # A bucket with no week_start cannot be identified as W's own, so it is
-        # kept (never silently dropped from the series).
-        if str(w.get("week_start") or "") < week_start_date
-    ]
+    weeks = _completed_weeks(load_trend, week_start_date)
     # Keep the Nones: a completed week with no run is a reset boundary.
     weekly_longest_sec = [w.get("longest_run_sec") for w in weeks]
-    build_weeks = count_long_run_build_weeks(weekly_longest_sec)
+    streak = long_run_cutback_gate(weeks, proven_long_run)
 
     window = event_window if isinstance(event_window, dict) else None
     in_window = bool(window and window.get("in_window"))
     verdict = str((window or {}).get("verdict") or "")
     return {
         "weekly_longest_sec": weekly_longest_sec,
-        "long_run_build_weeks": build_weeks,
-        "cutback_due_long_run": build_weeks >= LONG_RUN_CUTBACK_TRIGGER_WEEKS,
-        "cutback_reason_ja": _cutback_reason_ja(
-            long_run_extension_weeks(weeks), LONG_RUN_CUTBACK_TRIGGER_WEEKS
-        ),
+        **streak,
         "cutback_due_event_window": in_window and verdict in _EVENT_WINDOW_CUTBACK,
         "event_window": _slim_event_window(window),
     }
+
+
+def _completed_weeks(
+    load_trend: dict[str, Any], week_start_date: str
+) -> list[dict[str, Any]]:
+    """The ``get_load_trend`` buckets that start strictly before W."""
+    return [
+        w
+        for w in (load_trend.get("weeks") or [])
+        # A bucket with no week_start cannot be identified as W's own, so it is
+        # kept (never silently dropped from the series).
+        if str(w.get("week_start") or "") < week_start_date
+    ]
+
+
+def _proven_long_run(
+    reader: Any, load_trend: dict[str, Any], week_start_date: str
+) -> dict[str, Any] | None:
+    """The proven long run before the streak's first counted week (#1568).
+
+    Measured before the plain streak begins, so the streak's own runs never
+    prove themselves. ``None`` when there is no streak, no run in the
+    lookback, or the reader fails (every extension then counts, as before).
+    """
+    start = long_run_streak_start(_completed_weeks(load_trend, week_start_date))
+    if start is None:
+        return None
+    proven = _safe(lambda: reader.get_proven_long_run(start))
+    return proven if isinstance(proven, dict) else None
+
+
+def _cutback_override(ladder_step: Any) -> dict[str, Any] | None:
+    """The owner's ``cutback_override`` recorded on W's ladder step (#1568).
+
+    The only override of the long-run cutback gate is an owner decision
+    written on the step (``{"reason", "decided_on"}``, validated on save).
+    ``None`` when W has no step or the step carries none.
+    """
+    current = ladder_step.get("current") if isinstance(ladder_step, dict) else None
+    if not isinstance(current, dict):
+        return None
+    override = current.get("cutback_override")
+    if not isinstance(override, dict) or not override.get("reason"):
+        return None
+    return {"reason": override.get("reason"), "decided_on": override.get("decided_on")}
 
 
 def _volume_gate(load_trend: dict[str, Any], week_start_date: str) -> dict[str, Any]:
@@ -710,7 +754,14 @@ def prefetch_weekly_review_context(
     # so the review never re-derives them. Only the weeks completed before W
     # count, so W's own in-progress bucket cannot zero the streak (Issue #929).
     if isinstance(load_trend, dict):
-        load_trend["long_run"] = _long_run_gate(load_trend, week_start_s, event_window)
+        # Extensions back inside an already-run distance are not counted
+        # (Issue #1568); the proven run is measured before the streak began.
+        load_trend["long_run"] = _long_run_gate(
+            load_trend,
+            week_start_s,
+            event_window,
+            _proven_long_run(reader, load_trend, week_start_s),
+        )
         load_trend["volume"] = _volume_gate(load_trend, week_start_s)
         # Secondary gate (Issue #982): did W-1's long run hold the legs
         # together? The review reads the same deterministic verdict the
@@ -868,6 +919,7 @@ def prefetch_weekly_review_context(
         "strength": strength,
         "hiking": hiking,
         "training_block": training_block,
+        "cutback_override": _cutback_override(training_block["ladder_step"]),
         "prescriptions_prev_week": prescriptions_prev_week,
         "prescriptions_current_week": prescriptions_current_week,
         "scheduled_workouts": scheduled_workouts,

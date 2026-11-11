@@ -131,7 +131,10 @@ class SaveTrainingBlocksParams(BaseModel):
             "optionally purpose, weight_mode (絞る|維持), "
             "quality_sessions_per_week, quality_types (list), long_run_ladder "
             "(list of {week_start, target_km OR target_minutes, hr_ceiling, "
-            "kind, note}), cutback_rule (object), notes."
+            "kind, note, and optionally cutback_override {reason (non-empty), "
+            "decided_on (YYYY-MM-DD)} -- the owner's decision that this week "
+            "takes no long-run cutback, validated when present}), cutback_rule "
+            "(object), notes."
         )
     )
     user_id: str | None = Field(
@@ -425,7 +428,9 @@ PLAN_TOOLS: list[ToolDef] = [
             "snapshot of the whole list, so a previous plan stays recoverable. "
             "Validates the date range (start_date <= end_date), the phase, and "
             "that each long-run ladder step carries week_start plus exactly one "
-            "of target_km / target_minutes. Returns {status, count, "
+            "of target_km / target_minutes and, when it records an owner "
+            "cutback_override, a non-empty reason and a decided_on date. "
+            "Returns {status, count, "
             "version_id}."
         ),
         params=SaveTrainingBlocksParams,

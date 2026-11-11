@@ -436,7 +436,33 @@ def _validate_ladder(ladder: Any, block_title: str) -> list[dict[str, Any]]:
                 f"block {block_title!r}: ladder step {step.get('week_start')!r} "
                 "needs exactly one of target_km / target_minutes"
             )
+        if step.get("cutback_override") is not None:
+            _validate_cutback_override(
+                step["cutback_override"],
+                f"block {block_title!r}: ladder step {step.get('week_start')!r}",
+            )
     return ladder
+
+
+def _validate_cutback_override(override: Any, where: str) -> None:
+    """Validate a ladder step's owner ``cutback_override`` (Issue #1568).
+
+    The only override of the long-run cutback gate is an owner decision
+    recorded on the step: ``{"reason": <non-empty str>, "decided_on":
+    "YYYY-MM-DD"}`` and nothing else.
+    """
+    if not isinstance(override, dict):
+        raise ValueError(
+            f"{where}: cutback_override must be an object "
+            '{"reason": str, "decided_on": "YYYY-MM-DD"}'
+        )
+    unknown = sorted(set(override) - {"reason", "decided_on"})
+    if unknown:
+        raise ValueError(f"{where}: unknown cutback_override keys {unknown}")
+    reason = override.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError(f"{where}: cutback_override.reason must be a non-empty str")
+    _parse_date(override.get("decided_on"), f"{where}: cutback_override.decided_on")
 
 
 def _json_or_none(value: Any) -> str | None:
