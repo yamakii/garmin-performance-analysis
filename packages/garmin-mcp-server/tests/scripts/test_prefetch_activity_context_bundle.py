@@ -36,6 +36,7 @@ BUNDLE_KEYS = {
     "previous_same_type",
     "vs_previous",
     "morning_wellness",
+    "standing",
 }
 
 

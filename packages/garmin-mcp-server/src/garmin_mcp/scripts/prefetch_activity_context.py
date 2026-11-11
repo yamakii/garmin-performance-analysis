@@ -27,7 +27,9 @@ Output (JSON to stdout):
                                          # + comparability {excluded_metrics, reasons}
       "vs_previous": {...}|null,     # deterministic deltas against it
                                      # (incomparable metrics dropped, #1523)
-      "morning_wellness": {...}|null     # readiness / RHR / HRV / sleep + z
+      "morning_wellness": {...}|null,    # readiness / RHR / HRV / sleep + z
+      "standing": {...}|null         # get_current_standing as of the
+                                     # activity date (goals, block, proven)
     }
 
 Every key has a reader (``build_run_note_context`` below, which the
@@ -78,6 +80,7 @@ from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.readers.athlete import AthleteReader
 from garmin_mcp.database.readers.metadata import collect_activity_gear
 from garmin_mcp.database.readers.run_report import collect_athlete_context
+from garmin_mcp.database.readers.standing import StandingReader
 
 logger = logging.getLogger(__name__)
 
@@ -533,6 +536,12 @@ def prefetch_activity_context(activity_id: int) -> dict:
     athlete_context = _safe(lambda: collect_athlete_context(db_path_str, activity_id))
     coaching_rules = _safe(lambda: AthleteReader(db_path_str).get_coaching_rules())
 
+    # Where the athlete stood against the goal on the day of the run (#1572):
+    # as of the activity date, so a block that started later is not this run's.
+    standing = _safe(
+        lambda: StandingReader(db_path_str).get_current_standing(on_date=activity_date)
+    )
+
     return {
         "activity_id": activity_id,
         "activity_date": activity_date,
@@ -548,6 +557,7 @@ def prefetch_activity_context(activity_id: int) -> dict:
         "long_run_gate": long_run_gate,
         # --- Prescription vs actual layer (Issue #984) ---
         **prescription_layer,
+        "standing": standing,
     }
 
 
@@ -592,13 +602,48 @@ def _run_note_rules(rules: Any) -> list[dict[str, Any]]:
     ]
 
 
+# What the run note reads of the standing (#1572): the goal it is run against,
+# where the day sits in the block, and what is already proven. Remaining
+# ladder steps and near-goal-pace runs are plan / trend questions.
+_RUN_NOTE_GOAL_FIELDS = (
+    "race_name",
+    "race_date",
+    "priority",
+    "distance_km",
+    "goal_pace_sec_per_km",
+    "weeks_to_race",
+)
+_RUN_NOTE_BLOCK_FIELDS = ("phase", "purpose", "week_position", "current_step")
+
+
+def _run_note_standing(standing: Any) -> dict[str, Any] | None:
+    """``get_current_standing`` trimmed to goals / block / proven, or None."""
+    if not isinstance(standing, dict):
+        return None
+    block = standing.get("block")
+    return {
+        "goals": [
+            {k: goal.get(k) for k in _RUN_NOTE_GOAL_FIELDS}
+            for goal in standing.get("goals") or []
+            if isinstance(goal, dict)
+        ],
+        "block": (
+            {k: block.get(k) for k in _RUN_NOTE_BLOCK_FIELDS}
+            if isinstance(block, dict)
+            else None
+        ),
+        "proven": standing.get("proven"),
+    }
+
+
 def build_run_note_context(bundle: dict | None) -> dict | None:
     """The coach subset of the bundle that the run-note agent reads.
 
     What is left out is only bulk: the raw prescription rows, unused
     prescription fields, similar workouts past the third and the coaching
     rules written for other surfaces (only scopes ``all`` / ``run_note`` are
-    kept). There is no plan verdict here -- the run report's ``plan`` is the
+    kept) and the standing's plan / trend parts (only goals, block and proven
+    are kept). There is no plan verdict here -- the run report's ``plan`` is the
     only one (#1353).
 
     Args:
@@ -632,6 +677,8 @@ def build_run_note_context(bundle: dict | None) -> dict | None:
         # coach review (#1522).
         "athlete_context": bundle.get("athlete_context"),
         "coaching_rules": _run_note_rules(bundle.get("coaching_rules")),
+        # The goal, block and proven capacity as of the run's date (#1572).
+        "standing": _run_note_standing(bundle.get("standing")),
     }
 
 

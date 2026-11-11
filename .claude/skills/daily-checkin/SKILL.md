@@ -12,7 +12,7 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
+ToolSearch(query="select:mcp__garmin-db__catch_up_ingest,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_acwr,mcp__garmin-db__get_recovery_trend,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_garmin_scheduled_workouts,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_weekly_review,mcp__garmin-db__get_load_trend,mcp__garmin-db__save_symptom,mcp__garmin-db__get_symptom_status,mcp__garmin-db__get_energy_balance,mcp__garmin-db__update_prescription_status,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules,mcp__garmin-db__get_current_standing")
 ```
 
 ## Step 1: 今朝の wellness と前日の収支を取り込む（必須・単独ステップ）
@@ -53,11 +53,11 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness", "energy"], end_date=<対象
 | `get_symptom_status` | `date=<対象日>`（Step 1b の記録が反映された状態） |
 | `get_energy_balance` | `end_date=<前日>` |
 | `get_coaching_rules` | `scopes=["checkin", "conversation"]` |
+| `get_current_standing` | `on_date=<対象日>`（目標・ブロック） |
 
 前日のランは `headline` で一言に要約します（例:「昨日は処方どおり、指摘なし」）。走者ルールと走者が述べた事情の扱いは
 `.claude/rules/analysis/analysis-standards.md` §3 に従います（質問は Step 1b の 1 問だけのまま）。
-`get_load_trend(lookback_weeks=6)` は週単位の量を聞かれたときだけ、`get_weekly_prescriptions(week_start_date=…)` は週全体の並びが論点のときだけ、
-`get_athlete_profile` は処方とレビューがどちらも空か、目標・フェーズ自体が論点のときだけ読みます。
+`get_load_trend(lookback_weeks=6)` は週単位の量を聞かれたときだけ、`get_weekly_prescriptions(week_start_date=…)` は週全体の並びが論点のときだけ読みます。
 
 ## Step 3: 判定の組み立て
 

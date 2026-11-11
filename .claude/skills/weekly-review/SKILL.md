@@ -17,13 +17,14 @@ mcp__garmin-db__catch_up_ingest(end_date=today)                          # write
 mcp__garmin-db__prefetch_weekly_review_context(target=$ARGUMENTS)       # None | "this" | "next" | "YYYY-MM-DD"
 ```
 
-バンドルは read 系ツール（`get_athlete_profile` / `get_performance_trends` / `get_load_trend` / `get_acwr` / `get_recovery_trend` / `get_recovery_status` / `get_wellness_baseline_deviation` / `get_strength_sessions` / `get_hiking_sessions` / `get_energy_balance` / `get_training_blocks` / `get_weekly_prescriptions` / `get_garmin_scheduled_workouts` ほか）の結果を 1 往復で返し、W の確定もツールに任せます。各キーは null-on-error なので、欠けたキーは「取得できなかった」と講評に明示して続けます。確定した W・W-1・`week_in_progress` を一言で示してから次に進みます。
+バンドルは read 系ツール（プロフィール・負荷・`get_recovery_trend` / `get_recovery_status` / `get_wellness_baseline_deviation`・補強・収支・ブロック・処方・Garmin カレンダーほか）の結果を 1 往復で返し、W の確定もツールに任せます。各キーは null-on-error なので、欠けたキーは「取得できなかった」と講評に明示して続けます。確定した W・W-1・`week_in_progress` を一言で示してから次に進みます。
 
-同じターンで、走者が述べた事情と走者専用のルールを読みます（扱い方は `.claude/rules/analysis/analysis-standards.md` §3）:
+同じターンで、走者が述べた事情・走者専用のルール（扱い方は `.claude/rules/analysis/analysis-standards.md` §3）と W 開始日の立ち位置を読みます:
 
 ```
 mcp__garmin-db__get_activity_context(start_date=prev_start, end_date=week_end_date)
 mcp__garmin-db__get_coaching_rules(scopes=["planning", "conversation"])
+mcp__garmin-db__get_current_standing(on_date=week_start_date)
 ```
 
 ## Step 2: 実績・負荷・回復を読む
@@ -48,7 +49,7 @@ mcp__garmin-db__get_coaching_rules(scopes=["planning", "conversation"])
 
 ## Step 4: 目標・過去レビュー
 
-`goals_with_weeks_to_race[]`（`weeks_to_race` 算出済み。null は開催日未確定で、0 扱いにせず「概算/未確定」と書く）、`athlete_profile`（`current_focus` / `focus_notes` / `retrospectives`）、`past_review`（前回指摘との連続性に使う）を読みます。**profile が未登録**（`current_focus` が null かつ目標が空）なら、レビューを生成せず `/set-goal` を促して停止します。
+standing の `goals[]`（目標ペース・残り週数は算出済み。null は開催日未確定で「概算/未確定」と書く）と `proven`、`athlete_profile`（`current_focus` / `focus_notes` / `retrospectives`）、`past_review`（前回指摘との連続性に使う）を読みます。**profile が未登録**（`current_focus` が null かつ目標が空）なら、レビューを生成せず `/set-goal` を促して停止します。
 
 ## Step 5: コーチ視点でレビューを生成
 
@@ -60,7 +61,7 @@ mcp__garmin-db__get_coaching_rules(scopes=["planning", "conversation"])
 - レースの直後（`load_trend.long_run.event_window.last_event.date` が W-1 内）
 - レース戦略の判断（W 内にレースがある、または選手がペース配分を相談している）
 
-通常週では実行しない。ブリーフと手順は `/plan-block` の **Step 2.5** をそのまま使う（ここに再掲しない）。この skill 固有の差分: 目標行は `goals_with_weeks_to_race[]` から転記し、バンドルの他のキーはブリーフに入れない／計画期間は W〜最も遠い `race_date`／戦略判断で起動したらレース当日のペース配分を requirements に加える／結果は Step 6 のギャップの直後に `/plan-block` Step 3 と同じ「2 つの案の違い」表で示す／**選手が選ぶまで W の処方は確定しない**（ブロックが変わるなら登録は `/plan-block` で）。
+通常週では実行しない。ブリーフと手順は `/plan-block` の **Step 2.5** をそのまま使う（ここに再掲しない）。この skill 固有の差分: 目標行と standing は Step 1 の `get_current_standing` から転記し、バンドルのキーはブリーフに入れない／計画期間は W〜最も遠い `race_date`／戦略判断で起動したらレース当日のペース配分を requirements に加える／結果は Step 6 のギャップの直後に `/plan-block` Step 3 と同じ「2 つの案の違い」表で示す／**選手が選ぶまで W の処方は確定しない**（ブロックが変わるなら登録は `/plan-block` で）。
 
 **1. W にあるべきフェーズ**: 残り週数と重点（`current_focus` / `focus_notes`）から判断する。`focus_notes` が時期ごとの局面や質練の本数を定めていればそれに従い、無ければ次を既定とする:
 

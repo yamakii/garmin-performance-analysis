@@ -14,26 +14,24 @@ description: Interactively register or update the mid-term training plan (mesocy
 - **ロング階段は週 1 エントリ**で、各週は `target_km` / `target_minutes` の**どちらか一方だけ**（時間で管理する週は分）
 - **このスキルは日々のワークアウトを作らない**。曜日ごとの処方は週次レビュー（`save_weekly_prescriptions`）の担当。ここはあくまで「どの週にロングを何 km まで伸ばすか」までの粒度
 - **Garmin には一切書き込まない**（カレンダー登録は `/schedule-workout` の担当）
-- **質問は段階的に**: `AskUserQuestion` を一度に詰め込みすぎず、項目ごとに小分けして聞く
 
 ## ワークフロー
 
 ### Step 1: 現状の読み込みと表示
 
-MCP ツールで既存のブロック計画を取得する（Bash 許可不要）：
+既存のブロック計画を取得する：
 
 ```
 mcp__garmin-db__get_training_blocks()
 ```
 
-返却は `{blocks, active_block, ladder_step, on_date, week_start_date}`。`blocks` を以下のように表形式で要約表示する。未登録（`blocks` が空配列）なら「**未登録です**」と明示する。
- 列は「フェーズ / 期間 / タイトル / 質練/週 / 減量モード」、現ブロックのロング階段は「週開始 / 目標 / 種別 / メモ」と今週のステップ（前週 → 今週 → 次週）。
+返却は `{blocks, active_block, ladder_step, on_date, week_start_date}`。`blocks`（フェーズ / 期間 / タイトル / 質練/週 / 減量モード）、現ブロックのロング階段、今週のステップ（前週 → 今週 → 次週）を表で要約する。`blocks` が空なら「**未登録です**」と明示する。
 
 この返却内容を**ベース**として保持する。以降の対話で変更がなかったブロックはこの値をそのまま流用する。
 
 ### Step 2: 対話で編集内容を収集
 
-`AskUserQuestion` を使い、段階的に収集する。想定される編集操作：
+`AskUserQuestion` で項目ごとに小分けして聞く。想定される編集操作：
 
 - **ブロック追加**: 新しいフェーズ（例: テーパー、レース週、リカバリー）を末尾/途中に足す
 - **ブロック修正**: 期間・目的・質練本数・減量モード・カットバック規則を直す
@@ -44,8 +42,8 @@ mcp__garmin-db__get_training_blocks()
 
 ### Step 2.5: アンカーなしの対案（大きな計画判断のときだけ）
 
-登録済みの計画から考え始めると、選手が考え直しを求めていても小さな手直しで終わりやすい（既存案がアンカーになる）。
-大きな判断では、既存の計画を見ない別のエージェントにゼロから計画を組ませ、Step 3 で 2 つの案を並べて選手に選んでもらう。
+登録済みの計画から考えると、考え直しを求められても小さな手直しで終わりやすい（既存案がアンカーになる）。
+大きな判断では、既存計画を見ない別エージェントにゼロから組ませ、Step 3 で 2 案を並べて選手に選んでもらう。
 
 **起動条件**（どれか 1 つに当たれば実行する）:
 
@@ -58,8 +56,8 @@ mcp__garmin-db__get_training_blocks()
 
 **手順**:
 
-1. `mcp__garmin-db__get_athlete_profile()` から **`goals` の行だけ**を取り出す（`{race_name, race_date, priority, goal_type, distance_km, target_time_seconds, status, notes}`。`notes` はその目標自身の成功条件として残す）。`current_focus` / `focus_notes` / `retrospectives` は転記しない。
-2. 下の**ブリーフ**の `{...}` を埋めて `Agent(subagent_type="general-purpose")` を 1 回呼ぶ（新しいエージェント定義は作らない）。ブリーフには **Step 1 の現行計画・選手が Step 2 で出した編集案・メインセッションの見立てを一切入れない**。
+1. 事実を集める: `get_current_standing()` の `goals[]` と `proven`、goals の `notes`（`get_athlete_profile()`、目標自身の成功条件）、Step 1 の `blocks` の**今日より前の週**（週開始・phase・`kind`。cutback / recovery / taper は「意図的な減量週」）、`get_activity_context(<16 週前>〜<今日>)`。`focus_notes` 等の散文・過去の結論は転記しない。
+2. 下の**ブリーフ**の `{...}` を埋めて `Agent(subagent_type="general-purpose")` を 1 回呼ぶ（新しいエージェント定義は作らない）。ブリーフには **今日以降の登録計画・選手が Step 2 で出した編集案・メインセッションの見立てを一切入れない**。
 3. 返ってきた JSON を控え、Step 3 で並べて示す。`tools_called` に「読まないもの」が混ざっていたら、その対案は使わず理由を添えて選手に伝える（アンカーが外れていないため）。
 
 **ブリーフ（テンプレート）**:
@@ -67,8 +65,13 @@ mcp__garmin-db__get_training_blocks()
 ````markdown
 あなたはランニングコーチです。下の目標に向けた中期計画（フェーズ・ロング階段・週量）を、既存の計画を一切見ずにゼロから組んでください。
 
-## 目標（athlete_goals の行をそのまま転記）
+## 目標（goals[] ＋ notes を転記）
 {goal_rows_json}
+
+## 現在地（事実のみ）
+- 実証済み: {proven_json}
+- 過去の週（減量週の低い週量を体力低下と読まない）: {past_weeks_json}
+- 走者が述べた事情: {activity_context_json}
 
 ## 基準
 - today: {YYYY-MM-DD}
@@ -89,7 +92,7 @@ mcp__garmin-db__get_training_blocks()
 
 ## 読まないもの
 - get_training_blocks / prefetch_weekly_review_context / get_weekly_review / get_weekly_prescriptions / get_garmin_scheduled_workouts
-- get_athlete_profile（目標は上に転記済み。focus_notes / retrospectives / current_focus は読まない）
+- get_athlete_profile / get_current_standing / get_activity_context（必要な分は上に転記済み）
 - 上の SQL 以外の export（training_blocks / weekly_reviews / athlete_profile 系のテーブルを含む）
 
 ## 進め方
