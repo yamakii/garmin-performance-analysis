@@ -1181,6 +1181,19 @@
     }
   },
   {
+    "name": "get_current_standing",
+    "description": "Get one deterministic view of where the athlete stands against the goal on a day (computed, never stored): goals (active goals with goal_pace_sec_per_km = target_time_seconds / distance_km, None without a target, and weeks_to_race), block (title, phase, purpose, week_position, current_step, next_step of the block covering the day, or null), remaining_steps (long-run ladder steps after this week up to the A goal), proven (longest_run of the last 182 days, build_baseline_km), recent_near_goal_pace (runs >= 5 km of the last 28 days within +/-15 s/km of a goal pace) and missing (absent inputs, e.g. 'no active goal'). Read this first before judging a run or a plan against the goal.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Reference day (YYYY-MM-DD). When omitted, today is used."
+        }
+      }
+    }
+  },
+  {
     "name": "get_race_readiness",
     "description": "Get race readiness: the athlete's current VDOT (the objective fitness curve's latest point when it is at most 90 days old, else Garmin's optimistic VO2max conversion; vdot_source names which of 'objective' / 'garmin_vo2max' was used), VDOT-based race-time predictions (5k/10k/half/full in seconds), the active race goal (priority A / active preferred, else the nearest future race), and a progress block with the predicted goal-distance time, gap to target (seconds; positive = behind target), pace gap (sec/km), weeks remaining, and a status (ahead/on_track/behind). Returns empty predictions when no VDOT can be derived and a null goal/progress when no goal is registered.",
     "inputSchema": {
