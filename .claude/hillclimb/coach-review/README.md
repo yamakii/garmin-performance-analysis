@@ -118,9 +118,35 @@ earlier case id) are never sent to a model. A new case must carry `logged`, `sou
 
 - incidents and owner corrections per ISO week, the count per triage class and the recurrence rate;
 - coverage: cases per surface × pattern, and the surfaces that have no case yet;
-- eval regressions: cases that passed in an earlier variant and fail in the latest variant that ran them.
+- eval regressions: cases that passed in an earlier variant and fail in the latest variant that ran them;
+- the weekly mean per outcome of the stored-run_note sample (below).
 
 The rule-size side is `garmin_mcp.scripts.rule_budget` (`--history` for the weekly trend).
+
+## Weekly sample of stored run_notes (#1570)
+
+The cases only catch a failure someone has already written down. Once a week, a few run_notes
+already stored in `section_analyses` are scored on the outcome rubric, so a narrowing or a
+regression shows up as a trend before the athlete has to point it out:
+
+```bash
+F=.claude/hillclimb/coach-review
+node $F/sample-stored.mjs                          # 3 notes from the last 7 days
+node $F/sample-stored.mjs --n 3 --since 2026-11-01 # explicit window
+node $F/indicators.mjs                             # prints the weekly mean per outcome
+```
+
+- `garmin_mcp.scripts.export_run_note_samples` (read-only) picks `--n` notes since `--since`: the
+  latest stored version per activity, spread over `training_type`, with a seed fixed per ISO week.
+  It rebuilds `report` and `context` with the code `get_run_note_inputs` uses, so the judge reads
+  today's report, which can differ from the one the note was written against.
+- The judge scores the rubric only (O1–O6 for a run_note; no `must` / `must_not`). No coach model
+  runs. `--samples PATH` grades an already exported file instead.
+- Rows `{variant: 'stored-YYYY-Www', kind: 'run_note', id, grade.rubric, explanation.rubric}` land in
+  `stored/results.jsonl` (gitignored: it holds athlete data). A re-run in the same week skips the
+  ids already scored.
+- **Cost**: one judge call per sample, about 3 a week of Max usage. No harness approval is needed,
+  because nothing under test runs.
 
 ## Running
 
