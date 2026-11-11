@@ -33,3 +33,32 @@ def test_classify_acwr_keeps_status_boundaries():
     assert _classify(0.79)[0] == "undertraining"
     assert _classify(1.6)[1] is not None
     assert _classify(0.5)[1] is not None
+
+
+@pytest.mark.unit
+def test_reason_adds_build_baseline_sentence():
+    """Issue #1571: the window composition and build-baseline ratio join the reason."""
+    baseline = {"status": "ok", "weekly_km": 40.0, "ratio": 1.1}
+    composition = [
+        {"week_start": "2026-10-12", "load_km": 20.0, "kind": "recovery"},
+        {"week_start": "2026-10-19", "load_km": 22.0, "kind": "recovery"},
+        {"week_start": "2026-10-26", "load_km": 25.0, "kind": "recovery"},
+        {"week_start": "2026-11-02", "load_km": 44.0, "kind": "build"},
+    ]
+
+    status, reason_ja = _classify(1.6, baseline, composition)
+
+    assert status == "high_risk"
+    assert reason_ja is not None
+    assert reason_ja.startswith(_classify(1.6)[1] or "")
+    assert "1.1" in reason_ja
+    assert "回復期" in reason_ja
+    assert "3週" in reason_ja
+
+
+@pytest.mark.unit
+def test_reason_unchanged_without_baseline():
+    baseline = {"status": "no_blocks", "weekly_km": None, "ratio": None}
+    composition = [{"week_start": "2026-11-02", "load_km": 44.0, "kind": "recovery"}]
+
+    assert _classify(1.6, baseline, composition) == _classify(1.6)

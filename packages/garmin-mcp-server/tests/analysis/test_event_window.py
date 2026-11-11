@@ -140,6 +140,27 @@ def test_2025_12_29_is_red() -> None:
 
 
 @pytest.mark.unit
+def test_window_carries_proven_long_run_without_changing_verdict() -> None:
+    """Issue #1571: the proven run rides beside the ceiling; the verdict stays."""
+    proven = {
+        "duration_sec": 12000,
+        "distance_km": 30.0,
+        "activity_date": "2025-11-02",
+    }
+    window = compute_post_event_window(
+        events=[_event("2025-12-14")],
+        runs_since=[_run(444, "2025-12-29", 28.6)],
+        pre_event_longest_km=21.2,
+        date="2025-12-29",
+        proven_long_run=proven,
+    )
+
+    assert window["proven_long_run"] == proven
+    assert window["verdict"] == "red"
+    assert window["ceiling_km"] == 21.2
+
+
+@pytest.mark.unit
 def test_within_ceiling_is_green() -> None:
     """An 18 km run on day 10 stays under the 21.2 km ceiling -> green."""
     window = compute_post_event_window(

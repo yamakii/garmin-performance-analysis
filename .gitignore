@@ -102,5 +102,6 @@ build/
 .claude/hillclimb/*/v[0-9]*/
 .claude/hillclimb/*/report.html
 .claude/hillclimb/*/trajectory/
+.claude/hillclimb/*/stored/
 # Real eval cases (activity ids, the athlete's wording, incident-derived expectations); the repo is public
 .claude/hillclimb/*/cases.local.json
