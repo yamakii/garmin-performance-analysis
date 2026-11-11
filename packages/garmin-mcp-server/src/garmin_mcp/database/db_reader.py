@@ -1583,7 +1583,8 @@ class GarminDBReader:
             ``json.dumps``-serializable dict with ``date``, ``last_event``,
             ``days_since_event``, ``in_window``, ``ceiling_km``,
             ``longest_since_km``, ``longest_since_activity_id``,
-            ``overshoot_pct``, ``verdict`` and ``reason_ja``.
+            ``overshoot_pct``, ``proven_long_run``, ``verdict`` and
+            ``reason_ja``.
         """
         from datetime import date as date_cls
         from datetime import timedelta
@@ -1642,7 +1643,16 @@ class GarminDBReader:
             )
         ]
 
-        return compute_post_event_window(events, runs_since, pre_event_longest_km, date)
+        # What was already proven before the reference day, carried beside the
+        # ceiling (Issue #1571). A reader failure only drops the fact.
+        try:
+            proven_long_run = self.training_load.get_proven_long_run(date)
+        except Exception:
+            proven_long_run = None
+
+        return compute_post_event_window(
+            events, runs_since, pre_event_longest_km, date, proven_long_run
+        )
 
     def _event_goals(self, user_id: str = "default") -> list[dict[str, Any]]:
         """Read every dated ``athlete_goals`` row (any status) for ``user_id``.
