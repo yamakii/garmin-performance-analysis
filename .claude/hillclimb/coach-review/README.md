@@ -14,12 +14,34 @@ follows `../trend-narration/`.
   scratch dir under the system temp dir, and that file is graded. **Nothing is
   merged.** The two merge gates (section schema + grounding) run through the
   read-only CLI `garmin_mcp.scripts.check_run_note --report <json> --note <json>`.
-- **`conversation`**: a single-turn probe, `claude -p "<athlete question>"` in the
+- **`conversation`**: a probe, `claude -p "<athlete question>"` in the
   repo root, so CLAUDE.md and the rules load. Only **read-only** tools are allowed:
   Read / Glob / Grep and the garmin-db `get_*`, `export` and `prefetch_*` tools.
   Every other garmin-db tool (taken from the tool registry snapshot, so a new
   write tool is denied by default), Bash, Write, Edit, subagents, and the github /
   serena servers are on the deny list. The final answer is graded.
+
+### Multi-turn conversation cases (`turns`)
+
+Some failures only show on a second turn: a full reversal after pushback, an
+over-correction toward the one point the athlete raised, or losing context the
+athlete just stated. A conversation case may list 1–3 scripted follow-up athlete
+messages in `turns` (`run_note` cases may not):
+
+```json
+{ "id": "pushback-1", "kind": "conversation", "prompt": "…", "turns": ["それは過剰では？"], "…": "…" }
+```
+
+- The runner sends `prompt` with `claude -p`, then one `claude -p --resume <session_id>`
+  per follow-up, each resuming the session the previous turn reported. These sessions are
+  persisted (a single-turn case still runs with `--no-session-persistence`).
+- The trace holds every user / assistant turn in order. Cost, token usage and `num_turns`
+  are summed over the turns; latency covers the whole session.
+- The judge reads the exchange as `TURN 1..n`. `must` / `must_not` and `forbid_regex`
+  cover the whole exchange; the rubric is scored on the final answer, and O2 (trust) also
+  asks for consistency with the earlier turns.
+- Each turn's answer is kept in `out/<id>_rep<k>.answers.json`, so `regrade.mjs --rejudge`
+  sees the same exchange.
 
 The harness never writes to DuckDB.
 

@@ -7,9 +7,11 @@
 //                   block of .claude/workflows/analyze-activity.js), writes run_note.json to a
 //                   scratch dir, and grades it. Nothing is merged: the merge gates run through
 //                   the read-only garmin_mcp.scripts.check_run_note CLI.
-//   - conversation: a single-turn probe `claude -p "<question>"` in the repo root, so
-//                   CLAUDE.md and the rules load, with READ-ONLY tools only (Read/Glob/Grep and
-//                   the garmin-db get_* / export / prefetch_* tools). The final answer is graded.
+//   - conversation: a probe `claude -p "<question>"` in the repo root, so CLAUDE.md and the
+//                   rules load, with READ-ONLY tools only (Read/Glob/Grep and the garmin-db
+//                   get_* / export / prefetch_* tools). A case with `turns` sends each scripted
+//                   follow-up with `claude -p --resume <session_id>` in the same session. The
+//                   judge reads every turn; the rubric scores the final answer.
 //
 // The harness never writes to DuckDB. Run from the repo root:
 //
@@ -62,6 +64,9 @@ export function loadCases(flowDir, { warn = (m) => console.error(m) } = {}) {
   return { cases, path, synthetic }
 }
 
+// Scripted follow-up turns per conversation case (cases.schema.json `turns`).
+export const MAX_FOLLOW_UPS = 3
+
 // The subset of cases.schema.json the runner relies on (no schema library here).
 // -> error message, or null when the case is usable.
 export function validateCase(c) {
@@ -83,6 +88,12 @@ export function validateCase(c) {
       return `expect.${k} must be an array of strings`
   for (const p of c.expect.forbid_regex ?? []) {
     try { new RegExp(p, 'u') } catch (e) { return `expect.forbid_regex ${JSON.stringify(p)}: ${e.message}` }
+  }
+  if (c.turns != null) {
+    if (c.kind !== 'conversation') return 'turns is for conversation cases only'
+    if (!Array.isArray(c.turns) || !c.turns.length || c.turns.length > MAX_FOLLOW_UPS)
+      return `turns must be an array of 1-${MAX_FOLLOW_UPS} follow-up messages`
+    if (!c.turns.every((s) => typeof s === 'string' && s.trim())) return 'every turns entry must be a non-empty string'
   }
   if (c.kind === 'run_note') {
     if (!Number.isInteger(c.activity_id)) return 'run_note cases need an integer activity_id'
@@ -142,9 +153,10 @@ function mainModel(modelUsage) {
 const clip = (s, n = 6000) => (s.length > n ? `${s.slice(0, n)}\n… [${s.length - n} chars clipped in trace]` : s)
 const toolResultText = (b) => (Array.isArray(b.content) ? b.content.map((x) => x.text ?? '').join('\n') : String(b.content ?? ''))
 
-function toTranscript(events, prompt, meta) {
-  const t = [{ role: 'system', content: `Claude Code headless (cwd=repo root). kind=${meta.kind} model=${meta.model} effort=${meta.effort ?? '(settings)'}` },
-             { role: 'user', content: prompt }]
+// One turn of a session: the athlete's message, then the assistant's text, tool
+// calls and tool results in stream order.
+function turnEntries(events, prompt) {
+  const t = [{ role: 'user', content: prompt }]
   for (const ev of events) {
     const blocks = ev.message?.content
     if (!Array.isArray(blocks)) continue
@@ -155,6 +167,60 @@ function toTranscript(events, prompt, meta) {
     }
   }
   return t
+}
+
+const systemEntry = (meta) =>
+  ({ role: 'system', content: `Claude Code headless (cwd=repo root). kind=${meta.kind} model=${meta.model} effort=${meta.effort ?? '(settings)'}` })
+
+export function toTranscript(events, prompt, meta) {
+  return [systemEntry(meta), ...turnEntries(events, prompt)]
+}
+
+// turns: [{prompt, events}] in order -> one transcript with every user /
+// assistant turn. With `meta`, the same system header as toTranscript leads it,
+// so a single turn yields exactly the toTranscript shape.
+export function mergeTurnTranscripts(turns, meta = null) {
+  const body = (turns ?? []).flatMap((t) => turnEntries(t.events ?? [], t.prompt))
+  return meta ? [systemEntry(meta), ...body] : body
+}
+
+// The args of a follow-up turn: resume the session and send the next message.
+// `baseArgs` are the per-session flags (model, output format, permissions) without
+// `-p`; session persistence is required to resume, so it is never disabled here.
+export function buildTurnArgs(baseArgs, sessionId, followUp) {
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error('buildTurnArgs: a session id is required to resume')
+  return ['--resume', sessionId, '-p', followUp, ...baseArgs.filter((a) => a !== '--no-session-persistence')]
+}
+
+// The final answer of every turn, in order (a turn with no result text reads '').
+export const turnAnswers = (results) => results.map((r) => (typeof r?.result === 'string' ? r.result : ''))
+
+// The served-model usage of every turn, summed per model.
+function mergeModelUsage(results) {
+  const out = {}
+  for (const r of results)
+    for (const [m, u] of Object.entries(r?.modelUsage ?? {})) {
+      const acc = (out[m] ??= {})
+      for (const [k, v] of Object.entries(u ?? {})) if (typeof v === 'number') acc[k] = (acc[k] ?? 0) + v
+    }
+  return out
+}
+
+// cost / num_turns / token usage summed over the turns of one case. A cost or a
+// turn count that no turn reported stays null.
+export function sumTurnResults(results) {
+  const sum = (f) => {
+    const xs = results.map(f).filter((x) => typeof x === 'number')
+    return xs.length ? xs.reduce((a, b) => a + b, 0) : null
+  }
+  const tok = (k) => sum((r) => r?.usage?.[k] ?? 0) ?? 0
+  return {
+    cost_usd: sum((r) => r?.total_cost_usd),
+    num_turns: sum((r) => r?.num_turns),
+    usage: { input_tokens: tok('input_tokens'), output_tokens: tok('output_tokens'),
+      cache_read_input_tokens: tok('cache_read_input_tokens'), cache_creation_input_tokens: tok('cache_creation_input_tokens') },
+    modelUsage: mergeModelUsage(results),
+  }
 }
 
 // Tool calls and their results, paired, for the judge's CONTEXT and for
@@ -224,6 +290,34 @@ export async function checkRunNoteCli(reportPath, notePath) {
   return r
 }
 
+const parseEvents = (out) => out.split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
+
+// Runs one headless session: the first prompt with `-p`, then one
+// `--resume <session_id>` call per follow-up, each resuming the session id the
+// previous turn reported. -> [{prompt, events, result}] in turn order.
+export async function runSession(prompts, baseArgs, { spawnFn = spawnCollect, cwd = REPO, env = caseEnv(), timeoutMs = 2147483647 } = {}) {
+  const turns = []
+  for (const [i, prompt] of prompts.entries()) {
+    const sessionId = turns.at(-1)?.result?.session_id
+    if (i > 0 && !sessionId) {
+      const e = new Error(`turn ${i} reported no session_id; cannot resume for turn ${i + 1}`)
+      e.failure_class = 'harness'
+      throw e
+    }
+    const args = i === 0 ? ['-p', prompt, ...baseArgs] : buildTurnArgs(baseArgs, sessionId, prompt)
+    const { code, out, err } = await spawnFn('claude', args, { cwd, env, timeoutMs })
+    const events = parseEvents(out)
+    const result = events.find((e) => e.type === 'result')
+    if (!result) {
+      const e = new Error(`claude produced no result event on turn ${i + 1} (exit ${code}): ${String(err).slice(0, 300)}`)
+      e.failure_class = 'harness'
+      throw e
+    }
+    turns.push({ prompt, events, result })
+  }
+  return turns
+}
+
 async function runCase(input, ctx) {
   const stem = `${input.id}_rep${ctx.rep}`
   const tempDir = join(SCRATCH, ctx.variant, stem)
@@ -233,34 +327,31 @@ async function runCase(input, ctx) {
   const prompt = input.kind === 'run_note'
     ? ctx.runNotePrompt({ activityId: input.activity_id, activityDate: input.date, tempDir })
     : input.prompt
-  const args = ['-p', prompt, '--model', ctx.model, '--output-format', 'stream-json', '--verbose',
-    '--permission-mode', 'dontAsk', '--no-session-persistence',
+  const followUps = input.kind === 'conversation' ? (input.turns ?? []) : []
+  const baseArgs = ['--model', ctx.model, '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
+    // a multi-turn case resumes its session, so only a single-turn case runs without persistence
+    ...(followUps.length ? [] : ['--no-session-persistence']),
     '--allowedTools', ...perms.allow, '--disallowedTools', ...perms.deny]
-  if (input.kind === 'run_note') args.push('--agent', 'run-note-analyst', '--add-dir', tempDir)
-  if (ctx.effort) args.push('--effort', ctx.effort)
-  const { code, out, err } = await spawnCollect('claude', args, { cwd: REPO, env: caseEnv(), timeoutMs:ctx.timeoutS > 0 ? ctx.timeoutS * 1000 : 2147483647 })
-  const events = out.split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)] } catch { return [] } })
-  const result = events.find((e) => e.type === 'result')
-  if (!result) {
-    const e = new Error(`claude produced no result event (exit ${code}): ${err.slice(0, 300)}`)
-    e.failure_class = 'harness'
-    throw e
-  }
-  const model = mainModel(result.modelUsage)
+  if (input.kind === 'run_note') baseArgs.push('--agent', 'run-note-analyst', '--add-dir', tempDir)
+  if (ctx.effort) baseArgs.push('--effort', ctx.effort)
+  const turns = await runSession([prompt, ...followUps], baseArgs, { timeoutMs: ctx.timeoutS > 0 ? ctx.timeoutS * 1000 : 2147483647 })
+  const results = turns.map((t) => t.result)
+  const events = turns.flatMap((t) => t.events)
+  const result = results.at(-1)
+  const summed = sumTurnResults(results)
+  const model = mainModel(summed.modelUsage)
   const family = ctx.model.replace(/^claude-/, '').split('-')[0]
   if (!model || !model.includes(family)) {
     const e = new Error(`served model ${model} is not a ${family} model`)
     e.failure_class = 'serving_substitution'
     throw e
   }
-  const u = result.usage ?? {}
-  const usage = { input_tokens: u.input_tokens ?? 0, output_tokens: u.output_tokens ?? 0,
-    cache_read_input_tokens: u.cache_read_input_tokens ?? 0, cache_creation_input_tokens: u.cache_creation_input_tokens ?? 0 }
+  const usage = summed.usage
   const exchanges = toolExchanges(events)
   const outDir = join(ctx.flow, ctx.variant, 'out')
   mkdirSync(outDir, { recursive: true })
 
-  let output = null, report = null, pyCheck = null, judgeContext
+  let output = null, answers = null, report = null, pyCheck = null, judgeContext
   if (input.kind === 'run_note') {
     if (!garminToolsReached(exchanges)) {
       const e = new Error('run_note session never reached garmin-db (MCP server not connected); not graded')
@@ -296,24 +387,29 @@ async function runCase(input, ctx) {
   } else {
     output = typeof result.result === 'string' ? result.result : null
     if (output != null) writeFileSync(join(outDir, `${stem}.answer.md`), output)
+    // every turn's answer, for the judge and for regrade --rejudge
+    if (followUps.length) {
+      answers = turnAnswers(results)
+      writeFileSync(join(outDir, `${stem}.answers.json`), JSON.stringify(answers))
+    }
     judgeContext = { tool_results: exchanges.map((x) => ({ tool: x.name, input: x.input, result: clip(x.result, 3000) })) }
   }
   writeFileSync(join(outDir, `${stem}.judge_context.json`), JSON.stringify(judgeContext))
   writeFileSync(join(outDir, `${stem}.pycheck.json`), JSON.stringify(pyCheck))
   const lastAssistant = [...events].reverse().find((e) => e.type === 'assistant')
   return {
-    output, report, pyCheck, judgeContext, model, usage, prompt,
-    transcript: toTranscript(events, prompt, { kind: input.kind, model, effort: ctx.effort }),
+    output, answers, report, pyCheck, judgeContext, model, usage, prompt,
+    transcript: mergeTurnTranscripts(turns, { kind: input.kind, model, effort: ctx.effort }),
     tools_used: [...new Set(exchanges.map((x) => x.name).filter(Boolean))],
     stop_reason: lastAssistant?.message?.stop_reason ?? result.subtype,
-    cost_usd: result.total_cost_usd ?? null,
-    num_turns: result.num_turns ?? null,
+    cost_usd: summed.cost_usd,
+    num_turns: summed.num_turns,
   }
 }
 
 async function gradeCase(input, run, ctx) {
-  const det = deterministicChecks(input, run.output, run.report, { pyCheck: run.pyCheck })
-  const j = ctx.noJudge ? null : await judge(input, run.output, run.judgeContext)
+  const det = deterministicChecks(input, run.output, run.report, { pyCheck: run.pyCheck, answers: run.answers })
+  const j = ctx.noJudge ? null : await judge(input, run.output, run.judgeContext, { answers: run.answers })
   const { explanation, ...grade } = combine(det, j)
   return { grade, explanation, judge_model: j?.judge_model, judge_usage: j?.judge_usage, judge_cost_usd: j?.judge_cost_usd ?? null }
 }
@@ -488,7 +584,8 @@ async function main() {
           prompt: c.kind === 'conversation' ? c.prompt : `run_note ${c.activity_id} ${c.date}`,
           meta: { ...(appRetry.count ? { retries: appRetry.count } : {}), ...(judgeRetry.count ? { judge_retries: judgeRetry.count } : {}),
                   effort: ctx.effort ?? null, synthetic, judge_cost_usd: g.judge_cost_usd ?? null,
-                  output_written: run.output != null, tools_used: run.tools_used },
+                  output_written: run.output != null, tools_used: run.tools_used,
+                  ...(c.turns?.length ? { session_turns: 1 + c.turns.length } : {}) },
           model: run.model, usage: run.usage, stop_reason: run.stop_reason,
           status: run.stop_reason === 'max_tokens' ? 'truncated' : 'ok',
           judge_model: g.judge_model, judge_usage: g.judge_usage,
