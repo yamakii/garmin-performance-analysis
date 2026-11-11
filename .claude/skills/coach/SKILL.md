@@ -12,14 +12,14 @@ argument-hint: [question]
 ## Step 1: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save_coaching_rule,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_training_blocks,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__export")
+ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save_coaching_rule,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__export")
 ```
 
 ## Step 2: 答える前に必ず読む（同じターンで並列）
 
 - `get_coaching_rules(scopes=["conversation"])`
-- `get_athlete_profile()`: 目標（レース日・目標タイム・目標自身の達成基準）と `focus_notes`（散文は書いた時点の仮説として読む）
-- `get_training_blocks()`: 今のブロックの目的と段。答えが計画と食い違うなら、食い違いと理由を明示する
+- `get_current_standing()`: 目標・目標ペース・今のブロックの目的と段・実証済みの量。答えが計画と食い違うなら、食い違いと理由を明示する
+- `get_athlete_profile()`: 目標自身の達成基準と `focus_notes`（書いた時点の仮説）
 - `get_weekly_prescriptions(week_start_date=<今週の開始日>)`: 今週の処方（日別の正本）
 - `get_activity_context(start_date=<14日前>, end_date=<今日>)`
 

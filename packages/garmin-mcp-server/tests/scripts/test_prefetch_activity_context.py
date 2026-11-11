@@ -4,11 +4,13 @@ import datetime
 import inspect
 import re
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import duckdb
 import pytest
 
+from garmin_mcp.analysis.current_standing import build_current_standing
 from garmin_mcp.database.db_reader import GarminDBReader
 from garmin_mcp.scripts.prefetch_activity_context import (
     build_run_note_context,
@@ -224,6 +226,7 @@ class TestPrefetchActivityContext:
             "long_run_gate",
             "athlete_context",
             "coaching_rules",
+            "standing",
         }
         result = prefetch_activity_context(12345)
         assert read_keys <= set(result)
@@ -446,6 +449,7 @@ class TestBuildRunNoteContext:
             "long_run_gate",
             "athlete_context",
             "coaching_rules",
+            "standing",
         }
         # Row bookkeeping stays out; the coaching fields stay in.
         assert out["prescription_for_run"] == {
@@ -549,6 +553,121 @@ class TestBuildRunNoteContext:
         assert out is not None
         assert out["coaching_rules"] == []
         assert out["athlete_context"] is None
+
+    def test_run_note_context_includes_standing(self) -> None:
+        """The goal, the block and what is proven reach the agent (#1572)."""
+        standing = build_current_standing(
+            on_date="2026-09-18",
+            goals=[
+                {
+                    "race_name": "新潟シティマラソン",
+                    "race_date": "2026-10-11",
+                    "priority": "A",
+                    "goal_type": "time",
+                    "distance_km": 42.195,
+                    "target_time_seconds": 18000,
+                    "status": "active",
+                }
+            ],
+            blocks=[
+                {
+                    "title": "Build",
+                    "phase": "build",
+                    "purpose": "ロングを30kmまで伸ばす",
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-28",
+                    "long_run_ladder": [
+                        {"week_start": "2026-09-14", "target_km": 24.0, "kind": "build"}
+                    ],
+                }
+            ],
+            proven_long_run={"activity_id": 1, "distance_km": 28.0},
+            build_baseline={"weekly_km": 40.0},
+            recent_runs=[],
+        )
+
+        out = build_run_note_context({**_BUNDLE, "standing": standing})
+
+        assert out is not None
+        goal = out["standing"]["goals"][0]
+        assert goal["goal_pace_sec_per_km"] == 426.6
+        assert goal["race_name"] == "新潟シティマラソン"
+        assert goal["weeks_to_race"] == 4
+        assert out["standing"]["block"]["phase"] == "build"
+        assert out["standing"]["block"]["current_step"]["target_km"] == 24.0
+        assert set(out["standing"]["block"]) == {
+            "phase",
+            "purpose",
+            "week_position",
+            "current_step",
+        }
+        assert out["standing"]["proven"]["build_baseline_km"] == 40.0
+        # Plan / trend parts stay with get_current_standing.
+        assert "remaining_steps" not in out["standing"]
+        assert "recent_near_goal_pace" not in out["standing"]
+
+    def test_run_note_context_standing_none_on_failure(self) -> None:
+        """A failed standing read leaves the key null and the rest unchanged."""
+        without = build_run_note_context({**_BUNDLE, "standing": None})
+        absent = build_run_note_context(_BUNDLE)
+
+        assert without is not None
+        assert without["standing"] is None
+        assert without == absent
+
+
+@pytest.mark.unit
+@patch("garmin_mcp.scripts.prefetch_activity_context.get_db_path")
+@patch("garmin_mcp.scripts.prefetch_activity_context.get_connection")
+def test_run_note_context_standing_is_as_of_activity_date(
+    mock_get_conn: MagicMock, mock_get_db: MagicMock, tmp_path: Path
+) -> None:
+    """A block that starts the day after the run is not the run's block (#1572)."""
+    mock_get_db.return_value = str(tmp_path / "absent.duckdb")
+    mock_conn = MagicMock()
+    mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
+    mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
+    mock_conn.execute.return_value.fetchone.side_effect = [
+        (datetime.date(2026, 3, 1), 148, 330.0, 8.2, 2706),
+        None,  # gear
+        ("aerobic_base",),
+    ]
+    later_block = {
+        "title": "Build",
+        "phase": "build",
+        "purpose": "build",
+        "start_date": "2026-03-02",
+        "end_date": "2026-03-29",
+        "long_run_ladder": [],
+    }
+    seen_dates: list[str | None] = []
+
+    def fake_standing(
+        on_date: str | None = None, user_id: str = "default"
+    ) -> dict[str, Any]:
+        seen_dates.append(on_date)
+        return build_current_standing(
+            on_date=on_date or "2026-11-12",
+            goals=[],
+            blocks=[later_block],
+            proven_long_run=None,
+            build_baseline={},
+            recent_runs=[],
+        )
+
+    reader = MagicMock()
+    reader.get_current_standing.side_effect = fake_standing
+    with patch(
+        "garmin_mcp.scripts.prefetch_activity_context.StandingReader",
+        return_value=reader,
+    ):
+        bundle = prefetch_activity_context(12345)
+
+    assert seen_dates == ["2026-03-01"]
+    context = build_run_note_context(bundle)
+    assert context is not None
+    assert context["standing"] is not None
+    assert context["standing"]["block"] is None
 
 
 @pytest.mark.unit

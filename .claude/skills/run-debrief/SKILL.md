@@ -12,11 +12,11 @@ argument-hint: [YYYY-MM-DD]
 ## Step 0: 準備
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules")
+ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules,mcp__garmin-db__get_current_standing")
 ```
 
 `get_activity_by_date(date=<対象日>)` で activity_id を取り（同日に補強などがあればランを選ぶ）、同じターンで
-`get_coaching_rules(scopes=["debrief", "conversation"])` を読みます。走者ルールと走者が述べた事情の扱いは
+`get_coaching_rules(scopes=["debrief", "conversation"])` と `get_current_standing(on_date=<対象日>)` を読みます。走者ルールと走者が述べた事情の扱いは
 `.claude/rules/analysis/analysis-standards.md` §3 に従います。
 
 ## Step 1: まず run report を 1 本読む（必須・ここから始める）

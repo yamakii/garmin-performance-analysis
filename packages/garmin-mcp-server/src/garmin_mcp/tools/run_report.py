@@ -143,7 +143,12 @@ RUN_REPORT_TOOLS: list[ToolDef] = [
             "morning_wellness, vs_previous, previous_same_type, the top 3 "
             "similar_workouts, gear, long_run_gate, athlete_context (as in "
             "the report) and coaching_rules (the athlete's active rules of "
-            "scope all / run_note: rule_id, scope, rule_text, rationale); "
+            "scope all / run_note: rule_id, scope, rule_text, rationale) and "
+            "standing (get_current_standing as of the activity date: goals "
+            "[race_name, race_date, priority, distance_km, "
+            "goal_pace_sec_per_km, weeks_to_race], block {phase, purpose, "
+            "week_position, current_step} or null, proven {longest_run, "
+            "build_baseline_km}; null on error); "
             "null when the bundle failed). Returns {error, activity_id} when the activity has no "
             "run report."
         ),
