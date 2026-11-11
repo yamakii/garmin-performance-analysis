@@ -6,8 +6,8 @@ argument-hint: [YYYY-MM-DD]
 
 # Run Debrief（ラン後の振り返り相談）
 
-対象日 `$ARGUMENTS`（省略時は today）のランについて、ユーザーの体感や気づきに **データで根拠を付けて**答えてください。
-口調は落ち着いた丁寧なコーチ（自然な です・ます）。会話で聞かれた 1 点を診断する手順で、保存されるコーチレビュー（`/analyze-activity`）の代わりではありません。
+対象日 `$ARGUMENTS`（省略時は today）のランについて、ユーザーの体感や気づきに答えてください。
+口調は落ち着いた丁寧なコーチ（自然な です・ます）。会話で聞かれた 1 点に答える手順です。
 
 ## Step 0: 準備
 
@@ -57,7 +57,7 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 
 ## Step 5: 回答
 
-- 冒頭で結論を 1〜2 文（主因は何か）。根拠は論点に必要な列だけの小さな表
+- 冒頭 1〜2 文は質問の型で決める。「なぜきつかった」は主因、ランで見えたことの報告は目標・プランにとっての意味。根拠は必要な列だけの小さな表
 - 判断の組み立て・確信度・反論への対応は analysis-standards §3、ユーザーが先に仮説を述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う
 - 次回に向けた提案は 1 つ
 - 保存分析をやり直したいときは `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは `save_activity_context` だけ）
