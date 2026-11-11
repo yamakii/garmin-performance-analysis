@@ -359,6 +359,15 @@ class PrefetchWeeklyReviewContextParams(BaseModel):
     )
 
 
+class GetCurrentStandingParams(BaseModel):
+    """Arguments for ``get_current_standing``."""
+
+    date: str | None = Field(
+        default=None,
+        description="Reference day (YYYY-MM-DD). When omitted, today is used.",
+    )
+
+
 # ----------------------------------------------------------------------------
 # Handlers
 # ----------------------------------------------------------------------------
@@ -618,6 +627,18 @@ def _prefetch_weekly_review_context(
         target=p.target,
         user_id=p.user_id if p.user_id is not None else _DEFAULT_USER_ID,
     )
+
+
+def _get_current_standing(reader: GarminDBReader, p: GetCurrentStandingParams) -> Any:
+    from garmin_mcp.database.readers.standing import StandingReader
+
+    try:
+        return StandingReader(db_path=str(reader.db_path)).get_current_standing(
+            on_date=p.date
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Get current standing failed: {e}")
+        return {"error": str(e)}
 
 
 ATHLETE_TOOLS: list[ToolDef] = [
@@ -907,6 +928,26 @@ ATHLETE_TOOLS: list[ToolDef] = [
         handler=_prefetch_weekly_review_context,
         cli_group="athlete",
         cli_name="prefetch-weekly-review-context",
+    ),
+    ToolDef(
+        name="get_current_standing",
+        description=(
+            "Get one deterministic view of where the athlete stands against "
+            "the goal on a day (computed, never stored): goals (active goals "
+            "with goal_pace_sec_per_km = target_time_seconds / distance_km, "
+            "None without a target, and weeks_to_race), block (title, phase, "
+            "purpose, week_position, current_step, next_step of the block "
+            "covering the day, or null), remaining_steps (long-run ladder "
+            "steps after this week up to the A goal), proven (longest_run of "
+            "the last 182 days, build_baseline_km), recent_near_goal_pace "
+            "(runs >= 5 km of the last 28 days within +/-15 s/km of a goal "
+            "pace) and missing (absent inputs, e.g. 'no active goal'). Read "
+            "this first before judging a run or a plan against the goal."
+        ),
+        params=GetCurrentStandingParams,
+        handler=_get_current_standing,
+        cli_group="athlete",
+        cli_name="current-standing",
     ),
 ]
 

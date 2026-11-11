@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **82 tools** (80 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **83 tools** (81 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -21,7 +21,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Performance](#performance) (4)
 - [Time Series](#time-series) (4)
 - [Training Plan](#training-plan) (2)
-- [Athlete](#athlete) (17)
+- [Athlete](#athlete) (18)
 - [Race](#race) (1)
 - [Training Load](#training-load) (4)
 - [Durability](#durability) (3)
@@ -691,6 +691,16 @@ Pre-fetch the shared weekly-review CONTEXT bundle in a single call: resolves the
 |-----------|------|----------|-------------|
 | `target` | string | optional | Target week W selector: omit for the smart default (today == last day of the week -> next week, else this week), 'this' for the week containing today, 'next' for the following week, or a YYYY-MM-DD date within the desired week. |
 | `user_id` | string | optional | Profile owner identifier (default: 'default') |
+
+### `get_current_standing`
+
+CLI: `garmin-db athlete current-standing`
+
+Get one deterministic view of where the athlete stands against the goal on a day (computed, never stored): goals (active goals with goal_pace_sec_per_km = target_time_seconds / distance_km, None without a target, and weeks_to_race), block (title, phase, purpose, week_position, current_step, next_step of the block covering the day, or null), remaining_steps (long-run ladder steps after this week up to the A goal), proven (longest_run of the last 182 days, build_baseline_km), recent_near_goal_pace (runs >= 5 km of the last 28 days within +/-15 s/km of a goal pace) and missing (absent inputs, e.g. 'no active goal'). Read this first before judging a run or a plan against the goal.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `date` | string | optional | Reference day (YYYY-MM-DD). When omitted, today is used. |
 
 ## Race
 
