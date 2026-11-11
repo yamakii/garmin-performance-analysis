@@ -6,13 +6,15 @@
 //     triage / recurs_of (cases.schema.json);
 //   - eval regressions = cases that passed in an earlier variant and fail in the
 //     latest one (results.jsonl);
+//   - the weekly rubric mean of the stored-run_note sample (stored/results.jsonl,
+//     written by sample-stored.mjs);
 //   - the rule budget = `garmin_mcp.scripts.rule_budget` (printed separately).
 //
 //   node .claude/hillclimb/coach-review/indicators.mjs [flow dir] [--since YYYY-MM-DD]
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PATTERNS, SURFACES } from './grade.mjs'
+import { OUTCOMES, PATTERNS, SURFACES } from './grade.mjs'
 
 // >>> testable
 const SOURCES = ['owner', 'self', 'eval']
@@ -99,6 +101,32 @@ export function evalRegressions(variants) {
   }
   return out.sort((a, b) => a.id.localeCompare(b.id))
 }
+
+// Weekly mean per outcome over the stored-run_note sample (sample-stored.mjs,
+// #1570). rows: stored/results.jsonl, each { variant: 'stored-YYYY-Www',
+// grade: { rubric: { O1: 0|1|2|null, ... } } }. A null score is left out of
+// that outcome's mean (an outcome no row scored reads null); n counts the rows.
+// -> { 'YYYY-Www': { O1: number|null, ..., n } }
+export function weeklyRubricMeans(rows) {
+  const acc = {}
+  for (const r of rows ?? []) {
+    const m = /^stored-(\d{4}-W\d{2})$/.exec(String(r?.variant ?? ''))
+    if (!m) continue
+    const w = (acc[m[1]] ??= { n: 0, sums: {} })
+    w.n += 1
+    for (const [o, s] of Object.entries(r?.grade?.rubric ?? {})) {
+      const t = (w.sums[o] ??= { sum: 0, count: 0 })
+      if (typeof s === 'number') { t.sum += s; t.count += 1 }
+    }
+  }
+  const out = {}
+  for (const week of Object.keys(acc).sort()) {
+    const { n, sums } = acc[week]
+    const means = Object.fromEntries(Object.keys(sums).sort().map((o) => [o, sums[o].count ? sums[o].sum / sums[o].count : null]))
+    out[week] = { ...means, n }
+  }
+  return out
+}
 // <<< testable
 
 const variantOrder = (a, b) => (a === 'baseline' ? -1 : b === 'baseline' ? 1 : Number(a.slice(1)) - Number(b.slice(1)))
@@ -148,6 +176,16 @@ function main(argv) {
   console.log('\n## Eval regressions (passed earlier, failing in the latest variant that ran the case)')
   if (!reg.length) console.log('none')
   for (const r of reg) console.log(`- ${r.id}: ${r.last_variant} pass ${r.last_pass_rate.toFixed(2)} (last full pass ${r.last_passed_in})`)
+
+  const weekly = weeklyRubricMeans(readJsonl(join(flow, 'stored', 'results.jsonl')).filter((r) => r.status === 'ok'))
+  const outcomes = OUTCOMES.filter((o) => o.kinds.includes('run_note')).map((o) => o.id)
+  console.log('\n## Stored run_notes: weekly rubric mean (sample-stored.mjs, 0-2)')
+  if (!Object.keys(weekly).length) console.log('no samples yet')
+  else {
+    console.log(`| week | n | ${outcomes.join(' | ')} |\n| --- | --- |${outcomes.map(() => ' --- |').join('')}`)
+    for (const [w, s] of Object.entries(weekly))
+      console.log(`| ${w} | ${s.n} | ${outcomes.map((o) => (s[o] == null ? '-' : s[o].toFixed(2))).join(' | ')} |`)
+  }
   console.log('\nRule budget: uv run --directory packages/garmin-mcp-server python -m garmin_mcp.scripts.rule_budget [--history]')
   return 0
 }
