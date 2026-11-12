@@ -69,7 +69,7 @@ mcp__garmin-db__catch_up_ingest(domains=["wellness", "energy"], end_date=<対象
 2. **回復ゲート**: `recommendation`、ベースライン逸脱（adverse なら理由）、`under_recovery` と `acwr.status` の両方点灯（積み過ぎ）を読む
 3. **症状ゲート**: `flag=true` なら処方より優先する。`rule='acute'` は休養か完全 easy、`rule='consecutive'` はロング・質練を見送り直近のクリーンな距離までに抑える（`reason_ja` を引用）。`days_since_last_report=null` は「未確認」で、症状ゼロとは扱わない
 4. **答えは帯で出す**（例: 6〜8 km、HR 上限 150）。暑い時期も HR 上限で管理し、ペースは結果として扱う
-5. 強度を落とすときは、そのゲートの `reason_ja` で今日それが当てはまる理由を示す（判断の組み立ては analysis-standards §3）
+5. 強度を落とすときは、ゲートの `reason_ja` を今日の処方の目的と並べ、推奨は1つにする（analysis-standards §3）
 6. **セッションの一部を別の日へ移すと決めたら処方行に書き残す**（会話で決めただけだとランの分析が処方として読めない）。`update_prescription_status(prescription_id=<移す先>, status=<今の status>, structure=<移した部分を足した構造>)` で書き換え、移した元の行は未消化なら `skipped` にする。前日の流しを翌日に回すだけなら、分析が持ち越しとして読むので省いてよい
 
 ## Step 4: 回答フォーマット
