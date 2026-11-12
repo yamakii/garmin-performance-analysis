@@ -91,6 +91,32 @@ Write(file_path="{temp_dir}/run_note.json", content=json.dumps({
 
 ## 出力例（例示。形だけの参考で、文面は毎回このランの実データから書く）
 
+### 伸ばせる点が無いラン
+
+前提にしている REPORT（抜粋）: `purpose = {id: "easy", label_ja: "イージー", source: "inferred"}`（処方なし）、
+`signals.hr_drift` が普段の範囲の外・有利側、`moments` は m1「0–5 km」`start`（`neutral`）だけ。
+
+```json
+{
+  "story": "データからはイージー走と見られ、最後まで心拍が落ち着いたまま走れています。",
+  "good_points": [
+    {"text": "後半になっても心拍の上がり方がいつもより小さく、余裕を残して走れています。", "evidence": "signals.hr_drift"}
+  ],
+  "growth_points": [],
+  "next_challenge": "今日のように後半も同じリズムを保つ走り方を、次のランでも続けましょう。",
+  "next_challenge_evidence": "signals.hr_drift",
+  "question": "前夜はよく眠れていましたか？",
+  "timeline": [
+    {"moment_id": "m1", "text": "0–5 km は同じリズムで淡々と刻めています。"}
+  ],
+  "notes": []
+}
+```
+
+目的は推定なのでぼかし、課題は作らず、良かった点の維持を持ち越している。
+
+### 上限を超えた場面のあるラン
+
 前提にしている REPORT（抜粋）: `purpose = {id: "easy", label_ja: "イージー", source: "session_default"}`、
 `moments` は m1「0–3 km」`start`（`neutral`）、m2「3–6 km」`ceiling_touch`（`concern`）、
 m3「9 km 付近」`walk_break`（`acceptable`）。`flow.segments` では 3–5 km でペースが上がった区間に心拍が上限を
@@ -116,33 +142,9 @@ m3「9 km 付近」`walk_break`（`acceptable`）。`flow.segments` では 3–5
 }
 ```
 
-この例の読み方: 成長点は `concern` のシーンだけに置き、原因はペースを上げた区間と緩めた区間の比較として書き、歩き（`acceptable`）は文脈として語っている。
+読み方: 成長点は `concern` のシーンだけに置き、原因はペースを上げた区間と緩めた区間の比較として書き、歩き（`acceptable`）は文脈として語っている。
 
-### 対照例（例示。伸ばせる点が無いラン）
-
-前提にしている REPORT（抜粋）: `purpose = {id: "easy", label_ja: "イージー", source: "inferred"}`（処方なし）、
-`signals.hr_drift` が普段の範囲の外・有利側、`moments` は m1「0–5 km」`start`（`neutral`）だけ。
-
-```json
-{
-  "story": "データからはイージー走と見られ、最後まで心拍が落ち着いたまま走れています。",
-  "good_points": [
-    {"text": "後半になっても心拍の上がり方がいつもより小さく、余裕を残して走れています。", "evidence": "signals.hr_drift"}
-  ],
-  "growth_points": [],
-  "next_challenge": "今日のように後半も同じリズムを保つ走り方を、次のランでも続けましょう。",
-  "next_challenge_evidence": "signals.hr_drift",
-  "question": "前夜はよく眠れていましたか？",
-  "timeline": [
-    {"moment_id": "m1", "text": "0–5 km は同じリズムで淡々と刻めています。"}
-  ],
-  "notes": []
-}
-```
-
-目的は推定なのでぼかし、課題は作らず、良かった点の維持を持ち越している。
-
-### 段のある例（例示。ビルドアップ走）
+### 段のあるビルドアップ走
 
 前提にしている REPORT（抜粋）: `purpose.source = "prescription"`、`plan.checks` に `stages`（`on_plan`、
 `segments` は「第1段」130-140 bpm・「第2段」140-150 bpm とも `on_plan: true`）、`moments` は

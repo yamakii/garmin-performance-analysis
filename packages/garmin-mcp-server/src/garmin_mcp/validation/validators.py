@@ -22,6 +22,8 @@ from garmin_mcp.validation.models import ActivityRecord, SplitRecord
 # CONTEXT (``build_run_note_context``) actually emits; a test keeps them in step.
 # ``athlete_context`` (#1522) is what the athlete said about the run -- like
 # every context key it explains a signal but is never a growth point.
+# ``standing`` (#1572, #1583) is the run's place against the goals and the
+# block; it can ground the meaning and a strength, never a weakness.
 CONTEXT_EVIDENCE_KEYS: frozenset[str] = frozenset(
     {
         "week_position",
@@ -30,6 +32,7 @@ CONTEXT_EVIDENCE_KEYS: frozenset[str] = frozenset(
         "gear",
         "similar_workouts",
         "athlete_context",
+        "standing",
     }
 )
 

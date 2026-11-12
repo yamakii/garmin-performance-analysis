@@ -99,3 +99,29 @@ def test_context_evidence_keys_are_emitted_by_the_run_note_context():
 
     assert context is not None
     assert set(context) >= CONTEXT_EVIDENCE_KEYS
+
+
+@pytest.mark.unit
+def test_standing_evidence_grounds_a_strength_not_a_weakness():
+    """``context.standing`` (#1583) can carry the meaning and a strength only."""
+    strength = _note_data(
+        good_points=[
+            {
+                "text": "目標レースのペースに近い強度を余裕を持って押し切れています。",
+                "evidence": "context.standing",
+            }
+        ]
+    )
+    assert check_run_note_grounding(strength, _report()) == (True, None)
+
+    weakness = _note_data(
+        growth_points=[
+            {
+                "text": "目標ペースにはまだ届いていません。",
+                "evidence": "context.standing",
+            }
+        ]
+    )
+    ok, reason = check_run_note_grounding(weakness, _report())
+    assert ok is False
+    assert reason is not None
