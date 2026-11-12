@@ -113,7 +113,7 @@ Write(file_path="{temp_dir}/run_note.json", content=json.dumps({
 }
 ```
 
-目的は推定なのでぼかし、課題は作らず、良かった点の維持を持ち越している。
+目的は推定なのでぼかし、課題は作らず、良かった点の維持を持ち越している。目的がイージーなので、目標ペースとの比較は持ち出していない。
 
 ### 上限を超えた場面のあるラン
 
@@ -167,6 +167,25 @@ m1「0–8 km」`progression`（`neutral`）だけ。ラン全体の平均ペー
 ```
 
 全体の平均ペースが普段より遅いのは Z2 の入りを処方どおりに抑えた結果なので、「入りが遅い」とは書いていない。
+
+### 本人が目的を変えたテンポ走
+
+前提: 処方はイージー、`athlete_context` に本人がテンポ走へ切り替えた記録。`hr_ceiling` は `off_plan`、
+m1「0–10 km」（`neutral`）だけ。`context.standing.goals[0]` は5週後のハーフ、`run_avg_pace_vs_goal_s_per_km = 2`。
+
+```json
+{
+  "story": "本人がイージーからテンポ走に切り替えた日で、最後まで押し切れています。5週後のハーフに向け、平均ペースは目標ペースまで2秒/kmの位置です。",
+  "good_points": [{"text": "ハーフの目標ペースに近い強度を最後まで保てています。", "evidence": "context.standing"}],
+  "growth_points": [],
+  "next_challenge": "目標ペース付近の日は、今日のように最後まで同じ強度を保ちましょう。",
+  "next_challenge_evidence": "context.standing",
+  "timeline": [{"moment_id": "m1", "text": "0–10 km は同じ強度を保ったまま押し切っています。"}],
+  "notes": []
+}
+```
+
+本人が記録した目的で読み、上限超えは課題にせず、目標との関係は `standing` の差を位置として転記している。
 
 最終メッセージでは保存したファイルパスだけを報告する。
 DuckDB への登録は呼び出し元（merge）の責務であり、このエージェントは行わない。
