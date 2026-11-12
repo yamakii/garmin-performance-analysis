@@ -538,8 +538,13 @@ def prefetch_activity_context(activity_id: int) -> dict:
 
     # Where the athlete stood against the goal on the day of the run (#1572):
     # as of the activity date, so a block that started later is not this run's.
-    standing = _safe(
-        lambda: StandingReader(db_path_str).get_current_standing(on_date=activity_date)
+    standing = _with_run_pace_delta(
+        _safe(
+            lambda: StandingReader(db_path_str).get_current_standing(
+                on_date=activity_date
+            )
+        ),
+        avg_pace_s_per_km,
     )
 
     return {
@@ -611,9 +616,38 @@ _RUN_NOTE_GOAL_FIELDS = (
     "priority",
     "distance_km",
     "goal_pace_sec_per_km",
+    "run_avg_pace_vs_goal_s_per_km",
     "weeks_to_race",
 )
 _RUN_NOTE_BLOCK_FIELDS = ("phase", "purpose", "week_position", "current_step")
+
+
+def _with_run_pace_delta(
+    standing: dict | None, run_pace_s_per_km: float | None
+) -> dict | None:
+    """Give each goal the run's average pace minus the goal pace (#1587).
+
+    The run-note agent transcribes numbers and never computes them, so the
+    comparison it needs to place a run against the goals is computed here:
+    ``run_avg_pace_vs_goal_s_per_km`` is positive when the run was slower than
+    the goal pace, None when either pace is missing. Whether the comparison
+    means anything is the run's purpose to decide, not this number's.
+    """
+    if not isinstance(standing, dict):
+        return None
+    goals = []
+    for goal in standing.get("goals") or []:
+        if not isinstance(goal, dict):
+            continue
+        goal_pace = goal.get("goal_pace_sec_per_km")
+        delta = (
+            round(run_pace_s_per_km - goal_pace)
+            if isinstance(goal_pace, (int, float))
+            and isinstance(run_pace_s_per_km, (int, float))
+            else None
+        )
+        goals.append({**goal, "run_avg_pace_vs_goal_s_per_km": delta})
+    return {**standing, "goals": goals}
 
 
 def _run_note_standing(standing: Any) -> dict[str, Any] | None:
