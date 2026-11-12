@@ -81,7 +81,7 @@ A / B レースで残り週数が大きく違うときは、直近のレース�
   - `load_trend.long_run.cutback_due_event_window`（レース後の保護期間中に上限超過。主ゲート）
   - `load_trend.volume.consecutive_build_weeks` が 3 以上
   - `acwr.status` が caution / high_risk で、週量か最長ロングが直近ピークを更新した直後
-- `cutback_due = true` は進行ゲートや回復指標が緑でも**上書きしない**。発動したゲートの理由（`cutback_reason_ja` / `acwr.reason_ja` / `event_window` / build 週数）を引用する。`cutback_override` があれば `cutback_due = false` とし、reason を引用する
+- `cutback_due = true` は指標（進行ゲート・回復）では覆さない。発動したゲートの理由（`cutback_reason_ja` / `acwr.reason_ja` / `event_window` / build 週数）を `gate_counterweight` と並べ、推奨は1つにする（§3）。覆すのは `cutback_override` だけ（reason を引用）
 - **deload 処方**: ロングを直近ピーク比 −30〜40%、週量 −20〜30%、質ゼロ、休養 +1 日。`cutback_due = false` なら進行ゲート GREEN を条件に小刻みな漸進（時間 +5〜10%、上限 +10〜15%）
 - 保護期間中（`event_window.in_window = true`）は W のロングを `ceiling_km` 以下に収める（deload と競合したら小さい方）。`verdict = insufficient_data` なら上限を作れない旨を書き、直近の確定済みピーク以内に留める
 
