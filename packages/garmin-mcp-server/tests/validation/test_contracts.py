@@ -296,6 +296,17 @@ def test_contract_evaluation_policy_has_judgement_checklist():
 
 
 @pytest.mark.unit
+def test_contract_purpose_step_names_standing():
+    """The purpose step says where the goals live (#1583)."""
+    contract = get_contract("run_note")
+    steps = contract["evaluation_policy"]["judgement"]["steps"]
+
+    assert "context.standing" in steps[0]
+    # The meaning role points at that step instead of restating it.
+    assert "judgement step 1" in contract["prose_roles"]["meaning"]
+
+
+@pytest.mark.unit
 def test_contract_mentions_athlete_context_attribution():
     """A stated circumstance is a cause right after terrain (#1522)."""
     contract = get_contract("run_note")

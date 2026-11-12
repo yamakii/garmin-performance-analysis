@@ -27,10 +27,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         "required_fields": {
             "story": {
                 "type": "string",
-                "description": (
-                    "2-3 sentences: what the run was for (week / block / goal) "
-                    "and whether it served that"
-                ),
+                "description": "2-3 sentences: evaluation_policy.judgement step 1",
             },
             "good_points": {
                 "type": "array",
@@ -86,10 +83,7 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
         # The six roles the prose must play. Anything outside them is already
         # in the figures.
         "prose_roles": {
-            "meaning": (
-                "Say what the run was for in this week / block / goal and "
-                "whether it served that purpose"
-            ),
+            "meaning": "evaluation_policy.judgement step 1",
             "causality": (
                 "Connect a signal to its most likely cause in the attribution "
                 "order intensity -> terrain -> athlete_context (stated load, "
@@ -149,7 +143,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "conditions.<field>": "a field of report.conditions",
             "context.<field>": (
                 "one of week_position / prescription_for_run / "
-                "morning_wellness / gear / similar_workouts / athlete_context. "
+                "morning_wellness / gear / similar_workouts / athlete_context / "
+                "standing. "
                 "athlete_context.inferred.commute is a guess -- hedge it"
             ),
         },
@@ -160,7 +155,8 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
                 "steps": [
                     "purpose: what the run was for (report.purpose), judged by "
                     "that purpose's own criteria -- start from what those "
-                    "criteria count as achieved",
+                    "criteria count as achieved; place it in week / block / "
+                    "goal via context.standing, purpose as yardstick",
                     "facts: what the report shows, and whether it is comparable "
                     "(a metric in comparability.excluded_metrics is not compared)",
                     "applicability: before a label, a rule or a recurring "
