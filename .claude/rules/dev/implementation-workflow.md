@@ -118,7 +118,7 @@ PR 作成・CI 待ち・マージ・後片付け（下記 5〜11）だけを行�
 
 判断の前提:
 - **利点は並列による所要時間の短縮とメインのコンテキスト保護で、トークン節約ではない**。実装担当の `developer` は
-  opus で、Issue ごとに developer / validation / ship / merge の 4 エージェントがコールドスタートでルールとコードを
+  sonnet で、Issue ごとに developer / validation / ship / merge の 4 エージェントがコールドスタートでルールとコードを
   読み直し、escalate された PR はメインが処理する。コンテキスト保護だけが目的なら上の developer 委譲で足りる
 - **条件を満たすために Issue を細かく割らない・偽の `Blocked by` を作らない**。PR 数とコールドスタートが増えるだけ
 - **マージ前に必ず満たす条件（実データでの spike 確認など）は、Issue 本文の `## Merge gate` 節に書くか、前のティアの
