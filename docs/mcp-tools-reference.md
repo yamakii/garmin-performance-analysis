@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **83 tools** (81 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **84 tools** (82 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -27,7 +27,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [Durability](#durability) (3)
 - [strength](#strength) (2)
 - [ingest](#ingest) (2)
-- [Workout Scheduling](#workout-scheduling) (3)
+- [Workout Scheduling](#workout-scheduling) (4)
 - [hiking](#hiking) (2)
 - [Training Plan Ledger](#training-plan-ledger) (6)
 - [gear](#gear) (1)
@@ -877,6 +877,17 @@ Tidy self-authored [MCP] workouts: unschedule past-dated [MCP] calendar assignme
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `dry_run` | boolean | optional (default `False`) | When True, only report the assignments/templates that would be removed without performing any write. |
+
+### `rename_workout`
+
+CLI: `garmin-db workout rename`
+
+Rename a Garmin workout in place: fetch it, change only its title and PUT the whole workout back (Garmin rejects a name-only update). The workout id is kept, so calendar schedules and recorded garmin_workout_id values stay valid. An [MCP] workout keeps its '[MCP] ' prefix (added if omitted); a manual workout cannot be renamed to an '[MCP] ' title, since the cleanup would then delete it. The same title is a no-op. Returns {workout_id, old_title, new_title, changed, verified} (verified = the title read back after the update matches).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `workout_id` | integer | **required** | Garmin workout id to rename |
+| `new_title` | string | **required** | New title. An [MCP] workout keeps its '[MCP] ' prefix (added if omitted); a manual workout's title may not start with '[MCP] '. |
 
 ## hiking
 

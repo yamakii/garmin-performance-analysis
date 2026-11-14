@@ -18,6 +18,10 @@ self-authored library never sprawls:
 - ``cleanup_generated_workouts(dry_run=False)`` unschedules past ``[MCP]``
   assignments and deletes ``[MCP]`` templates that have no future schedule.
   Manual (non-``[MCP]``) workouts are never touched.
+- ``rename_workout(workout_id, new_title)`` changes a workout's title in place
+  (full-body PUT, the id and schedules stay; #1591). An ``[MCP]`` workout keeps
+  its prefix, and a manual workout can never gain it, so the cleanup's view of
+  "self-authored" never changes through a rename.
 
 Both scheduling tools run that same tidy (``_run_cleanup``) *before* uploading
 anything, so a stale ``[MCP]`` item can no longer survive on the watch just
@@ -916,6 +920,76 @@ class CleanupGeneratedWorkoutsParams(BaseModel):
     )
 
 
+class RenameWorkoutParams(BaseModel):
+    """Arguments for ``rename_workout``."""
+
+    workout_id: int = Field(description="Garmin workout id to rename")
+    new_title: str = Field(
+        description=(
+            "New title. An [MCP] workout keeps its '[MCP] ' prefix (added if "
+            "omitted); a manual workout's title may not start with '[MCP] '."
+        ),
+    )
+
+
+# ----------------------------------------------------------------------------
+# Rename (in place, keeps the id)
+# ----------------------------------------------------------------------------
+
+
+def _plan_rename(current_name: str, new_title: str) -> str:
+    """Decide the final title for a rename, or raise ``ValueError``.
+
+    Pure decision function. The ``[MCP]`` prefix marks a workout as
+    self-authored for the cleanup, so a rename must never change that status:
+    an ``[MCP]`` workout keeps the prefix (force-added), and a manual workout
+    may not gain it (the cleanup would later delete it).
+    """
+    stripped = new_title.strip()
+    if not stripped or stripped == MCP_PREFIX.strip():
+        raise ValueError("new_title must be a non-empty title")
+    if current_name.startswith(MCP_PREFIX):
+        return _ensure_prefix(stripped)
+    if stripped.startswith(MCP_PREFIX.strip()):
+        raise ValueError(
+            "a manual workout cannot be renamed to an '[MCP] ' title: the "
+            "cleanup would treat it as self-authored and delete it"
+        )
+    return stripped
+
+
+def _rename_workout_live(
+    client: Any, workout_id: int, new_title: str
+) -> dict[str, Any]:
+    """Rename one workout via a full-body PUT and read it back.
+
+    Garmin rejects a name-only PUT (``API Error 400``) but accepts the whole
+    workout as returned by ``get_workout_by_id`` with ``workoutName`` changed;
+    the id is kept, so calendar schedules and recorded
+    ``garmin_workout_id`` values stay valid (#1591).
+    """
+    workout = client.get_workout_by_id(workout_id)
+    old_title = str(workout.get("workoutName") or "")
+    final = _plan_rename(old_title, new_title)
+    if final == old_title:
+        return {
+            "workout_id": workout_id,
+            "old_title": old_title,
+            "new_title": final,
+            "changed": False,
+            "verified": True,
+        }
+    client.update_workout(workout_id, {**workout, "workoutName": final})
+    readback = client.get_workout_by_id(workout_id) or {}
+    return {
+        "workout_id": workout_id,
+        "old_title": old_title,
+        "new_title": final,
+        "changed": True,
+        "verified": readback.get("workoutName") == final,
+    }
+
+
 # ----------------------------------------------------------------------------
 # Handlers
 # ----------------------------------------------------------------------------
@@ -1088,6 +1162,16 @@ def _cleanup_generated_workouts(
         return {"error": str(e)}
 
 
+def _rename_workout(reader: GarminDBReader, p: RenameWorkoutParams) -> Any:
+    from garmin_mcp.ingest.api_client import get_garmin_client
+
+    try:
+        return _rename_workout_live(get_garmin_client(), p.workout_id, p.new_title)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"rename_workout failed: {e}")
+        return {"error": str(e)}
+
+
 WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
     ToolDef(
         name="schedule_custom_workout",
@@ -1171,6 +1255,24 @@ WORKOUT_SCHEDULING_TOOLS: list[ToolDef] = [
         handler=_cleanup_generated_workouts,
         cli_group="workout",
         cli_name="cleanup",
+    ),
+    ToolDef(
+        name="rename_workout",
+        description=(
+            "Rename a Garmin workout in place: fetch it, change only its title "
+            "and PUT the whole workout back (Garmin rejects a name-only "
+            "update). The workout id is kept, so calendar schedules and "
+            "recorded garmin_workout_id values stay valid. An [MCP] workout "
+            "keeps its '[MCP] ' prefix (added if omitted); a manual workout "
+            "cannot be renamed to an '[MCP] ' title, since the cleanup would "
+            "then delete it. The same title is a no-op. Returns {workout_id, "
+            "old_title, new_title, changed, verified} (verified = the title "
+            "read back after the update matches)."
+        ),
+        params=RenameWorkoutParams,
+        handler=_rename_workout,
+        cli_group="workout",
+        cli_name="rename",
     ),
 ]
 

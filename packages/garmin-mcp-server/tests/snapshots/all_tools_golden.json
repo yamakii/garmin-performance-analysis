@@ -1598,6 +1598,27 @@
     }
   },
   {
+    "name": "rename_workout",
+    "description": "Rename a Garmin workout in place: fetch it, change only its title and PUT the whole workout back (Garmin rejects a name-only update). The workout id is kept, so calendar schedules and recorded garmin_workout_id values stay valid. An [MCP] workout keeps its '[MCP] ' prefix (added if omitted); a manual workout cannot be renamed to an '[MCP] ' title, since the cleanup would then delete it. The same title is a no-op. Returns {workout_id, old_title, new_title, changed, verified} (verified = the title read back after the update matches).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workout_id": {
+          "type": "integer",
+          "description": "Garmin workout id to rename"
+        },
+        "new_title": {
+          "type": "string",
+          "description": "New title. An [MCP] workout keeps its '[MCP] ' prefix (added if omitted); a manual workout's title may not start with '[MCP] '."
+        }
+      },
+      "required": [
+        "workout_id",
+        "new_title"
+      ]
+    }
+  },
+  {
     "name": "ingest_hiking_sessions",
     "description": "Discover hiking (山行) activities from the Garmin Connect API in a date window and insert summary rows into the hiking_sessions table. Catch-up aware: omit start_date to ingest from the latest stored hiking date, or end_date - 30 days when none exist yet; omit end_date to default to today. Discovery uses the activity list filtered to typeKey == 'hiking'; hikes are kept out of the run-centric activities table so they never distort ACWR, load trend or form baselines. Sessions already stored are skipped. Returns discovered, ingested, skipped_existing, activity_ids, and the resolved window {start, end}.",
     "inputSchema": {
