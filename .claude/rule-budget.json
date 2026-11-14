@@ -5,7 +5,7 @@
   "layers": {
     "always_loaded": {
       "kind": "unscoped_rules",
-      "ceiling_bytes": 19204
+      "ceiling_bytes": 17185
     },
     "run_note_contract": {
       "kind": "contract",
