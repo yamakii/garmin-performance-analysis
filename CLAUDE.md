@@ -9,9 +9,7 @@ Garmin running performance analysis system with **DuckDB-first architecture** an
 **System Pipeline:** Raw Data (API) → DuckDB → MCP Tools → Analysis
 
 **Key Features:**
-- DuckDB normalized storage (32 tables, 100+ activities)
 - Token-optimized MCP tools (70-98.8% reduction), declared via a single-source `tools/` registry (see `docs/mcp-tools-reference.md` for the full set)
-- 1 analysis agent (run-note-analyst) writing the coach review on top of the deterministic run report
 - Japanese analysis stored in DuckDB, viewed via the Web app (code/docs in English)
 
 **Two Use Cases:**
@@ -98,11 +96,6 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 - `worktree-validation-protocol.md` — validation levels, ship steps, auto-merge gate
 - `github-mcp-only.md` — gh → MCP tool mapping, CI log access
 
-### Worktree 検証
-
-検証レベル（L1/L2/L3/skip）、Ship 手順、auto-merge ゲートの正本は
-`.claude/rules/dev/worktree-validation-protocol.md`。承認済み Issue はそのセッションが worktree で実装して PR を作りマージする（`implementation-workflow.md` Phase 1）。`/implement <epic>` は `implementation-workflow.md` の起動条件（依存ティア 2 段以上、または依存の無い 4 件以上でファイル非共有）を満たすときに使う。
-
 ### Quick Commands
 | Command | Purpose |
 |---------|---------|
@@ -117,8 +110,6 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 ---
 
 ## Architecture
-
-**Pipeline:** API → Raw JSON → DuckDB → MCP Tools → Analysis (viewed via Web app)
 
 > Module layout: `packages/garmin-mcp-server/src/garmin_mcp/` (ingest/, database/, tools/ registry, worker) and `packages/garmin-web/` (FastAPI + Vite SPA, see `docs/garmin-web.md`). Full column-level DuckDB schema: `docs/spec/duckdb_schema_mapping.md`. Design rationale: `docs/architecture.md`.
 
@@ -146,7 +137,3 @@ Key rules (path-scoped, under `.claude/rules/dev/`):
 **Temperature:**
 - `weather.json` - External weather station
 - NOT `splits.json` temperature - Device temp (+5-8 C body heat)
-
-**Elevation:**
-- Source: `lapDTOs` → DuckDB
-- Classification: flat/undulating/hilly/mountainous

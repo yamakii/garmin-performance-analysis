@@ -13,17 +13,10 @@ Consolidated reference for all analysis rules.
 
 `/analyze-activity` が生成するセクションは **`run_note` の1つだけ**（run-note-analyst が担当）。数値・範囲判定・処方判定・シーン抽出は `get_run_report` が決定論的に算出済みで、run_note はそこに乗る散文（意味づけ・因果・流れ・重みづけ・次の一歩・再発と問い）のみを書く。共通ルール:
 
-- **出力**: 日本語テキスト + English key names。`{ANALYSIS_TEMP_DIR}/{section_type}.json` に出力（ANALYSIS_TEMP_DIR は orchestrator が timestamp 付きユニークパスとして提供）。**事前の mkdir は不要**（Write tool が親ディレクトリを自動作成する）
-- **JSON構造**: `{"activity_id": <int>, "activity_date": "<YYYY-MM-DD>", "section_type": "<type>", "analysis_data": {...}}`
 - **HR zones**: Garmin native zones のみ (計算式禁止)
 - **文体**: 自然な日本語（体言止め回避）、コーチ的トーン、具体的数値。ポイントごとに所見と根拠だけを簡潔に書く
 
 - **Grounding**: run_note の主張には REPORT 上の evidence キーを必ず付け、課題にできる条件は契約（`get_analysis_contract("run_note")`）とマージゲートに従う。範囲内・有利側のブレを弱点にしない
-
-### Error Recovery
-
-- `run_note` が登録された → 完了
-- `run_note` が拒否された → merge の grounding ゲートが返した理由をそのままユーザーに報告する。自動リトライはしない
 
 ## 3. Coaching judgement（会話・スキル・run_note 共通）
 
