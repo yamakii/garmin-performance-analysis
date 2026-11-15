@@ -275,6 +275,14 @@ class SaveActivityContextParams(BaseModel):
     note: str | None = Field(
         default=None, description="Free-form note in the athlete's own words"
     )
+    replaces: list[int] | None = Field(
+        default=None,
+        description=(
+            "context_ids (from get_activity_context) of earlier rows of the same "
+            "activity that this row corrects or merges; they stop being returned. "
+            "Omit to add a fact"
+        ),
+    )
     user_id: str = Field(
         default=_DEFAULT_USER_ID, description="Profile owner identifier"
     )
@@ -834,8 +842,11 @@ ATHLETE_TOOLS: list[ToolDef] = [
             "previous day, why they walked, apparel or sensor mounting. Write "
             "it silently when the athlete states the fact in conversation; "
             "never ask them to keep a log. Rows are append-only and stay in "
-            "the local DB only; a later save for the same (activity_id, kind) "
-            "supersedes the earlier one on read. Returns {status, context_id, "
+            "the local DB only. commute, load and strides_carried have one "
+            "answer per run, so a later save of the same kind replaces the "
+            "earlier one; walk_reason, apparel, sensor_mount and other add a "
+            "fact beside the earlier ones. To correct or merge earlier rows, "
+            "pass their context_ids in replaces. Returns {status, context_id, "
             "activity_id, kind}."
         ),
         params=SaveActivityContextParams,
@@ -847,11 +858,13 @@ ATHLETE_TOOLS: list[ToolDef] = [
         name="get_activity_context",
         description=(
             "Get the athlete-stated facts about activities (commute, load, "
-            "strides_carried, walk_reason, apparel, sensor_mount, other), the "
-            "newest row per (activity_id, kind), filtered by activity_ids "
-            "and/or an activity_date range. Each row carries activity_date, "
-            "kind, value, load_kg, source (athlete_stated / inferred) and "
-            "note. Returns an empty list when nothing was recorded."
+            "strides_carried, walk_reason, apparel, sensor_mount, other), "
+            "filtered by activity_ids and/or an activity_date range: the newest "
+            "row per (activity_id, kind) for commute / load / strides_carried, "
+            "every row for the other kinds, minus rows a later save listed in "
+            "replaces. Each row carries context_id, activity_date, kind, value, "
+            "load_kg, source (athlete_stated / inferred) and note. Returns an "
+            "empty list when nothing was recorded."
         ),
         params=GetActivityContextParams,
         handler=_get_activity_context,

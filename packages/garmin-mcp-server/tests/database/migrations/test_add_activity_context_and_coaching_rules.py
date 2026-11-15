@@ -15,11 +15,11 @@ from garmin_mcp.database.migrations.registry import MIGRATIONS
 
 @pytest.mark.unit
 def test_registry_has_version_36() -> None:
-    """The tables are registered as migration 36, the schema head."""
+    """The tables are registered as migration 36; 37 adds replaces (#1596)."""
     assert (36, "add_activity_context_and_coaching_rules") in [
         (version, name) for version, name, _ in MIGRATIONS
     ]
-    assert max(version for version, _, _ in MIGRATIONS) == 36
+    assert max(version for version, _, _ in MIGRATIONS) == 37
 
 
 @pytest.mark.integration

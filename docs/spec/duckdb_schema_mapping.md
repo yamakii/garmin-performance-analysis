@@ -24,6 +24,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 
 ## Change History
 
+### Version 2.17 (2026-11-15)
+- **`activity_context.replaces_context_ids` added** (migration `add_activity_context_replaces`, version 37; also in the `_ensure_tables()` DDL). The reader used to keep only the newest row per `(activity_id, kind)`, so a second `other` row about one run hid the first. Now only the single-valued kinds (`commute`, `load`, `strides_carried`) keep their newest row; the other kinds return every row, and a save retires earlier rows of the same activity only by listing their `context_id`s in `replaces` (issue #1596).
+
 ### Version 2.16 (2026-11-07)
 - **`activity_context` and `coaching_rules` tables added** (migration `add_activity_context_and_coaching_rules`, version 36; also created in `_ensure_tables()`). Facts the athlete states about a run (commute, carried load, carried-over strides, walk reasons, apparel, sensor mounting) and coaching rules that apply only to this athlete had no home except the public repository's rules and memory. Both are append-only athlete input kept in the local DB only, written by `save_activity_context` / `save_coaching_rule` and read by `get_activity_context` / `get_coaching_rules`; `deactivate_coaching_rule` retires a rule without deleting it (issue #1520, Epic #1519).
 
@@ -1195,9 +1198,10 @@ Rows of the five section types written before the run note — `split`, `phase`,
 | source | VARCHAR |
 | note | VARCHAR |
 | created_at | TIMESTAMP |
+| replaces_context_ids | INTEGER[] |
 <!-- END GENERATED: schema:activity_context -->
 
-**Units & notes**: `kind` is one of `commute` / `load` / `strides_carried` / `walk_reason` / `apparel` / `sensor_mount` / `other`; `load_kg` is the carried weight in kg (only for `kind='load'`, 0-30); `source` is `athlete_stated` (default) or `inferred`. Rows are **append-only**: `get_activity_context` returns the newest row per `(activity_id, kind)` and joins `activity_date` from `activities`. Athlete input that **cannot be re-fetched**, and it stays in the local DB only so nothing athlete-specific enters the repository (issue #1520).
+**Units & notes**: `kind` is one of `commute` / `load` / `strides_carried` / `walk_reason` / `apparel` / `sensor_mount` / `other`; `load_kg` is the carried weight in kg (only for `kind='load'`, 0-30); `source` is `athlete_stated` (default) or `inferred`. Rows are **append-only**: `get_activity_context` returns the newest row per `(activity_id, kind)` for the single-valued kinds (`commute`, `load`, `strides_carried`) and every row for the other kinds, hides rows listed in a later row's `replaces_context_ids` (`context_id`s of the same activity, issue #1596), and joins `activity_date` from `activities`. Athlete input that **cannot be re-fetched**, and it stays in the local DB only so nothing athlete-specific enters the repository (issue #1520).
 
 ---
 

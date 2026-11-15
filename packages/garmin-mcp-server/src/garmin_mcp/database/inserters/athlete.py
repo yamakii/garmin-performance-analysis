@@ -29,8 +29,9 @@ Write semantics:
   never overwrites an earlier one.
 - ``intake_confirmations`` is upserted on ``(user_id, date)``: the latest
   confirmation of a day's food log replaces the earlier one.
-- ``activity_context`` is append-only: a restated fact is a new row, and the
-  reader keeps the newest row per ``(activity_id, kind)``.
+- ``activity_context`` is append-only. Single-valued kinds keep the newest row
+  per ``(activity_id, kind)`` on read; the other kinds return every row, and a
+  row retires earlier ones only by listing them in ``replaces`` (issue #1596).
 - ``coaching_rules`` is append-only, except that ``deactivate_coaching_rule``
   flips ``active`` to false and stamps ``deactivated_at`` (issue #1520).
 """
@@ -556,20 +557,26 @@ def _resolve_db_path(db_path: str | None) -> str:
 def insert_activity_context(row: dict[str, Any], db_path: str | None = None) -> int:
     """Append one athlete-stated fact about an activity to ``activity_context``.
 
-    Rows are append-only; the reader keeps the newest row per
-    ``(activity_id, kind)``, so restating a fact simply supersedes it.
+    Rows are append-only. A single-valued kind (``SINGLE_VALUED_KINDS``) is
+    superseded by its newest row on read; every other kind accumulates, so a
+    second ``other`` row adds a fact instead of hiding the first. To correct or
+    merge earlier rows, pass their ``context_id``s in ``replaces``; the reader
+    then hides them (issue #1596).
 
     Args:
         row: Dict with ``activity_id``, ``kind`` and the optional ``user_id``
             (defaults to ``"default"``), ``value``, ``load_kg``, ``source``
-            (defaults to ``"athlete_stated"``) and ``note``.
+            (defaults to ``"athlete_stated"``), ``note`` and ``replaces``
+            (``context_id``s of earlier rows of the same activity).
         db_path: Path to DuckDB database. If None, uses default.
 
     Returns:
         The new row's ``context_id``.
 
     Raises:
-        ValueError: When ``value`` or ``note`` carries emoji (Issue #1428).
+        ValueError: When ``value`` or ``note`` carries emoji (Issue #1428), or
+            when ``replaces`` names a ``context_id`` that is not a row of the
+            same user and activity.
     """
     reject_pictographs(row.get("value"), where="save_activity_context")
     reject_pictographs(row.get("note"), where="save_activity_context")
@@ -578,16 +585,34 @@ def insert_activity_context(row: dict[str, Any], db_path: str | None = None) -> 
 
     user_id = row.get("user_id") or "default"
     source = row.get("source") or "athlete_stated"
+    replaces = sorted({int(c) for c in row.get("replaces") or []}) or None
 
     with get_write_connection(_resolve_db_path(db_path)) as conn:
+        if replaces:
+            placeholders = ", ".join("?" for _ in replaces)
+            found = {
+                int(r[0])
+                for r in conn.execute(
+                    "SELECT context_id FROM activity_context "
+                    f"WHERE context_id IN ({placeholders}) "
+                    "AND user_id = ? AND activity_id = ?",
+                    [*replaces, user_id, row.get("activity_id")],
+                ).fetchall()
+            }
+            missing = [c for c in replaces if c not in found]
+            if missing:
+                raise ValueError(
+                    "save_activity_context: replaces names context_ids that are "
+                    f"not rows of activity {row.get('activity_id')}: {missing}"
+                )
         id_row = conn.execute("SELECT nextval('activity_context_seq')").fetchone()
         context_id = int(id_row[0]) if id_row is not None else 0
         conn.execute(
             """
             INSERT INTO activity_context (
                 context_id, user_id, activity_id, kind, value, load_kg,
-                source, note
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                source, note, replaces_context_ids
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 context_id,
@@ -598,6 +623,7 @@ def insert_activity_context(row: dict[str, Any], db_path: str | None = None) -> 
                 row.get("load_kg"),
                 source,
                 row.get("note"),
+                replaces,
             ],
         )
         logger.info(

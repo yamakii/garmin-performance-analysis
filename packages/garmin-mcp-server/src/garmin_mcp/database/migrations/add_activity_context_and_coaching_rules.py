@@ -32,7 +32,8 @@ ACTIVITY_CONTEXT_DDL = """
         load_kg DOUBLE,
         source VARCHAR NOT NULL DEFAULT 'athlete_stated',
         note VARCHAR,
-        created_at TIMESTAMP DEFAULT current_timestamp
+        created_at TIMESTAMP DEFAULT current_timestamp,
+        replaces_context_ids INTEGER[]
     )
 """
 
@@ -57,7 +58,14 @@ def add_activity_context_and_coaching_rules(
     conn: duckdb.DuckDBPyConnection,
 ) -> None:
     """Create ``activity_context`` and ``coaching_rules`` (idempotent)."""
+    from garmin_mcp.database.migrations.add_activity_context_replaces import (
+        add_activity_context_replaces,
+    )
+
     conn.execute(ACTIVITY_CONTEXT_SEQ_DDL)
     conn.execute(ACTIVITY_CONTEXT_DDL)
+    # A table created before #1596 lacks the column; CREATE IF NOT EXISTS
+    # leaves it as is, so add it here too (db_writer._ensure_tables path).
+    add_activity_context_replaces(conn)
     conn.execute(COACHING_RULES_SEQ_DDL)
     conn.execute(COACHING_RULES_DDL)

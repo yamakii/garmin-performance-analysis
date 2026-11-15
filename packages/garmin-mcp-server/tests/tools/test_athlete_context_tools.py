@@ -41,6 +41,34 @@ def test_save_activity_context_rejects_load_out_of_range() -> None:
 
 
 @pytest.mark.unit
+def test_save_activity_context_tool_passes_replaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    def fake_insert(row: dict, db_path: str | None = None) -> int:
+        captured.update(row)
+        return 9
+
+    monkeypatch.setattr(
+        "garmin_mcp.database.inserters.athlete.insert_activity_context", fake_insert
+    )
+    reader = MagicMock()
+    reader.db_path = ":memory:unused"
+
+    result = dispatch(
+        ALL_DEFS_BY_NAME,
+        reader,
+        "save_activity_context",
+        {"activity_id": 1, "kind": "other", "note": "merged", "replaces": [7]},
+    )
+
+    assert isinstance(result, dict)
+    assert result["context_id"] == 9
+    assert captured["replaces"] == [7]
+
+
+@pytest.mark.unit
 def test_save_coaching_rule_rejects_pictograph() -> None:
     reader = MagicMock()
     reader.db_path = ":memory:unused"
