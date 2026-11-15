@@ -51,7 +51,7 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 
 ## Step 4: 指標の読み方
 
-- 所見は `signals` の outside かつ adverse だけ（読み方の正本は analysis-standards §2・§3）。1 本のランより `streak` と `recurrence` を信頼する
+- 弱点として挙げるのは `signals` の outside かつ adverse だけ（読み方の正本は analysis-standards §2・§3）。1 本のランより `streak` と `recurrence` を信頼する
 - `form_evaluations` の星は表示用のレガシー値で、単一ランの判定には使わない。期待値と実測値を見るために読む
 - ユーザーが走り方の介入を申告した日は、その日を「異常」ではなく「介入の効果検証」として他日と比べる
 
