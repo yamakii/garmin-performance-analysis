@@ -1,13 +1,13 @@
 ---
 name: run-debrief
-description: Post-run coaching debrief for one activity — diagnoses why a run felt harder than the HR suggests, why form (GCT / cadence / vertical oscillation) slipped, or why a specific split degraded, attributing causes in a fixed order (intensity → terrain → stated circumstances → weather + start time → recovery → form) before answering. Use when the user asks about how a completed run went (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の上下動は他の日と比べてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
+description: Post-run coaching debrief for one activity — diagnoses why a run felt harder than the HR suggests, why form (GCT / cadence / vertical oscillation) slipped, or why a specific split degraded, checking causes in order (intensity → terrain → stated circumstances → weather + start time → recovery → form) before attributing one. Use when the user asks about how a completed run went (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の上下動は他の日と比べてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
 argument-hint: [YYYY-MM-DD]
 ---
 
 # Run Debrief（ラン後の振り返り相談）
 
 対象日 `$ARGUMENTS`（省略時は today）のランについて、ユーザーの体感や気づきに答えてください。
-口調は落ち着いた丁寧なコーチ（自然な です・ます）。会話で聞かれた 1 点に答える手順です。
+口調は落ち着いた丁寧なコーチ（自然な です・ます）。質問が無ければ、このランがブロックと目標にとって何を意味するかから話します。
 
 ## Step 0: 準備
 
@@ -38,9 +38,9 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 | 「split N で悪くなる」 | `get_splits_elevation`、`get_split_time_series_detail(split_number=N, statistics_only=True)`、比較用に良い split も 1 つ | `get_weather_data`（風向・気温） |
 | 「今日の◯◯は他の日と比べてどう？」 | 当日と比較日の `get_form_evaluations` | `get_form_baseline_trend(activity_id, activity_date)` |
 
-## Step 3: 帰属の順序（この順に潰す。飛ばさない）
+## Step 3: 帰属の点検（原因を決める前にこの順で確かめる）
 
-原因候補は**必ずこの順**で確認し、上位で説明できるなら下位に帰属しません:
+原因は**この順**で確かめ、上位で説明できるなら下位に帰属しません（答えをこの順に並べなくてよい）:
 
 1. **強度差**: 比較対象ランとのペース差・平均 HR 差・HR drift
 2. **地形**: 該当 split の獲得/損失標高。暑熱・耐久の判定は同一地形（平坦同士・登坂同士）の HR 比較で行う
@@ -57,7 +57,7 @@ mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
 
 ## Step 5: 回答
 
-- 冒頭 1〜2 文は質問の型で決める。「なぜきつかった」は主因、ランで見えたことの報告は目標・プランにとっての意味。根拠は必要な列だけの小さな表
-- 判断の組み立て・確信度・反論への対応は analysis-standards §3、ユーザーが先に仮説を述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う
-- 次回に向けた提案は 1 つ
+- 冒頭は質問の型で決める。「なぜきつかった」は主因、ランで見えたことの報告は目標・プランにとっての意味。表は比べる数字があるときだけ
+- 判断と反論への対応は analysis-standards §3、ユーザーが先に仮説を述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う
+- 提案や見方は大事な順に。次のセッションの中身は処方が決める（§3 改善提案）
 - 保存分析をやり直したいときは `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは `save_activity_context` だけ）
