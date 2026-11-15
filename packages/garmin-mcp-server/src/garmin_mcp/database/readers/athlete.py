@@ -326,12 +326,16 @@ class AthleteReader(BaseDBReader):
         end_date: str | None = None,
         user_id: str = "default",
     ) -> list[dict[str, Any]]:
-        """List the athlete-stated facts about activities (latest per kind).
+        """List the athlete-stated facts about activities.
 
-        ``activity_context`` is append-only, so a restated fact is a newer row;
-        only the newest row per ``(activity_id, kind)`` is returned. Each row
-        carries ``activity_date`` joined from ``activities`` (``None`` when the
-        activity is not ingested).
+        ``activity_context`` is append-only (issue #1596). Rows listed in a
+        newer row's ``replaces_context_ids`` are hidden. Of the rest, a
+        single-valued kind (``SINGLE_VALUED_KINDS``: one answer per run, so a
+        restatement is a correction) returns only its newest row per
+        ``(activity_id, kind)``; every other kind returns all its rows, because
+        one run can carry several distinct facts of that kind. Each row carries
+        ``activity_date`` joined from ``activities`` (``None`` when the activity
+        is not ingested).
 
         Args:
             activity_ids: Optional activity filter.
@@ -340,11 +344,13 @@ class AthleteReader(BaseDBReader):
             user_id: Profile owner identifier (defaults to ``"default"``).
 
         Returns:
-            Row dicts ordered by ``activity_date``, ``activity_id``, ``kind``,
-            with date/timestamp values converted to ``str``. Empty when nothing
-            matches or the table is missing (databases older than the
-            migration).
+            Row dicts ordered by ``activity_date``, ``activity_id``, ``kind``
+            and save order, with date/timestamp values converted to ``str``.
+            Empty when nothing matches or the table is missing (databases older
+            than the migration).
         """
+        from garmin_mcp.database.activity_context_kinds import SINGLE_VALUED_KINDS
+
         where = "c.user_id = ?"
         params: list[Any] = [user_id]
         if activity_ids is not None:
@@ -360,20 +366,39 @@ class AthleteReader(BaseDBReader):
             where += " AND a.activity_date <= CAST(? AS DATE)"
             params.append(end_date)
 
+        singles = sorted(SINGLE_VALUED_KINDS)
+        single_placeholders = ", ".join("?" for _ in singles)
+
         with self._get_connection() as conn:
             try:
+                column_row = conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_name = 'activity_context' "
+                    "AND column_name = 'replaces_context_ids'"
+                ).fetchone()
+                has_replaces = bool(column_row and column_row[0])
+                retired = (
+                    " AND c.context_id NOT IN ("
+                    "SELECT UNNEST(r.replaces_context_ids) FROM activity_context r "
+                    "WHERE r.user_id = c.user_id "
+                    "AND r.replaces_context_ids IS NOT NULL)"
+                    if has_replaces
+                    else ""
+                )
                 result = conn.execute(
                     "SELECT c.context_id, c.user_id, c.activity_id, "
                     "a.activity_date, c.kind, c.value, c.load_kg, c.source, "
                     "c.note, c.created_at "
                     "FROM activity_context c "
                     "LEFT JOIN activities a ON a.activity_id = c.activity_id "
-                    f"WHERE {where} "
-                    "QUALIFY ROW_NUMBER() OVER ("
+                    f"WHERE {where}{retired} "
+                    f"QUALIFY c.kind NOT IN ({single_placeholders}) "
+                    "OR ROW_NUMBER() OVER ("
                     "PARTITION BY c.activity_id, c.kind "
                     "ORDER BY c.created_at DESC, c.context_id DESC) = 1 "
-                    "ORDER BY a.activity_date NULLS LAST, c.activity_id, c.kind",
-                    params,
+                    "ORDER BY a.activity_date NULLS LAST, c.activity_id, c.kind, "
+                    "c.created_at, c.context_id",
+                    [*params, *singles],
                 )
                 rows = result.fetchall()
             except duckdb.Error:

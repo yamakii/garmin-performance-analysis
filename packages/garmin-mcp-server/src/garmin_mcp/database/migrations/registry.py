@@ -311,6 +311,13 @@ def _wrap_add_activity_context_and_coaching_rules(
     add_activity_context_and_coaching_rules(conn)
 
 
+def _wrap_add_activity_context_replaces(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the activity_context replaces_context_ids column migration (#1596)."""
+    from .add_activity_context_replaces import add_activity_context_replaces
+
+    add_activity_context_replaces(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -397,4 +404,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
         "add_activity_context_and_coaching_rules",
         _wrap_add_activity_context_and_coaching_rules,
     ),
+    (37, "add_activity_context_replaces", _wrap_add_activity_context_replaces),
 ]

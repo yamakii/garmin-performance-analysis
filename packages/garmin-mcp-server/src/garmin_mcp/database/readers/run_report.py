@@ -2359,7 +2359,9 @@ def _conditions(
 def collect_athlete_context(db_path: str, activity_id: int) -> dict[str, Any]:
     """What the athlete said about this run, plus a read-time commute guess.
 
-    The stated rows come from ``activity_context`` (newest per kind, #1520).
+    The stated rows come from ``AthleteReader.get_activity_context`` (#1520):
+    the newest row of a single-valued kind, every live row of the others
+    (#1596), so ``items`` may list several ``other`` facts.
     When none of them is a ``commute`` row, the run is read for a commute
     (``analysis.commute.infer_commute``: weekday evening start, start and end
     points far apart) from ``activities.start_time_local`` and the first / last

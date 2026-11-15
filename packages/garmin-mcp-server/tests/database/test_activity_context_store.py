@@ -76,6 +76,111 @@ def test_activity_context_latest_row_wins_per_kind(store_db: str) -> None:
     assert {r["kind"] for r in rows} == {"commute", "load"}
 
 
+@pytest.mark.integration
+def test_multi_valued_kind_returns_every_row(store_db: str) -> None:
+    first = insert_activity_context(
+        {"activity_id": 1, "kind": "other", "note": "tempo with colleagues"},
+        db_path=store_db,
+    )
+    second = insert_activity_context(
+        {"activity_id": 1, "kind": "other", "note": "short sleep that week"},
+        db_path=store_db,
+    )
+
+    rows = AthleteReader(db_path=store_db).get_activity_context([1])
+
+    assert [r["context_id"] for r in rows] == [first, second]
+
+
+@pytest.mark.integration
+def test_single_valued_kind_keeps_newest(store_db: str) -> None:
+    insert_activity_context(
+        {"activity_id": 1, "kind": "load", "load_kg": 3.0}, db_path=store_db
+    )
+    insert_activity_context(
+        {"activity_id": 1, "kind": "load", "load_kg": 5.0}, db_path=store_db
+    )
+
+    rows = AthleteReader(db_path=store_db).get_activity_context([1])
+
+    assert len(rows) == 1
+    assert rows[0]["load_kg"] == 5.0
+
+
+@pytest.mark.integration
+def test_replaces_hides_listed_rows(store_db: str) -> None:
+    a = insert_activity_context(
+        {"activity_id": 1, "kind": "other", "note": "A"}, db_path=store_db
+    )
+    b = insert_activity_context(
+        {"activity_id": 1, "kind": "other", "note": "B"}, db_path=store_db
+    )
+    c = insert_activity_context(
+        {"activity_id": 1, "kind": "other", "note": "A and B", "replaces": [a, b]},
+        db_path=store_db,
+    )
+
+    rows = AthleteReader(db_path=store_db).get_activity_context([1])
+
+    assert [r["context_id"] for r in rows] == [c]
+
+
+@pytest.mark.integration
+def test_replaces_rejects_other_activity(store_db: str) -> None:
+    foreign = insert_activity_context(
+        {"activity_id": 2, "kind": "other", "note": "another run"}, db_path=store_db
+    )
+
+    with pytest.raises(ValueError, match="not rows of activity 1"):
+        insert_activity_context(
+            {"activity_id": 1, "kind": "other", "note": "x", "replaces": [foreign]},
+            db_path=store_db,
+        )
+
+    assert AthleteReader(db_path=store_db).get_activity_context([1]) == []
+
+
+@pytest.mark.integration
+def test_replaces_column_migration_idempotent(memory_db_path: str) -> None:
+    from garmin_mcp.database.migrations.add_activity_context_replaces import (
+        add_activity_context_replaces,
+    )
+
+    conn = duckdb.connect(memory_db_path)
+    try:
+        conn.execute("CREATE SEQUENCE activity_context_seq START 1")
+        conn.execute(
+            "CREATE TABLE activity_context ("
+            "context_id INTEGER PRIMARY KEY, user_id VARCHAR, activity_id BIGINT, "
+            "kind VARCHAR, value VARCHAR, load_kg DOUBLE, source VARCHAR, "
+            "note VARCHAR, created_at TIMESTAMP DEFAULT current_timestamp)"
+        )
+        conn.execute(
+            "INSERT INTO activity_context (context_id, user_id, activity_id, kind) "
+            "VALUES (1, 'default', 1, 'other')"
+        )
+
+        add_activity_context_replaces(conn)
+        add_activity_context_replaces(conn)
+
+        columns = [
+            r[0]
+            for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'activity_context' "
+                "AND column_name = 'replaces_context_ids'"
+            ).fetchall()
+        ]
+        stored = conn.execute(
+            "SELECT replaces_context_ids FROM activity_context"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert columns == ["replaces_context_ids"]
+    assert stored == (None,)
+
+
 @pytest.mark.unit
 def test_activity_context_date_range_filter(store_db: str) -> None:
     insert_activity_context({"activity_id": 1, "kind": "commute"}, db_path=store_db)

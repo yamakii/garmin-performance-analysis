@@ -228,9 +228,18 @@ def load_profiles(
                     profile[column] = row[index]
 
     if ("activity_context", "load_kg") in columns:
+        # A load row a later save listed in replaces is retired (#1596).
+        retired = (
+            " AND c.context_id NOT IN (SELECT UNNEST(r.replaces_context_ids) "
+            "FROM activity_context r WHERE r.user_id = c.user_id "
+            "AND r.replaces_context_ids IS NOT NULL)"
+            if ("activity_context", "replaces_context_ids") in columns
+            else ""
+        )
         for row in query(
-            "SELECT activity_id, load_kg FROM activity_context "
-            f"WHERE user_id = ? AND kind = 'load' AND activity_id IN ({placeholders}) "
+            "SELECT activity_id, load_kg FROM activity_context c "
+            f"WHERE user_id = ? AND kind = 'load' AND activity_id IN ({placeholders})"
+            f"{retired} "
             "QUALIFY ROW_NUMBER() OVER ("
             "PARTITION BY activity_id ORDER BY created_at DESC, context_id DESC) = 1",
             [user_id, *ids],

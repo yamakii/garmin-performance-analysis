@@ -623,7 +623,7 @@ Record the athlete's own word on one day's food log (MyFitnessPal via Garmin): s
 
 CLI: `garmin-db athlete save-activity-context`
 
-Record one fact the athlete stated about an activity: a commute run, the load carried (load_kg), strides carried over from the previous day, why they walked, apparel or sensor mounting. Write it silently when the athlete states the fact in conversation; never ask them to keep a log. Rows are append-only and stay in the local DB only; a later save for the same (activity_id, kind) supersedes the earlier one on read. Returns {status, context_id, activity_id, kind}.
+Record one fact the athlete stated about an activity: a commute run, the load carried (load_kg), strides carried over from the previous day, why they walked, apparel or sensor mounting. Write it silently when the athlete states the fact in conversation; never ask them to keep a log. Rows are append-only and stay in the local DB only. commute, load and strides_carried have one answer per run, so a later save of the same kind replaces the earlier one; walk_reason, apparel, sensor_mount and other add a fact beside the earlier ones. To correct or merge earlier rows, pass their context_ids in replaces. Returns {status, context_id, activity_id, kind}.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -633,13 +633,14 @@ Record one fact the athlete stated about an activity: a commute run, the load ca
 | `load_kg` | number | optional | Carried load in kg (only for kind='load', 0-30) |
 | `source` | enum: `athlete_stated`, `inferred` | optional (default `athlete_stated`) | athlete_stated: the athlete said it; inferred: read from the conversation without being said outright |
 | `note` | string | optional | Free-form note in the athlete's own words |
+| `replaces` | array[integer] | optional | context_ids (from get_activity_context) of earlier rows of the same activity that this row corrects or merges; they stop being returned. Omit to add a fact |
 | `user_id` | string | optional (default `default`) | Profile owner identifier |
 
 ### `get_activity_context`
 
 CLI: `garmin-db athlete get-activity-context`
 
-Get the athlete-stated facts about activities (commute, load, strides_carried, walk_reason, apparel, sensor_mount, other), the newest row per (activity_id, kind), filtered by activity_ids and/or an activity_date range. Each row carries activity_date, kind, value, load_kg, source (athlete_stated / inferred) and note. Returns an empty list when nothing was recorded.
+Get the athlete-stated facts about activities (commute, load, strides_carried, walk_reason, apparel, sensor_mount, other), filtered by activity_ids and/or an activity_date range: the newest row per (activity_id, kind) for commute / load / strides_carried, every row for the other kinds, minus rows a later save listed in replaces. Each row carries context_id, activity_date, kind, value, load_kg, source (athlete_stated / inferred) and note. Returns an empty list when nothing was recorded.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|

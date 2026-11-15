@@ -107,6 +107,24 @@ def test_run_report_includes_stated_load(reader_db_path: Path) -> None:
 
 
 @pytest.mark.integration
+def test_collect_athlete_context_lists_every_other_item(reader_db_path: Path) -> None:
+    """Two stated `other` facts both travel with the report (#1596)."""
+    from garmin_mcp.database.readers.run_report import collect_athlete_context
+
+    _seed_run(reader_db_path, activity_id=_ACTIVITY_ID, activity_date=_DAY)
+    _seed_context(reader_db_path, _ACTIVITY_ID, "load", load_kg=2.0)
+    _seed_context(reader_db_path, _ACTIVITY_ID, "load", load_kg=3.0)
+    _seed_context(reader_db_path, _ACTIVITY_ID, "other", value="tempo with colleagues")
+    _seed_context(reader_db_path, _ACTIVITY_ID, "other", value="short sleep")
+
+    context = collect_athlete_context(str(reader_db_path), _ACTIVITY_ID)
+
+    others = [item["value"] for item in context["items"] if item["kind"] == "other"]
+    assert others == ["tempo with colleagues", "short sleep"]
+    assert context["load_kg"] == 3.0
+
+
+@pytest.mark.integration
 def test_run_report_inferred_commute_when_unstated(reader_db_path: Path) -> None:
     """A weekday 18:30 run ending 5 km from its start reads as a commute."""
     _seed_run(reader_db_path, activity_id=_ACTIVITY_ID, activity_date=_DAY)
