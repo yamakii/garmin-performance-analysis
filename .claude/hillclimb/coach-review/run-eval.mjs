@@ -9,7 +9,7 @@
 //                   the read-only garmin_mcp.scripts.check_run_note CLI.
 //   - conversation: a probe `claude -p "<question>"` in the repo root, so CLAUDE.md and the
 //                   rules load, with READ-ONLY tools only (Read/Glob/Grep and the garmin-db
-//                   get_* / export / prefetch_* tools). A case with `turns` sends each scripted
+//                   get_* / export / query_db / prefetch_* tools). A case with `turns` sends each scripted
 //                   follow-up with `claude -p --resume <session_id>` in the same session. The
 //                   judge reads every turn; the rubric scores the final answer.
 //
@@ -103,10 +103,11 @@ export function validateCase(c) {
 }
 
 // ── tool permissions ────────────────────────────────────────────────────
-// Read-only garmin-db tools: get_*, export, prefetch_* (get_server_info is harmless).
+// Read-only garmin-db tools: get_*, export, query_db, prefetch_* (get_server_info is harmless).
 // The full list comes from the tool registry snapshot so a new write tool is
 // denied by default instead of slipping through.
-const isReadOnlyTool = (name) => name.startsWith('get_') || name === 'export' || name.startsWith('prefetch_')
+const isReadOnlyTool = (name) =>
+  name.startsWith('get_') || name === 'export' || name === 'query_db' || name.startsWith('prefetch_')
 const RUN_NOTE_TOOLS = ['get_run_note_inputs', 'get_analysis_contract', 'validate_section_json']
 const ALWAYS_DENY = ['Bash', 'NotebookEdit', 'Agent', 'Task', 'Workflow', 'WebFetch', 'WebSearch', 'mcp__github', 'mcp__serena']
 // File-editing tools are denied outright for a probe. A run_note run keeps them

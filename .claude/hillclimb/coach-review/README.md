@@ -16,7 +16,7 @@ follows `../trend-narration/`.
   read-only CLI `garmin_mcp.scripts.check_run_note --report <json> --note <json>`.
 - **`conversation`**: a probe, `claude -p "<athlete question>"` in the
   repo root, so CLAUDE.md and the rules load. Only **read-only** tools are allowed:
-  Read / Glob / Grep and the garmin-db `get_*`, `export` and `prefetch_*` tools.
+  Read / Glob / Grep and the garmin-db `get_*`, `export`, `query_db` and `prefetch_*` tools.
   Every other garmin-db tool (taken from the tool registry snapshot, so a new
   write tool is denied by default), Bash, Write, Edit, subagents, and the github /
   serena servers are on the deny list. The final answer is graded.
