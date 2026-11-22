@@ -1,63 +1,48 @@
 ---
 name: run-debrief
-description: Post-run coaching debrief for one activity — diagnoses why a run felt harder than the HR suggests, why form (GCT / cadence / vertical oscillation) slipped, or why a specific split degraded, checking causes in order (intensity → terrain → stated circumstances → weather + start time → recovery → form) before attributing one. Use when the user asks about how a completed run went (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の上下動は他の日と比べてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
+description: Post-run coaching consultation about one completed run — works through the questions the run raised and what the fixed run report cannot say, from the athlete's block, goals and own history, exploring the DB (query_db / get_db_catalog) rather than following a fixed recipe. Use when the user asks about or reports on a completed run (例:「今日のランは心拍以上に疲れた」「フォームの崩れの原因は？」「split 5 で毎回悪くなるのは地形？」「今日の28kmの振り返りをしたい」「このロングはさいたまに向けてどう？」). Argument is the activity date YYYY-MM-DD (defaults to today).
 argument-hint: [YYYY-MM-DD]
 ---
 
 # Run Debrief（ラン後の振り返り相談）
 
-対象日 `$ARGUMENTS`（省略時は today）のランについて、ユーザーの体感や気づきに答えてください。
-口調は落ち着いた丁寧なコーチ（自然な です・ます）。質問が無ければ、このランがブロックと目標にとって何を意味するかから話します。
+対象日 `$ARGUMENTS`（省略時は today）のランについて、走者と一緒に考えます。目的は、ランで生じた疑問や、
+ランレポートの固定された枠では言えなかったことに、より広い視点のコーチとして答えることです。
+レポートは走者が Web で既に見ているので、価値はその外側にあります。口調は落ち着いた丁寧なコーチ（自然な です・ます）。
 
 ## Step 0: 準備
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_splits_elevation,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_form_evaluations,mcp__garmin-db__get_form_baseline_trend,mcp__garmin-db__get_split_time_series_detail,mcp__garmin-db__get_time_range_detail,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation,mcp__garmin-db__get_performance_trends,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_coaching_rules,mcp__garmin-db__get_current_standing")
+ToolSearch(query="select:mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_coaching_rules,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_db_catalog,mcp__garmin-db__query_db,mcp__garmin-db__get_race_readiness,mcp__garmin-db__get_durability_trend,mcp__garmin-db__get_long_run_progression_gate,mcp__garmin-db__get_splits_comprehensive,mcp__garmin-db__get_weather_data,mcp__garmin-db__get_recovery_status,mcp__garmin-db__get_wellness_baseline_deviation")
 ```
+
+問いが求めれば、ほかの `mcp__garmin-db__*` もその場で ToolSearch してよい（この一覧は出発点で、境界ではない）。
 
 `get_activity_by_date(date=<対象日>)` で activity_id を取り（同日に補強などがあればランを選ぶ）、同じターンで
-`get_coaching_rules(scopes=["debrief", "conversation"])` と `get_current_standing(on_date=<対象日>)` を読みます。走者ルールと走者が述べた事情の扱いは
-`.claude/rules/analysis/analysis-standards.md` §3 に従います。
+`get_coaching_rules(scopes=["debrief", "conversation"])`、`get_current_standing(on_date=<対象日>)`、
+`get_run_report(activity_id)`、`get_activity_context(activity_ids=[...])` を読みます。
 
-## Step 1: まず run report を 1 本読む（必須・ここから始める）
+## Step 1: 走者が何を決めたい・知りたいのか
 
-```
-mcp__garmin-db__get_run_report(activity_id=<対象ラン>)
-```
+走者の問いや報告から、本当に知りたいこと・決めたいことを掴みます（`.claude/rules/intent-disambiguation.md` の
+Hypothesis-First Questions）。レポートは事実として使い、言い直しません。
 
-このランで何が起きたかの決定的なソースはこれ 1 本です（Web のラン詳細も run note も同じ dict を読む）。
-起点は **処方と実際のずれ**（`plan`）と **本人の通常の範囲から外れているか**（`signals`）の 2 つで、
-`moments` / `recurrence` / `conditions` / `athlete_context` / `vs_previous` がそれを補います。
+## Step 2: 問いを立て、DB で確かめる
 
-## Step 2: 質問タイプ別の追加取得（report で足りないときだけ・1 ターンで並列）
+答える前に「このランがこの走者の今にとって何を意味するかを言うには、何を知る必要があるか」を考えます。
+問いは**このランと走者の問いから**立て、毎回同じ観点（ブロック・週・目標・履歴…）を順に並べることはしません。
 
-| 質問タイプ | report の次に取る | さらに必要なら |
-|---|---|---|
-| 「心拍以上に疲れた」「ペースが速すぎた？」 | `get_performance_trends`、`get_splits_comprehensive(statistics_only=True)`、`get_weather_data`、`get_recovery_status(date=<対象日>)`、`get_wellness_baseline_deviation(date=<対象日>)` | 直近の同種ランの `get_activity_by_date` + `get_weather_data` |
-| 「フォームが崩れた」「GCT/ケイデンス/上下動が悪い」 | `get_form_evaluations`、`get_splits_comprehensive`、`get_splits_elevation`、`get_weather_data` | `get_time_range_detail(metrics=[ground_contact_time, cadence, heart_rate], statistics_only=True)` |
-| 「split N で悪くなる」 | `get_splits_elevation`、`get_split_time_series_detail(split_number=N, statistics_only=True)`、比較用に良い split も 1 つ | `get_weather_data`（風向・気温） |
-| 「今日の◯◯は他の日と比べてどう？」 | 当日と比較日の `get_form_evaluations` | `get_form_baseline_trend(activity_id, activity_date)` |
+立てた問いは確かめに行きます。`get_db_catalog` で何がどこにあるかを見て、`query_db` で走者自身の履歴
+（比べられる過去のラン・レース、指標の推移、ブロックやレビューに書かれた判断）を引き、専用ツールは近道として使います。
+問いに答えが出るか、データでは決まらないと分かるまで続け、どちらだったかを答えで言います。
 
-## Step 3: 帰属の点検（原因を決める前にこの順で確かめる）
+原因を問われたら、大きな説明から先に外します: 強度（比較対象とのペース・HR・drift）→ 地形（同一地形で比べる）→
+申告された事情 → 気象（記録気温は開始時刻のスナップショット）→ 回復 → フォーム固有の残差。
+走り方の介入を申告した日は、異常ではなく介入の効果検証として他日と比べます。
 
-原因は**この順**で確かめ、上位で説明できるなら下位に帰属しません（答えをこの順に並べなくてよい）:
+## Step 3: 一緒に答える
 
-1. **強度差**: 比較対象ランとのペース差・平均 HR 差・HR drift
-2. **地形**: 該当 split の獲得/損失標高。暑熱・耐久の判定は同一地形（平坦同士・登坂同士）の HR 比較で行う
-3. **申告された事情**: `athlete_context` の荷物・通勤・前日の流しの持ち越し。事情で説明し、フォームや体力の変化として読まない。事情は原因の説明であって改善点ではない
-4. **気象 ＋ 開始時刻**: 記録気温は開始時点のスナップショットで、終盤が暑くなるか涼しくなるかは開始時刻で決まる。暑い日の decoupling は気温だけで捨てず、条件に対してペースを落としていたか（強度）で比べられるかを判断する
-5. **回復**: 当日朝の `get_recovery_status` / `get_wellness_baseline_deviation`
-6. **フォーム固有**: 上記で説明が付かない残差だけ
-
-## Step 4: 指標の読み方
-
-- 弱点として挙げるのは `signals` の outside かつ adverse だけ（読み方の正本は analysis-standards §2・§3）。1 本のランより `streak` と `recurrence` を信頼する
-- `form_evaluations` の星は表示用のレガシー値で、単一ランの判定には使わない。期待値と実測値を見るために読む
-- ユーザーが走り方の介入を申告した日は、その日を「異常」ではなく「介入の効果検証」として他日と比べる
-
-## Step 5: 回答
-
-- 冒頭は質問の型で決める。「なぜきつかった」は主因、ランで見えたことの報告は目標・プランにとっての意味。表は比べる数字があるときだけ
-- 判断と反論への対応は analysis-standards §3、ユーザーが先に仮説を述べているときは `.claude/rules/intent-disambiguation.md` の Hypothesis-First Questions に従う
-- 提案や見方は大事な順に。次のセッションの中身は処方が決める（§3 改善提案）
-- 保存分析をやり直したいときは `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは `save_activity_context` だけ）
+- 判断・確信・反論への対応、走者ルールと述べられた事情の扱いは `.claude/rules/analysis/analysis-standards.md` §3 に従う
+- 冒頭は Step 1 で掴んだ問いを一文で受け止め、続けて自分の見方を述べる。見方は大事な順に並べ、表は比べる数字があるときだけ
+- データで決まらず走者の知識で決まる点は、1 つだけ聞く。続きの質問は走者が向かう方へ付いていく
+- 次のセッションの中身は処方が決める（§3 改善提案）。保存分析をやり直したいときは `/analyze-activity <date>` を案内する（このスキルが DuckDB に書くのは `save_activity_context` だけ）

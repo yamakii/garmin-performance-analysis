@@ -12,7 +12,7 @@ argument-hint: [question]
 ## Step 1: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save_coaching_rule,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__export")
+ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save_coaching_rule,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__get_db_catalog,mcp__garmin-db__query_db,mcp__garmin-db__export")
 ```
 
 ## Step 2: 答える前に必ず読む（同じターンで並列）
@@ -23,7 +23,7 @@ ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save
 - `get_weekly_prescriptions(week_start_date=<今週の開始日>)`: 今週の処方（日別の正本）
 - `get_activity_context(start_date=<14日前>, end_date=<今日>)`
 
-質問に応じて足すもの: 量・負荷・故障リスクは `get_acwr()` / `get_load_trend()`、シューズは `get_gear_wear()`（持っているシューズはここで読み、走者に聞かない）、レースの狙いは `get_race_readiness()`、特定のランは `get_activity_by_date` → `get_run_report`、過去との比較は `export`。
+質問に応じて足すもの: 量・負荷・故障リスクは `get_acwr()` / `get_load_trend()`、シューズは `get_gear_wear()`（持っているシューズはここで読み、走者に聞かない）、レースの狙いは `get_race_readiness()`、特定のランは `get_activity_by_date` → `get_run_report`、走者自身の履歴や過去との比較は `get_db_catalog` で場所を見て `query_db`（Python で回す大量の集計だけ `export`）。
 
 ## Step 3: 判断と出力
 

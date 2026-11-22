@@ -4,9 +4,8 @@ Consolidated reference for all analysis rules.
 
 ## 1. Data Access
 
-- **MCP tools only**: `mcp__garmin-db__*` を使う。`duckdb.connect()` や `.duckdb` ファイルへの直接アクセスはしない。SQL を書くのは `export` の `query` 引数だけ
-- **Token optimization**: `statistics_only=True` 優先 (67-80% 削減)。`get_splits_comprehensive()` で12フィールド一括取得
-- **10+ activities**: Export workflow — PLAN(SQL設計) → EXPORT(parquet) → CODE(Python) → RESULT → INTERPRET
+- **MCP tools only**: `mcp__garmin-db__*` を使う。`.duckdb` への直接アクセスはしない。SQL は `query_db`（行をその場で返す。会話中の確かめ）か `export`（ファイル。Python での統計分析: PLAN → EXPORT → CODE → RESULT → INTERPRET）に書く。テーブルの場所は `get_db_catalog`
+- **Token optimization**: `statistics_only=True` 優先。`get_splits_comprehensive()` で12フィールド一括取得
 - **数値は当該テーブルから**: VO2max / LTHR / 体重 / HR ゾーン境界などの数値は、`athlete_profile.focus_notes` 等のプロフィール散文ではなく該当ツール（`get_vo2_max_data`、`get_lactate_threshold_data`、`get_body_composition_trend`、`get_heart_rate_zones_detail`）から取る。プロフィール記述は執筆時点のスナップショットで陳腐化する
 
 ## 2. Agent Rules
