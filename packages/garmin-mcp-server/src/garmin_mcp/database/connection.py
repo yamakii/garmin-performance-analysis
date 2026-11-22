@@ -165,6 +165,61 @@ def get_write_connection(
         conn.close()
 
 
+SANDBOX_CATALOG = "garmin"
+
+
+@contextmanager
+def get_sandboxed_read_connection(
+    db_path: str | Path | None = None,
+    *,
+    retries: int = 3,
+    backoff: float = 2.0,
+) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    """Get a read-only connection that cannot touch the filesystem.
+
+    For SQL written by a caller (``query_db``). A private in-memory DuckDB
+    instance attaches the database file ``READ_ONLY`` as its default catalog,
+    then turns off external access and locks the configuration. Table
+    functions that read files (``read_text``, ``read_csv``, replacement scans
+    on a path), ``COPY``, ``ATTACH``, ``INSTALL`` and writes all fail, while
+    every other connection in the process keeps its normal configuration: the
+    setting is per instance, and setting it on a shared file instance would
+    also break ``export``'s ``COPY TO``.
+
+    Args:
+        db_path: Path to database file. If None, uses config default.
+        retries: Maximum retry attempts on lock errors.
+        backoff: Base delay in seconds for linear backoff.
+
+    Yields:
+        A connection whose default catalog is the attached database.
+
+    Raises:
+        ValueError: For an in-memory database name, which another instance
+            cannot attach.
+    """
+    path = _resolve_db_path(db_path)
+    if is_memory_db_path(path):
+        raise ValueError("a sandboxed connection needs an on-disk database")
+    conn = duckdb.connect(":memory:")
+    try:
+        escaped = str(path).replace("'", "''")
+        for attempt in range(retries + 1):
+            try:
+                conn.execute(f"ATTACH '{escaped}' AS {SANDBOX_CATALOG} (READ_ONLY)")
+                break
+            except duckdb.IOException as e:
+                if "Could not set lock" not in str(e) or attempt == retries:
+                    raise
+                time.sleep(backoff * (attempt + 1))
+        conn.execute(f"USE {SANDBOX_CATALOG}")
+        conn.execute("SET enable_external_access = false")
+        conn.execute("SET lock_configuration = true")
+        yield conn
+    finally:
+        conn.close()
+
+
 def get_db_path(db_path: str | Path | None = None) -> Path:
     """Get resolved database path.
 

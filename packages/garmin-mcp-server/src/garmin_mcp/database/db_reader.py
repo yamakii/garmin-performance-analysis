@@ -21,6 +21,7 @@ from garmin_mcp.database.readers import (
     MetadataReader,
     PerformanceReader,
     PhysiologyReader,
+    QueryReader,
     RaceReader,
     RunReportReader,
     SplitsReader,
@@ -104,6 +105,7 @@ class GarminDBReader:
         self.splits = SplitsReader(db_path)
         self.time_series = TimeSeriesReader(db_path)
         self.export = ExportReader(db_path)
+        self.query = QueryReader(db_path)
 
         # Specialized readers (split from AggregateReader)
         self.form = FormReader(db_path)
@@ -2284,3 +2286,29 @@ class GarminDBReader:
         return self.export.export_query_result(
             query, output_path, export_format, max_rows
         )
+
+    # ========== Inline Query Methods ==========
+
+    def run_inline_query(self, sql: str, max_rows: int = 50) -> dict[str, Any]:
+        """Run one caller-written SELECT and return its rows inline.
+
+        See :meth:`QueryReader.run_inline_query`.
+        """
+        return self.query.run_inline_query(sql, max_rows)
+
+    def db_catalog(self, table: str | None = None) -> dict[str, Any]:
+        """The table catalog, or one table's columns.
+
+        Returns:
+            ``{tables: [...]}`` without ``table``; ``{table, purpose, columns}``
+            for a domain table; ``{error}`` for any other name.
+        """
+        if table is None:
+            return {"tables": self.query.catalog()}
+        described = self.query.describe_table(table)
+        if described is None:
+            return {
+                "error": f"unknown table '{table}'",
+                "suggestion": "Call get_db_catalog without table for the list.",
+            }
+        return described

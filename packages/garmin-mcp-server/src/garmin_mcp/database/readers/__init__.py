@@ -18,6 +18,7 @@ This package provides specialized reader classes for accessing DuckDB data:
 - UtilityReader: Profiling and histogram operations
 - TimeSeriesReader: Time series data and anomaly detection
 - ExportReader: Query result export functionality
+- QueryReader: Ad-hoc SELECTs returned inline + the table catalog
 """
 
 from garmin_mcp.database.readers.base import BaseDBReader
@@ -29,6 +30,7 @@ from garmin_mcp.database.readers.hiking_sessions import HikingSessionsReader
 from garmin_mcp.database.readers.metadata import MetadataReader
 from garmin_mcp.database.readers.performance import PerformanceReader
 from garmin_mcp.database.readers.physiology import PhysiologyReader
+from garmin_mcp.database.readers.query import QueryReader
 from garmin_mcp.database.readers.race import RaceReader
 from garmin_mcp.database.readers.run_report import RunReportReader
 from garmin_mcp.database.readers.splits import SplitsReader
@@ -56,4 +58,5 @@ __all__ = [
     "UtilityReader",
     "TimeSeriesReader",
     "ExportReader",
+    "QueryReader",
 ]

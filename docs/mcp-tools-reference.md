@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **84 tools** (82 domain + 2 server). Do not edit by hand.
+Auto-generated from the `ToolDef` registry (`garmin_mcp.tools.ALL_DEFS`) — **86 tools** (84 domain + 2 server). Do not edit by hand.
 
 Regenerate with:
 
@@ -31,6 +31,7 @@ Tools are callable as MCP tools (`mcp__garmin-db__<name>`) and, for domain tools
 - [hiking](#hiking) (2)
 - [Training Plan Ledger](#training-plan-ledger) (6)
 - [gear](#gear) (1)
+- [query](#query) (2)
 - [Server](#server) (2)
 
 ## Export
@@ -1003,6 +1004,29 @@ Get every shoe with its lifetime mileage and whether it is due for replacement, 
 |-----------|------|----------|-------------|
 | `include_retired` | boolean | optional (default `False`) | Include shoes already retired in Garmin (default: false) |
 | `as_of` | string | optional | Reference date in YYYY-MM-DD for the age axis (default: today) |
+
+## query
+
+### `query_db`
+
+CLI: `garmin-db query run`
+
+Run one read-only SELECT against the athlete's DuckDB and get the rows back in the response: for checking the athlete's own history mid-conversation (comparable past runs, a metric over months, what a block or review said). Returns columns, rows (lists in column order), row_count, truncated (more rows existed than returned) and note, or error with a suggestion. Dates come back as ISO strings; text cells over 400 chars are cut. No file access. Find tables and columns with get_db_catalog; use export for bulk analysis in Python.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `sql` | string | **required** | One DuckDB SELECT (WITH ... SELECT is fine). It runs wrapped as a subquery, so no other statement type and no trailing semicolon |
+| `max_rows` | integer | optional (default `50`) | Rows to return at most, 1-200 (default 50) |
+
+### `get_db_catalog`
+
+CLI: `garmin-db query catalog`
+
+Map of the athlete's DuckDB. Without table: every domain table with a one-line purpose (what it answers, its grain) and row_count, as tables. With table: its purpose and columns [{name, type}], or error for an unknown table. Use it to find where a question's data lives before writing a query_db SELECT.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `table` | string | optional | A table name for its columns; omit for every table |
 
 ## Server
 

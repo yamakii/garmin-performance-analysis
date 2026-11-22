@@ -1876,6 +1876,40 @@
     }
   },
   {
+    "name": "query_db",
+    "description": "Run one read-only SELECT against the athlete's DuckDB and get the rows back in the response: for checking the athlete's own history mid-conversation (comparable past runs, a metric over months, what a block or review said). Returns columns, rows (lists in column order), row_count, truncated (more rows existed than returned) and note, or error with a suggestion. Dates come back as ISO strings; text cells over 400 chars are cut. No file access. Find tables and columns with get_db_catalog; use export for bulk analysis in Python.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sql": {
+          "type": "string",
+          "description": "One DuckDB SELECT (WITH ... SELECT is fine). It runs wrapped as a subquery, so no other statement type and no trailing semicolon"
+        },
+        "max_rows": {
+          "type": "integer",
+          "description": "Rows to return at most, 1-200 (default 50)",
+          "default": 50
+        }
+      },
+      "required": [
+        "sql"
+      ]
+    }
+  },
+  {
+    "name": "get_db_catalog",
+    "description": "Map of the athlete's DuckDB. Without table: every domain table with a one-line purpose (what it answers, its grain) and row_count, as tables. With table: its purpose and columns [{name, type}], or error for an unknown table. Use it to find where a question's data lives before writing a query_db SELECT.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "A table name for its columns; omit for every table"
+        }
+      }
+    }
+  },
+  {
     "name": "get_server_info",
     "description": "Get diagnostic info about the running MCP server (shim started_at plus worker DB diagnostics). Use to verify readiness.",
     "inputSchema": {
