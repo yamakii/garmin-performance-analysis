@@ -8,6 +8,7 @@ Helper logic has been extracted to:
 - power_calculator: Power efficiency scoring
 """
 
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,37 @@ from .power_calculator import (
 )
 from .scorer import compute_star_rating, score_observation
 from .text_generator import generate_evaluation_text, generate_overall_text
+
+logger = logging.getLogger(__name__)
+
+
+def evaluate_form_safely(activity_id: int, activity_date: str, db_path: str) -> str:
+    """Run :func:`evaluate_and_store` without letting a failure break an ingest.
+
+    Every ingest path calls this after a run is saved, so a run ingested by the
+    catch-up path gets its ``form_evaluations`` row just like one ingested by
+    date (#1600).
+
+    Returns:
+        ``"success"``, ``"model_not_found"`` (no trained baseline),
+        ``"failed"`` (missing splits or other data issues) or ``"error"``.
+    """
+    try:
+        evaluate_and_store(
+            activity_id=activity_id, activity_date=activity_date, db_path=db_path
+        )
+    except FileNotFoundError as e:
+        logger.warning("Form evaluation skipped for %s: %s", activity_id, e)
+        return "model_not_found"
+    except ValueError as e:
+        logger.error("Form evaluation failed for %s: %s", activity_id, e)
+        return "failed"
+    except Exception as e:  # noqa: BLE001 - must never break the ingest
+        logger.error(
+            "Form evaluation unexpected error for %s: %s", activity_id, e, exc_info=True
+        )
+        return "error"
+    return "success"
 
 
 def evaluate_and_store(

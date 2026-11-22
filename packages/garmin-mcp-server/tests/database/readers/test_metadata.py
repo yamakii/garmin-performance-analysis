@@ -45,6 +45,28 @@ class TestQueryActivityByDate:
         assert isinstance(result, int)
 
 
+@pytest.mark.integration
+@pytest.mark.parametrize("cooldown_first", [True, False])
+def test_query_activity_by_date_prefers_longest_run(
+    reader_db_path: Path, cooldown_first: bool
+) -> None:
+    """Two runs on one date → the longest, whatever the insert order (#1600)."""
+    cooldown = (99990011, 0.8)
+    long_run = (99990012, 28.0)
+    rows = [cooldown, long_run] if cooldown_first else [long_run, cooldown]
+    conn = duckdb.connect(str(reader_db_path))
+    for activity_id, distance_km in rows:
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, total_distance_km) "
+            "VALUES (?, ?, ?)",
+            [activity_id, "2026-11-22", distance_km],
+        )
+    conn.close()
+
+    reader = MetadataReader(db_path=str(reader_db_path))
+    assert reader.query_activity_by_date("2026-11-22") == long_run[0]
+
+
 @pytest.mark.unit
 class TestGetActivityDate:
     """Tests for MetadataReader.get_activity_date()."""

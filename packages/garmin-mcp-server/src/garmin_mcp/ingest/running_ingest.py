@@ -20,6 +20,7 @@ from typing import Any
 
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.db_writer import GarminDBWriter
+from garmin_mcp.form_baseline.evaluator import evaluate_form_safely
 from garmin_mcp.ingest.api_client import get_garmin_client
 from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
 from garmin_mcp.ingest.retry import call_with_retry
@@ -73,6 +74,9 @@ def ingest_running_activities(
             time.sleep(throttle_seconds)
         worker = GarminIngestWorker(db_path=resolved_path)
         worker.process_activity(activity_id, date)
+        # The by-date path evaluates form inside WorkflowPlanner; without this a
+        # second run on the same day never got a form_evaluations row (#1600).
+        evaluate_form_safely(activity_id, date, resolved_path)
 
         ingested += 1
         activity_ids.append(activity_id)

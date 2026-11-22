@@ -19,7 +19,8 @@ class TestActivityResolution:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                activity_date DATE NOT NULL,
+                total_distance_km DOUBLE
             )
         """)
         conn.execute(
@@ -45,7 +46,8 @@ class TestActivityResolution:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                activity_date DATE NOT NULL,
+                total_distance_km DOUBLE
             )
         """)
         conn.close()
@@ -72,7 +74,8 @@ class TestActivityResolution:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                activity_date DATE NOT NULL,
+                total_distance_km DOUBLE
             )
         """)
         conn.execute(
@@ -107,7 +110,8 @@ class TestActivityResolution:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS activities (
                 activity_id BIGINT PRIMARY KEY,
-                activity_date DATE NOT NULL
+                activity_date DATE NOT NULL,
+                total_distance_km DOUBLE
             )
         """)
         conn.close()
