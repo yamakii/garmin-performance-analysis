@@ -79,8 +79,13 @@ class MetadataReader(BaseDBReader):
         """
         try:
             with self._get_connection() as conn:
+                # A day can hold several runs (a long run plus a cooldown, say):
+                # return the longest, deterministically -- the run a day's
+                # prescription most plausibly refers to, the same fallback
+                # prescription_reconcile uses (#1600).
                 result = conn.execute(
-                    "SELECT activity_id FROM activities WHERE activity_date = ?",
+                    "SELECT activity_id FROM activities WHERE activity_date = ? "
+                    "ORDER BY total_distance_km DESC NULLS LAST, activity_id",
                     [date],
                 ).fetchone()
 

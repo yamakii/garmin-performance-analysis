@@ -77,6 +77,59 @@ def _seed_existing(db_path: Path, activity_id: int, date: str = "2026-06-15") ->
         conn.close()
 
 
+@pytest.fixture(autouse=True)
+def _form_evaluation() -> Any:
+    """Stub the per-run form evaluation (it needs trained baselines)."""
+    with patch(
+        "garmin_mcp.ingest.running_ingest.evaluate_form_safely",
+        return_value="success",
+    ) as evaluate:
+        yield evaluate
+
+
+def _ingest_two_runs(temp_db_path: Path) -> dict[str, Any]:
+    """Ingest two same-day runs with the Garmin client and worker mocked."""
+    client = _make_client([_run_summary(_RUN_A), _run_summary(_RUN_B)])
+    with (
+        patch(
+            "garmin_mcp.ingest.running_ingest.get_garmin_client",
+            return_value=client,
+        ),
+        patch(
+            "garmin_mcp.ingest.running_ingest.GarminIngestWorker",
+            return_value=MagicMock(),
+        ),
+        patch("garmin_mcp.ingest.running_ingest.time.sleep"),
+    ):
+        return ingest_running_activities(
+            "2026-06-01", "2026-06-30", db_path=str(temp_db_path)
+        )
+
+
+@pytest.mark.integration
+def test_ingest_running_activities_evaluates_form_for_each_run(
+    temp_db_path: Path, _form_evaluation: MagicMock
+) -> None:
+    """Two new runs → one form evaluation per run, with its date (#1600)."""
+    _ingest_two_runs(temp_db_path)
+
+    calls = [c.args[:2] for c in _form_evaluation.call_args_list]
+    assert calls == [(_RUN_A, "2026-06-15"), (_RUN_B, "2026-06-15")]
+
+
+@pytest.mark.integration
+def test_ingest_running_activities_survives_form_evaluation_failure(
+    temp_db_path: Path, _form_evaluation: MagicMock
+) -> None:
+    """A failed evaluation never stops the ingest (#1600)."""
+    _form_evaluation.return_value = "error"
+
+    result = _ingest_two_runs(temp_db_path)
+
+    assert result["ingested"] == 2
+    assert result["activity_ids"] == [_RUN_A, _RUN_B]
+
+
 @pytest.mark.integration
 def test_ingest_running_discovers_and_filters(temp_db_path: Path) -> None:
     """List with 2 runs + 1 strength → only the 2 runs are targeted."""

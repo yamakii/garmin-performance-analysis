@@ -51,7 +51,7 @@ class WorkflowPlanner:
             ValueError: If no activity found for date
             ValueError: If multiple activities found (user must specify activity_id)
         """
-        from garmin_mcp.form_baseline.evaluator import evaluate_and_store
+        from garmin_mcp.form_baseline.evaluator import evaluate_form_safely
         from garmin_mcp.ingest.garmin_worker import GarminIngestWorker
 
         logger.info(f"Starting workflow for date: {date}")
@@ -69,31 +69,11 @@ class WorkflowPlanner:
                 f"Data collection failed: {ingest_result.get('error', 'Unknown error')}"
             )
 
-        # Step 2: Form evaluation (NEW)
+        # Step 2: Form evaluation (shared with the catch-up ingest path, #1600)
         logger.info(f"Evaluating form metrics for activity {activity_id}")
-        form_evaluation_status = "not_evaluated"
-        try:
-            evaluation_result = evaluate_and_store(
-                activity_id=activity_id,
-                activity_date=date,
-                db_path=str(self.db_path),
-            )
-            form_evaluation_status = "success"
-            logger.info(
-                f"Form evaluation complete: overall_score={evaluation_result['overall_score']:.1f}/5.0"
-            )
-        except FileNotFoundError as e:
-            # Model file not found - expected during Phase 1 development
-            logger.warning(f"Form evaluation skipped: {e}")
-            form_evaluation_status = "model_not_found"
-        except ValueError as e:
-            # Missing splits data or other data issues
-            logger.error(f"Form evaluation failed: {e}")
-            form_evaluation_status = "failed"
-        except Exception as e:
-            # Unexpected errors should not break the workflow
-            logger.error(f"Form evaluation unexpected error: {e}", exc_info=True)
-            form_evaluation_status = "error"
+        form_evaluation_status = evaluate_form_safely(
+            activity_id, date, str(self.db_path)
+        )
 
         result = {
             "activity_id": activity_id,
