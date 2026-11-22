@@ -308,9 +308,15 @@ class RunReportReader(BaseDBReader):
             # is left out of the look-back rather than counted (#1523).
             family_previous = [
                 run
-                for run in history
-                if run.get("intensity_category") == today.get("intensity_category")
-                and assess(today, run).hr_comparable
+                for run in _day_main_runs(
+                    [
+                        run
+                        for run in history
+                        if run.get("intensity_category")
+                        == today.get("intensity_category")
+                    ]
+                )
+                if assess(today, run).hr_comparable
             ][-RECURRENCE_LOOKBACK:]
             split_ids = [
                 activity_id,
@@ -1328,6 +1334,28 @@ def _history_before(
     ]
     history.sort(key=lambda run: (str(run["activity_date"]), int(run["activity_id"])))
     return history
+
+
+def _day_main_runs(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One run per date: the day's longest, in date order (#1608).
+
+    The few hundred metres a watch records after a run (11/8: 0.41 km after
+    5.1 km) are not "the previous run". What marks them is a longer run on the
+    same day, not a length threshold: a lone short run, or one split into
+    workout laps, still stands for its day. Ties go to the later activity.
+    Callers filter by intensity family first, so on a double day the easy run
+    still answers an easy comparison.
+    """
+
+    def rank(run: dict[str, Any]) -> tuple[float, int]:
+        return (_as_float(run.get("distance_km")) or 0.0, int(run["activity_id"]))
+
+    by_day: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        day = str(run["activity_date"])
+        if day not in by_day or rank(run) >= rank(by_day[day]):
+            by_day[day] = run
+    return [by_day[day] for day in sorted(by_day)]
 
 
 # --------------------------------------------------------------------------- #
@@ -2483,13 +2511,15 @@ def _vs_previous(
     """Delta chips against the previous run of the same intensity family.
 
     A metric the pair cannot be compared on (another sensor, a stated load,
-    #1523) is dropped, and ``comparability`` says which and why.
+    #1523) is dropped, and ``comparability`` says which and why. Only each
+    day's longest same-family run can be "the previous run", so a fragment
+    recorded after a run never is (#1608).
     """
     family = today.get("intensity_category")
-    previous = next(
-        (run for run in reversed(history) if run.get("intensity_category") == family),
-        None,
+    same_family = _day_main_runs(
+        [run for run in history if run.get("intensity_category") == family]
     )
+    previous = same_family[-1] if same_family else None
     if previous is None:
         return None
     deltas = compute_vs_previous(_comparable(today), _comparable(previous))
