@@ -1262,6 +1262,30 @@ def select_prescription_for_run(rows: list[dict] | None) -> dict | None:
     return rows[0]
 
 
+def prescription_for_activity(
+    rows: list[dict] | None,
+    activity_id: int,
+    day_runs: list[dict] | None,
+) -> dict | None:
+    """The prescription ``activity_id`` should be judged against, or ``None``.
+
+    :func:`select_prescription_for_run` picks the day's running row; on a day
+    with more than one run only the run that answers it
+    (:func:`~garmin_mcp.analysis.prescription_reconcile.answering_activity_id`)
+    keeps it, so a cooldown after a long run is not judged as a 3 % long run
+    (#1601). With one run (or no run list) the row stands, so an
+    under-delivered run is still judged against what was asked.
+    """
+    from garmin_mcp.analysis.prescription_reconcile import answering_activity_id
+
+    row = select_prescription_for_run(rows)
+    if row is None or not day_runs or len(day_runs) < 2:
+        return row
+    if answering_activity_id(row, day_runs) != activity_id:
+        return None
+    return row
+
+
 def _class_label(intensity_class: int | None, fallback: str | None) -> str:
     """Japanese label for an intensity ordinal, falling back to the raw name."""
     if intensity_class is not None:

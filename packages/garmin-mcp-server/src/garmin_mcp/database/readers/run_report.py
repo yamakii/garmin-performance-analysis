@@ -69,6 +69,7 @@ from garmin_mcp.analysis.derivations import (
     detect_progression_session,
     intensity_class,
     judge_hr_ceiling,
+    prescription_for_activity,
     prescription_marks_progression,
     select_prescription_for_run,
     verdict_symbol,
@@ -89,6 +90,7 @@ from garmin_mcp.analysis.plan_axes import (
     AxisStatus,
     evaluate_structure_axes,
 )
+from garmin_mcp.analysis.prescription_reconcile import fetch_day_runs
 from garmin_mcp.analysis.prescription_shape import (
     BOOKENDED_TYPES,
     expected_minutes,
@@ -338,7 +340,7 @@ class RunReportReader(BaseDBReader):
             )
             identity = _fetch_run_identity(conn, tables, activity_id, activity_date)
 
-        prescription = self._load_prescription(activity_date)
+        prescription = self._load_prescription(activity_date, activity_id)
         # Strides a recent day asked for and no run has done yet (#1494) are
         # read as part of today's plan.
         if (
@@ -567,14 +569,17 @@ class RunReportReader(BaseDBReader):
     # Collaborating readers / models
     # ------------------------------------------------------------------ #
 
-    def _load_prescription(self, activity_date: str) -> dict[str, Any] | None:
+    def _load_prescription(
+        self, activity_date: str, activity_id: int
+    ) -> dict[str, Any] | None:
         """The prescription row this run answers, or ``None`` when unprescribed.
 
         Delegated to ``PlanReader`` so the "latest batch of the containing
         week" semantics stay in one place, and to
-        ``select_prescription_for_run`` so a 補強 row filed the same day is not
-        what the run is judged against. A database without the plan tables
-        degrades to ``None``.
+        ``prescription_for_activity`` so a 補強 row filed the same day is not
+        what the run is judged against and, on a multi-run day, only the run
+        that answers the prescription carries it (#1601). A database without
+        the plan tables degrades to ``None``.
 
         The import is function-local because this module is imported *while*
         the ``readers`` package is still initialising.
@@ -588,7 +593,11 @@ class RunReportReader(BaseDBReader):
         except Exception as exc:  # pragma: no cover - degraded DB only
             logger.debug("no prescription available for %s: %s", activity_date, exc)
             return None
-        return select_prescription_for_run(rows)
+        if not rows:
+            return None
+        with self._get_connection() as conn:
+            day_runs = fetch_day_runs(conn, activity_date)
+        return prescription_for_activity(rows, activity_id, day_runs)
 
     def _signals(
         self, today: dict[str, Any], history: list[dict[str, Any]]

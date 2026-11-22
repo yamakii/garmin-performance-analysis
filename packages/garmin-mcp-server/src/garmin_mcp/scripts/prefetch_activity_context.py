@@ -74,8 +74,9 @@ from garmin_mcp.analysis.comparability import assess, drop_excluded, load_profil
 from garmin_mcp.analysis.derivations import (
     compute_vs_previous,
     compute_week_position,
-    select_prescription_for_run,
+    prescription_for_activity,
 )
+from garmin_mcp.analysis.prescription_reconcile import fetch_day_runs
 from garmin_mcp.database.connection import get_connection, get_db_path
 from garmin_mcp.database.readers.athlete import AthleteReader
 from garmin_mcp.database.readers.metadata import collect_activity_gear
@@ -337,10 +338,16 @@ def _collect_prescription_layer(
             or []
         )
         layer["prescription"] = rows
+
         # The row a run answers: the first with a running intensity class, so a
         # 補強 row filed earlier the same day is not what the run is judged
-        # against (Issue #1086).
-        run_row = select_prescription_for_run(rows)
+        # against (Issue #1086), and on a multi-run day only the run that
+        # answers it (a cooldown is not a 3 % long run, #1601).
+        def _day_runs() -> list[dict[str, Any]]:
+            with get_connection(db_path_str) as conn:
+                return fetch_day_runs(conn, activity_date)
+
+        run_row = prescription_for_activity(rows, activity_id, _safe(_day_runs))
         layer["prescription_for_run"] = run_row
 
         week_start = _safe(
