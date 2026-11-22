@@ -81,14 +81,16 @@ def _within_tolerance(target: float | None, actual: float | None) -> bool:
     return TOLERANCE_LOW * target <= actual <= TOLERANCE_HIGH * target
 
 
-def _pick_activity(
+def pick_activity(
     candidates: list[dict[str, Any]],
     target_km: float | None,
     target_minutes: float | None,
 ) -> dict[str, Any]:
     """Pick the activity that best matches a prescription on a multi-run day.
 
-    ``target_minutes`` is the expected duration with bookends already added
+    ``candidates`` are ``{activity_id, distance_km, duration_min}`` dicts,
+    longest first. ``target_minutes`` is the expected duration with bookends
+    already added
     (:func:`~garmin_mcp.analysis.prescription_shape.expected_minutes`).
 
     Prefers a candidate inside tolerance; otherwise falls back to the longest
@@ -100,6 +102,43 @@ def _pick_activity(
         ):
             return candidate
     return candidates[0]
+
+
+def fetch_day_runs(conn: Any, activity_date: str) -> list[dict[str, Any]]:
+    """The day's runs as :func:`pick_activity` candidates, longest first."""
+    rows = conn.execute(
+        "SELECT activity_id, total_distance_km, total_time_seconds FROM activities "
+        "WHERE activity_date = CAST(? AS DATE) "
+        "ORDER BY total_distance_km DESC NULLS LAST, activity_id",
+        [activity_date],
+    ).fetchall()
+    return [
+        {
+            "activity_id": int(activity_id),
+            "distance_km": distance_km,
+            "duration_min": time_seconds / 60.0 if time_seconds is not None else None,
+        }
+        for activity_id, distance_km, time_seconds in rows
+    ]
+
+
+def answering_activity_id(
+    row: dict[str, Any], day_runs: list[dict[str, Any]]
+) -> int | None:
+    """The run of the day that answers ``row`` (#1601).
+
+    The link reconciliation stored (``actual_activity_id``) wins; on a day not
+    reconciled yet (today, say) the same matcher picks it from ``day_runs``
+    (``{activity_id, distance_km, duration_min}``, longest first). ``None``
+    when the day has no run.
+    """
+    linked = row.get("actual_activity_id")
+    if linked is not None:
+        return int(linked)
+    if not day_runs:
+        return None
+    match = pick_activity(day_runs, row.get("target_km"), expected_minutes(row))
+    return int(match["activity_id"])
 
 
 def _load_strength_sessions(
@@ -207,7 +246,7 @@ def reconcile_prescriptions(
                     actual_activity_id = candidates[0]["activity_id"]
                 else:
                     target_minutes = expected_minutes(row)
-                    match = _pick_activity(
+                    match = pick_activity(
                         candidates, row.get("target_km"), target_minutes
                     )
                     actual_activity_id = match["activity_id"]
