@@ -972,7 +972,17 @@ def _segment(
         "pace_s_per_km": _round(duration / distance) if distance > 0 else None,
         "avg_hr": _weighted_hr(rows),
         "max_hr": _max_hr(rows),
+        # The terrain step of the attribution order needs elevation at the
+        # granularity the scenes are told in, not the whole-run total (#1627).
+        "elevation_gain_m": _summed(rows, "elevation_gain_m"),
+        "elevation_loss_m": _summed(rows, "elevation_loss_m"),
     }
+
+
+def _summed(rows: Sequence[Mapping[str, Any]], key: str) -> float | None:
+    """Sum of ``key`` over the rows that recorded it, 1 dp; ``None`` if none did."""
+    values = [v for v in (_as_float(row.get(key)) for row in rows) if v is not None]
+    return round(sum(values), 1) if values else None
 
 
 def _weighted_hr(rows: Sequence[Mapping[str, Any]]) -> float | int | None:
