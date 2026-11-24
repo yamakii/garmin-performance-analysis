@@ -233,7 +233,7 @@ def test_run_report_legacy_quality_misaligned_is_insufficient(
     assert band["status"] == "insufficient"
     assert band["on_plan"] is False
     assert band["verdict"] == "-"
-    assert band["target"] == "136-169 bpm"
+    assert band["target"] == "136-169 bpm（±2）"
     assert _check(report, "continuity")["status"] == "insufficient"
     # Intensity and volume decide the verdict; the unjudged axes do not.
     assert _check(report, "intensity")["on_plan"] is True
