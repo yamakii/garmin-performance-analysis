@@ -22,7 +22,8 @@ calibrated on one run):
   -> ``hr_band`` (``hr_band_2``, ... for further steps). A ramp-in of
   ``min(RAMP_IN_S, RAMP_IN_SHARE x step)`` is dropped from every iteration;
   the axis is on plan when at least :data:`BAND_IN_MIN` of the rest sat in
-  the band and at most :data:`BAND_ABOVE_MAX` above it.
+  the band and at most :data:`BAND_ABOVE_MAX` above it, the band widened by
+  :data:`BAND_EDGE_TOLERANCE_BPM` on both edges.
 - **Work steps shorter than** :data:`BAND_MIN_WORK_S` are never judged on HR
   (HR lags the effort): they are judged on completion, on the pace band when
   one is given and, for reps, on consistency (pace spread at most
@@ -84,6 +85,10 @@ RAMP_IN_SHARE = 0.3
 BAND_IN_MIN = 0.60
 #: ... and at most this share above it.
 BAND_ABOVE_MAX = 0.20
+#: A band is judged as ``[low - tol, high + tol]``: a 1-2 bpm excursion past
+#: an edge is HR and pacing granularity, not running off the prescription
+#: (#1618; the ceiling side has CEILING_AVG_TOLERANCE_BPM for the same reason).
+BAND_EDGE_TOLERANCE_BPM = 2
 
 # --- Ceilings --------------------------------------------------------------------
 #: Without a time series a segment's average HR may sit this far above its
@@ -441,7 +446,9 @@ def _ceiling_detail(
 def _band_axis(axis_id: str, entry: _Entry, ctx: _Context) -> AxisResult:
     low = int(entry.step["hr_low"])
     high = int(entry.step["hr_high"])
-    target = f"{low}-{high} bpm"
+    target = f"{low}-{high} bpm（±{BAND_EDGE_TOLERANCE_BPM}）"
+    judged_low = low - BAND_EDGE_TOLERANCE_BPM
+    judged_high = high + BAND_EDGE_TOLERANCE_BPM
     if ctx.insufficient:
         return _insufficient(axis_id, "心拍帯", target)
     if not entry.segments:
@@ -455,7 +462,7 @@ def _band_axis(axis_id: str, entry: _Entry, ctx: _Context) -> AxisResult:
         length = _prescribed_seconds(entry.step) or segment.duration_s
         ramp = min(RAMP_IN_S, RAMP_IN_SHARE * length)
         window = ctx.window(segment.start_s + ramp, segment.end_s, steady=False)
-        band = seconds_in_band(ctx.samples, window, low, high)
+        band = seconds_in_band(ctx.samples, window, judged_low, judged_high)
         detail: dict[str, Any] = {
             "segment_id": segment.segment_id,
             "label": _segment_label(segment),
@@ -472,7 +479,7 @@ def _band_axis(axis_id: str, entry: _Entry, ctx: _Context) -> AxisResult:
             detail["on_plan"] = _band_on_plan(band["pct_in"], band["pct_above"])
         elif segment.avg_hr is not None:
             fallback_judged = True
-            in_band = low <= segment.avg_hr <= high
+            in_band = judged_low <= segment.avg_hr <= judged_high
             fallback_off = fallback_off or not in_band
             detail["actual"] = f"平均 {segment.avg_hr:.0f} bpm"
             detail["on_plan"] = in_band

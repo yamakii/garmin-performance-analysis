@@ -208,6 +208,78 @@ def test_cruise_three_of_four_reps() -> None:
     assert axes["reps"].actual.startswith("3/4")
 
 
+# --- band edge tolerance (#1618) --------------------------------------------------
+
+
+def _tempo_structure() -> Structure:
+    return _structure(
+        [
+            WU10,
+            {"step_type": "run", "duration_minutes": 20, "hr_low": 155, "hr_high": 162},
+            CD5,
+        ]
+    )
+
+
+def _tempo_run(
+    body_hr: Callable[[int], float],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    splits = _laps(
+        [
+            (0, "WARMUP", 1.6, 600.0, 140.0),
+            (1, "ACTIVE", 3.7, 1200.0, 163.0),
+            (2, "COOLDOWN", 0.7, 300.0, 140.0),
+        ]
+    )
+
+    def hr(t: int) -> float:
+        if t < 600 or t >= 1800:
+            return 140.0
+        return body_hr(t - 600)
+
+    return splits, _trace(2100, hr)
+
+
+@pytest.mark.unit
+def test_band_overshoot_within_tolerance_on_plan() -> None:
+    # 1-2 bpm over a 155-162 band for the whole 20 min (the #1618 run).
+    splits, samples = _tempo_run(lambda t: 163.0 if t % 2 else 164.0)
+
+    band = _axes(_tempo_structure(), splits, samples=samples)["hr_band"]
+
+    assert band.status == "on_plan"
+    assert "帯内 100%" in band.actual
+    assert band.target == "155-162 bpm（±2）"
+
+
+@pytest.mark.unit
+def test_band_overshoot_beyond_tolerance_off_plan() -> None:
+    splits, samples = _tempo_run(lambda t: 166.0)
+
+    band = _axes(_tempo_structure(), splits, samples=samples)["hr_band"]
+
+    assert band.status == "off_plan"
+    assert "上 100%" in band.actual
+
+
+@pytest.mark.unit
+def test_band_fallback_avg_within_tolerance_on_plan() -> None:
+    def laps(body_avg: float) -> list[dict[str, Any]]:
+        return _laps(
+            [
+                (0, "WARMUP", 1.6, 600.0, 140.0),
+                (1, "ACTIVE", 3.7, 1200.0, body_avg),
+                (2, "COOLDOWN", 0.7, 300.0, 140.0),
+            ]
+        )
+
+    within = _axes(_tempo_structure(), laps(164.0))["hr_band"]
+    beyond = _axes(_tempo_structure(), laps(166.0))["hr_band"]
+
+    assert within.status == "on_plan"
+    assert beyond.status == "off_plan"
+
+
 # --- VO2 max reps -----------------------------------------------------------------
 
 
@@ -411,7 +483,7 @@ def test_distance_band_step_listed_when_misaligned() -> None:
     )
 
     assert axes["hr_band"].status == "insufficient"
-    assert axes["hr_band"].target == "136-169 bpm"
+    assert axes["hr_band"].target == "136-169 bpm（±2）"
 
 
 # --- strides ----------------------------------------------------------------------
