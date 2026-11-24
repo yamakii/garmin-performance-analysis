@@ -116,15 +116,27 @@ def _ladder_steps(block: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(steps, key=lambda s: str(s["week_start"]))
 
 
-def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:
+def _step_view(
+    step: dict[str, Any] | None, *, with_note: bool = False
+) -> dict[str, Any] | None:
+    """One ladder step as the standing ships it.
+
+    ``with_note`` adds the step's ``note``: where the plan says what each
+    session of the week is for and what decides what. Without it a reader sees
+    only the block's one-line purpose and fills in the meaning itself (#1613).
+    """
     if step is None:
         return None
     target_km = step.get("target_km")
-    return {
+    view: dict[str, Any] = {
         "week_start": str(step.get("week_start")),
         "target_km": float(target_km) if target_km is not None else None,
         "kind": step.get("kind"),
     }
+    if with_note:
+        note = step.get("note")
+        view["note"] = (note.strip() or None) if isinstance(note, str) else None
+    return view
 
 
 def _current_step_index(steps: list[dict[str, Any]], on_date: date) -> int | None:
@@ -163,8 +175,8 @@ def _block_view(block: dict[str, Any], on_date: date) -> dict[str, Any]:
         "phase": block.get("phase"),
         "purpose": block.get("purpose"),
         "week_position": week_position,
-        "current_step": _step_view(current),
-        "next_step": _step_view(next_step),
+        "current_step": _step_view(current, with_note=True),
+        "next_step": _step_view(next_step, with_note=True),
     }
 
 

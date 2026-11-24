@@ -84,6 +84,7 @@ def test_block_and_steps_for_date() -> None:
         "week_start": "2025-12-29",
         "target_km": 16.0,
         "kind": "build",
+        "note": None,
     }
     assert view["next_step"]["week_start"] == "2026-01-05"
     assert [s["week_start"] for s in result["remaining_steps"]] == [
@@ -91,6 +92,53 @@ def test_block_and_steps_for_date() -> None:
         "2026-01-12",
     ]
     assert MISSING_NO_BLOCK not in result["missing"]
+
+
+def _noted_block() -> dict[str, Any]:
+    return {
+        "phase": "build",
+        "title": "Half build",
+        "purpose": "the 30 km is the material for the race gate",
+        "start_date": "2025-12-22",
+        "end_date": "2026-01-18",
+        "long_run_ladder": [
+            {"week_start": "2025-12-22", "target_km": 14.0, "kind": "build"},
+            {
+                "week_start": "2025-12-29",
+                "target_km": 16.0,
+                "kind": "build",
+                "note": "  火=20分持続  ",
+            },
+            {
+                "week_start": "2026-01-05",
+                "target_km": 12.0,
+                "kind": "cutback",
+                "note": "火=5分×4",
+            },
+            {
+                "week_start": "2026-01-12",
+                "target_km": 18.0,
+                "kind": "build",
+                "note": "日=18km",
+            },
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_current_and_next_step_carry_note() -> None:
+    result = _standing(on_date="2026-01-01", goals=[_goal()], blocks=[_noted_block()])
+
+    assert result["block"]["current_step"]["note"] == "火=20分持続"
+    assert result["block"]["next_step"]["note"] == "火=5分×4"
+
+
+@pytest.mark.unit
+def test_remaining_steps_omit_note() -> None:
+    result = _standing(on_date="2026-01-01", goals=[_goal()], blocks=[_noted_block()])
+
+    assert result["remaining_steps"]
+    assert all("note" not in step for step in result["remaining_steps"])
 
 
 @pytest.mark.unit
