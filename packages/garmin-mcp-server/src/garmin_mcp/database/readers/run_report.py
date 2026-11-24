@@ -231,6 +231,13 @@ _GOAL_USER_ID = "default"
 # covers the current week plus the next one the plan has been written for.
 _NEXT_SESSION_HORIZON_DAYS = 14
 
+# A prescribed quality session counts as that session for ``vs_previous`` only
+# when the run reached the intensity (#1615): at least this share of its time in
+# Garmin zone 3 or above. 10/27's cruise intervals (Z3+ 67.5 %) count; 11/17's
+# threshold day run easy (Z3+ 13 %) does not.
+QUALITY_FAMILIES: frozenset[str] = frozenset({"tempo", "threshold", "vo2max"})
+QUALITY_DELIVERED_Z3_PLUS_MIN_PCT = 25.0
+
 # Share of a run that has to have delivered its purpose before its pace may be
 # quoted back as the next run's reference (#1341). Under half, the run has no
 # pace worth repeating and the target is written in heart rate alone.
@@ -558,7 +565,11 @@ class RunReportReader(BaseDBReader):
             # What the athlete said about the run (#1522): a stated load or
             # commute explains its signals before form is blamed.
             "athlete_context": collect_athlete_context(str(self.db_path), activity_id),
-            "vs_previous": _vs_previous(today, history),
+            "vs_previous": _vs_previous(
+                today,
+                history,
+                self._session_families(runs, window_start, activity_date),
+            ),
             # Which sensors measured the run, and how each metric came to be
             # (#1523): a device-derived number confirms nothing about the
             # inputs it was derived from.
@@ -604,6 +615,64 @@ class RunReportReader(BaseDBReader):
         with self._get_connection() as conn:
             day_runs = fetch_day_runs(conn, activity_date)
         return prescription_for_activity(rows, activity_id, day_runs)
+
+    def _session_families(
+        self,
+        runs: dict[int, dict[str, Any]],
+        window_start: str,
+        activity_date: str,
+    ) -> dict[int, dict[str, Any]]:
+        """``{activity_id: {"family", "title"}}`` for delivered quality sessions.
+
+        Garmin files a prescribed quality session by its whole-run average, so
+        a Z3 block between a warmup and a cooldown reads as ``aerobic_base`` and
+        the next threshold run found no previous one (#1615). A run that
+        answers a tempo / threshold / interval prescription *and* spent at least
+        :data:`QUALITY_DELIVERED_Z3_PLUS_MIN_PCT` of its time in Garmin zone 3
+        or above counts as that session; a prescribed session run easy (11/17:
+        Z3+ 13 %) does not. Runs without such a prescription are absent and
+        keep their intensity family.
+
+        The import is function-local because this module is imported *while*
+        the ``readers`` package is still initialising.
+        """
+        from garmin_mcp.database.readers.plan import PlanReader
+
+        try:
+            rows = PlanReader(str(self.db_path)).list_prescriptions(
+                window_start, activity_date
+            )
+        except Exception as exc:  # pragma: no cover - degraded DB only
+            logger.debug("no prescriptions for session families: %s", exc)
+            return {}
+        by_date: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            if _prescribed_quality_family(row) is not None:
+                by_date.setdefault(str(row.get("date")), []).append(row)
+        if not by_date:
+            return {}
+
+        sessions: dict[int, dict[str, Any]] = {}
+        with self._get_connection() as conn:
+            for day, day_rows in by_date.items():
+                on_day = [
+                    run for run in runs.values() if str(run["activity_date"]) == day
+                ]
+                if not on_day:
+                    continue
+                day_runs = fetch_day_runs(conn, day)
+                for run in on_day:
+                    activity_id = int(run["activity_id"])
+                    answered = prescription_for_activity(
+                        day_rows, activity_id, day_runs
+                    )
+                    family = _delivered_family(answered, run)
+                    if family is not None and answered is not None:
+                        sessions[activity_id] = {
+                            "family": family,
+                            "title": answered.get("title"),
+                        }
+        return sessions
 
     def _signals(
         self, today: dict[str, Any], history: list[dict[str, Any]]
@@ -899,6 +968,12 @@ def _fetch_window(
             if target is None:
                 continue
             target["training_type"] = row[1]
+            upper_zones = [_as_float(value) for value in row[5:8]]
+            target["z3_plus_pct"] = (
+                None
+                if all(value is None for value in upper_zones)
+                else round(sum(value or 0.0 for value in upper_zones), 1)
+            )
             target["intensity_category"] = resolve_intensity_category(
                 row[1],
                 _as_float(row[3]) or 0.0,
@@ -2505,27 +2580,90 @@ def _classify_terrain(
     return "mountainous"
 
 
-def _vs_previous(
-    today: dict[str, Any], history: list[dict[str, Any]]
-) -> dict[str, Any] | None:
-    """Delta chips against the previous run of the same intensity family.
+def _prescribed_quality_family(row: Mapping[str, Any] | None) -> str | None:
+    """The quality family a prescription asks for, or ``None`` for easy work."""
+    if not row:
+        return None
+    session_type = str(row.get("session_type") or "").strip().lower()
+    if not session_type:
+        return None
+    family = resolve_intensity_category(session_type, 0.0, 0.0, 0.0, 0.0, 0.0, None)
+    return family if family in QUALITY_FAMILIES else None
 
-    A metric the pair cannot be compared on (another sensor, a stated load,
-    #1523) is dropped, and ``comparability`` says which and why. Only each
-    day's longest same-family run can be "the previous run", so a fragment
-    recorded after a run never is (#1608).
+
+def _delivered_family(
+    row: Mapping[str, Any] | None, run: Mapping[str, Any]
+) -> str | None:
+    """The prescribed quality family, when the run actually reached it (#1615)."""
+    family = _prescribed_quality_family(row)
+    if family is None:
+        return None
+    share = _as_float(run.get("z3_plus_pct"))
+    if share is None or share < QUALITY_DELIVERED_Z3_PLUS_MIN_PCT:
+        return None
+    return family
+
+
+def _vs_previous(
+    today: dict[str, Any],
+    history: list[dict[str, Any]],
+    sessions: Mapping[int, Mapping[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Delta chips against the previous run of the same kind.
+
+    The kind is the delivered prescribed session when there is one
+    (:meth:`RunReportReader._session_families`, #1615), else the intensity
+    family. A metric the pair cannot be compared on (another sensor, a stated
+    load, #1523) is dropped, and ``comparability`` says which and why. Only
+    each day's longest same-kind run can be "the previous run", so a fragment
+    recorded after a run never is (#1608). ``conditions`` sets the two runs'
+    temperature, HR sensor and zone-3+ share side by side, and
+    ``previous_session_title`` names what the previous run was prescribed as.
     """
-    family = today.get("intensity_category")
-    same_family = _day_main_runs(
-        [run for run in history if run.get("intensity_category") == family]
-    )
+    sessions = sessions or {}
+
+    def kind(run: Mapping[str, Any]) -> Any:
+        session = sessions.get(int(run["activity_id"]))
+        return session["family"] if session else run.get("intensity_category")
+
+    family = kind(today)
+    same_family = _day_main_runs([run for run in history if kind(run) == family])
     previous = same_family[-1] if same_family else None
     if previous is None:
         return None
     deltas = compute_vs_previous(_comparable(today), _comparable(previous))
     if deltas is None:
         return None
-    return drop_excluded(deltas, assess(today, previous))
+    result = drop_excluded(deltas, assess(today, previous))
+    previous_session = sessions.get(int(previous["activity_id"]))
+    result["previous_session_title"] = (
+        previous_session.get("title") if previous_session else None
+    )
+    result["conditions"] = _pair_conditions(today, previous)
+    return result
+
+
+def _pair_conditions(
+    today: Mapping[str, Any], previous: Mapping[str, Any]
+) -> dict[str, Any]:
+    """What differs between the pair beyond the compared metrics (#1615)."""
+
+    def pair(key: str) -> dict[str, Any]:
+        current = _round(_as_float(today.get(key)))
+        before = _round(_as_float(previous.get(key)))
+        delta = (
+            None if current is None or before is None else round(current - before, 1)
+        )
+        return {"current": current, "previous": before, "delta": delta}
+
+    return {
+        "temp_c": pair("temp_celsius"),
+        "hr_source": {
+            "current": today.get("hr_source"),
+            "previous": previous.get("hr_source"),
+        },
+        "z3_plus_pct": pair("z3_plus_pct"),
+    }
 
 
 def _comparable(run: dict[str, Any]) -> dict[str, Any]:
