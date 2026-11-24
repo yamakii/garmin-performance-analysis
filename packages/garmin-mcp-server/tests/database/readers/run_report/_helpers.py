@@ -73,6 +73,7 @@ def _seed_run(
     hr_drift: float = 3.0,
     n_splits: int = 5,
     split_hr: int = 140,
+    zone_pcts: tuple[float, float, float, float, float] = (15.0, 80.0, 5.0, 0.0, 0.0),
 ) -> None:
     """Insert one complete run: activity, form, trends, zones split rows.
 
@@ -108,9 +109,9 @@ def _seed_run(
                 activity_id, primary_zone, training_type,
                 zone1_percentage, zone2_percentage, zone3_percentage,
                 zone4_percentage, zone5_percentage
-            ) VALUES (?, 'Zone 2', ?, 15.0, 80.0, 5.0, 0.0, 0.0)
+            ) VALUES (?, 'Zone 2', ?, ?, ?, ?, ?, ?)
             """,
-            [activity_id, training_type],
+            [activity_id, training_type, *zone_pcts],
         )
         conn.execute(
             """
