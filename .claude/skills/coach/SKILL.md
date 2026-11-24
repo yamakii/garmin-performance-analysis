@@ -12,7 +12,7 @@ argument-hint: [question]
 ## Step 1: 準備（1 回の ToolSearch でまとめてロード）
 
 ```
-ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save_coaching_rule,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__get_db_catalog,mcp__garmin-db__query_db,mcp__garmin-db__export")
+ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__get_current_standing,mcp__garmin-db__get_athlete_profile,mcp__garmin-db__get_weekly_prescriptions,mcp__garmin-db__get_activity_context,mcp__garmin-db__save_activity_context,mcp__garmin-db__get_activity_by_date,mcp__garmin-db__get_run_report,mcp__garmin-db__get_acwr,mcp__garmin-db__get_load_trend,mcp__garmin-db__get_gear_wear,mcp__garmin-db__get_race_readiness,mcp__garmin-db__get_db_catalog,mcp__garmin-db__query_db,mcp__garmin-db__export")
 ```
 
 ## Step 2: 答える前に必ず読む（同じターンで並列）
@@ -34,5 +34,4 @@ ToolSearch(query="select:mcp__garmin-db__get_coaching_rules,mcp__garmin-db__save
 - 走者が条件や方針を示していれば、それを前提に答え、別案で置き換えない。聞かれていない解決策（やり方の手当て）や代案は付け足さない。見方の角度を広げるのはこれに当たらない
 - データが無いことは「分からない」と言う（実績の範囲の外側を推測で言い切らない）
 - 冒頭で結論か自分の見方を述べ、根拠には出典を付ける（表は比べる数字があるときだけ）。質問は最大 1 つで、データで答えが出ないときだけ
-- コーチの仕方についての指示を受けたら `save_coaching_rule(scope, rule_text, rationale?)` で黙って保存し、一行だけ添える
 - 処方・ブロック計画を変えると決まったら、ここでは保存せず `/weekly-review`（版のペア更新）か `/plan-block` に渡す。Garmin への登録は `/schedule-workout`
