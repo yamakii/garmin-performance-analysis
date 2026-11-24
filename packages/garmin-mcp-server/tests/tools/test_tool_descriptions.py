@@ -31,3 +31,16 @@ def test_every_tool_description_is_substantive() -> None:
         if len(tool.description or "") < _MIN_DESCRIPTION_CHARS
     ]
     assert short == []
+
+
+@pytest.mark.unit
+def test_save_coaching_rule_description_requires_explicit_request() -> None:
+    """A correction must not turn into a standing rule (#1619)."""
+    description = next(
+        tool.description or ""
+        for tool in get_tool_definitions()
+        if tool.name == "save_coaching_rule"
+    )
+
+    assert "explicitly asks" in description
+    assert "corrects something" not in description

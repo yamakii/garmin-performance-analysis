@@ -1098,7 +1098,7 @@
   },
   {
     "name": "save_coaching_rule",
-    "description": "Store a coaching rule that applies only to this athlete (a preference, a correction, an incident-derived read) in the local DB. coaching_rules holds athlete-specific rules that must not be written into the repository (rules, agents, skills or code). Write it silently when the athlete states or corrects something; never ask them to keep a log. scope picks where it applies (all / conversation / run_note / checkin / debrief / planning); rule_text is the instruction (1-400 chars), rationale the background (never shown as advice). Returns {status, rule_id, scope}.",
+    "description": "Store a standing coaching rule that applies only to this athlete in the local DB. coaching_rules holds athlete-specific rules that must not be written into the repository (rules, agents, skills or code). Call it only when the athlete explicitly asks to keep an instruction as a standing rule: a correction of one answer is not a rule (fix the cause instead), and a stated run circumstance goes to save_activity_context. scope picks where it applies (all / conversation / run_note / checkin / debrief / planning); rule_text is the instruction (1-400 chars), rationale the background (never shown as advice). Returns {status, rule_id, scope}.",
     "inputSchema": {
       "type": "object",
       "properties": {
