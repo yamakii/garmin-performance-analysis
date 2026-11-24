@@ -1260,7 +1260,7 @@ def _fetch_splits(
         SELECT activity_id, split_index, distance, pace_seconds_per_km,
                heart_rate, max_heart_rate, cadence, elevation_gain,
                role_phase, intensity_type, start_time_s, end_time_s,
-               duration_seconds, {step_index}
+               duration_seconds, {step_index}, elevation_loss
         FROM splits WHERE activity_id IN ({placeholders})
         ORDER BY activity_id, split_index
         """,
@@ -1284,6 +1284,7 @@ def _fetch_splits(
                 "end_s": _as_float(row[11]),
                 "duration_s": _as_float(row[12]),
                 "workout_step_index": _as_int(row[13]),
+                "elevation_loss_m": _as_float(row[14]),
             }
         )
     return splits
