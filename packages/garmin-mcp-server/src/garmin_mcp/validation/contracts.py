@@ -110,8 +110,9 @@ _CONTRACTS: dict[str, dict[str, Any]] = {
             "A cause the report does not carry -- a drink, a traffic light, how "
             "the legs felt -- filled in to explain a scene",
             "A cause named without the comparison it rests on -- say what was "
-            "compared and that the earlier causes in the attribution order did "
-            "not explain it",
+            "compared and, for each earlier cause in the attribution order, "
+            "whether that comparison rules it out or cannot separate it; a "
+            "cause the data cannot rule out is not excluded",
             "A conclusion drawn from a label alone -- a scene's kind, its "
             "policy.verdict or a headline flag label -- without reading the "
             "facts behind it",
