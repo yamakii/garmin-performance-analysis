@@ -84,6 +84,7 @@ def test_block_and_steps_for_date() -> None:
         "week_start": "2025-12-29",
         "target_km": 16.0,
         "kind": "build",
+        "hr_ceiling": None,
         "note": None,
     }
     assert view["next_step"]["week_start"] == "2026-01-05"
@@ -139,6 +140,50 @@ def test_remaining_steps_omit_note() -> None:
 
     assert result["remaining_steps"]
     assert all("note" not in step for step in result["remaining_steps"])
+
+
+@pytest.mark.unit
+def test_steps_carry_hr_ceiling() -> None:
+    block = {
+        "phase": "build",
+        "title": "Marathon build",
+        "purpose": "long runs with MP finishes",
+        "start_date": "2025-12-22",
+        "end_date": "2026-01-25",
+        "long_run_ladder": [
+            {
+                "week_start": "2025-12-29",
+                "target_km": 30.0,
+                "kind": "hold",
+                "hr_ceiling": 150,
+            },
+            {
+                "week_start": "2026-01-05",
+                "target_km": 26.0,
+                "kind": "hold",
+                "hr_ceiling": 158,
+            },
+            {
+                "week_start": "2026-01-12",
+                "target_km": 24.0,
+                "kind": "taper",
+                "hr_ceiling": 158,
+            },
+            {
+                "week_start": "2026-01-19",
+                "target_km": 42.195,
+                "kind": "race",
+                "hr_ceiling": 161,
+            },
+        ],
+    }
+    goal = _goal(race_date="2026-01-25", distance_km=42.195, target_time_seconds=16200)
+
+    result = _standing(on_date="2026-01-01", goals=[goal], blocks=[block])
+
+    assert result["block"]["current_step"]["hr_ceiling"] == 150
+    assert result["block"]["next_step"]["hr_ceiling"] == 158
+    assert [s["hr_ceiling"] for s in result["remaining_steps"]] == [158, 158, 161]
 
 
 @pytest.mark.unit
