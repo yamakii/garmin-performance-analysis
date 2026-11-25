@@ -134,6 +134,49 @@ def test_reevaluate_eligibility_includes_other_years(db_path: Path) -> None:
     assert activity_id in ids
 
 
+@pytest.mark.integration
+def test_reevaluate_eligibility_needs_a_model_for_the_run_sensor(
+    db_path: Path,
+) -> None:
+    """Eligible only when a baseline exists for the run's own sensor (#1631);
+    --start-date / --end-date narrow the list."""
+    pod_id, wrist_id, null_id, later_id = 90260101, 90260102, 90260103, 90260104
+    with get_write_connection(db_path) as conn:
+        for activity_id, day, source in (
+            (pod_id, "2026-03-10", "pod"),
+            (wrist_id, "2026-03-11", "wrist"),
+            (null_id, "2026-03-12", None),
+            (later_id, "2026-03-25", "wrist"),
+        ):
+            _insert_activity(conn, activity_id, day)
+            conn.execute(
+                "UPDATE activities SET dynamics_source = ? WHERE activity_id = ?",
+                (source, activity_id),
+            )
+            _insert_split_with_form(conn, activity_id)
+        # Only wrist and legacy 'all' baselines exist: no pod model.
+        for history_id, source in ((92601001, "wrist"), (92601002, "all")):
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history (
+                    history_id, user_id, condition_group, dynamics_source,
+                    metric, period_start, period_end
+                ) VALUES (?, 'default', 'flat_road', ?, 'gct',
+                          '2026-03-01', '2026-03-31')
+                """,
+                (history_id, source),
+            )
+
+    ids = [aid for aid, _ in get_activities_to_reevaluate(str(db_path))]
+    assert pod_id not in ids
+    assert {wrist_id, null_id, later_id} <= set(ids)
+
+    narrowed = get_activities_to_reevaluate(
+        str(db_path), start_date="2026-03-11", end_date="2026-03-20"
+    )
+    assert [aid for aid, _ in narrowed] == [wrist_id, null_id]
+
+
 # ---------------------------------------------------------------------------
 # find_missing_form_evaluations
 # ---------------------------------------------------------------------------

@@ -65,10 +65,12 @@ def calculate_power_efficiency_internal(
     user_id: str = "default",
     condition_group: str = "flat_road",
     form_penalties: dict | None = None,
+    dynamics_source: str = "all",
 ) -> dict | None:
     """Calculate power efficiency (internal function, no DB write).
 
     Args:
+        dynamics_source: Sensor whose power baseline row is read (#1631)
         conn: DuckDB connection
         activity_id: Activity ID
         activity_date: Activity date (YYYY-MM-DD)
@@ -108,12 +110,13 @@ def calculate_power_efficiency_internal(
             FROM form_baseline_history
             WHERE user_id = ?
               AND condition_group = ?
+              AND dynamics_source = ?
               AND metric = 'power'
               AND period_start <= ?
             ORDER BY period_end DESC
             LIMIT 1
             """,
-            [user_id, condition_group, activity_date],
+            [user_id, condition_group, dynamics_source, activity_date],
         ).fetchone()
 
         if not baseline:

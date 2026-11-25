@@ -2,7 +2,8 @@
 """Backfill script for form_baseline_history.
 
 This script trains form baseline models for all months in a specified date range
-by calling train_form_baselines_monthly.py for each month.
+by calling train_form_baselines_monthly.py for each month that has runs
+(2020-12 onward, the RD pod era), one model set per dynamics sensor.
 
 Usage:
     uv run python -m garmin_mcp.scripts.backfill_baseline_history.py --start-date 2023-01 --end-date 2025-10
@@ -22,6 +23,7 @@ Examples:
 import argparse
 import subprocess
 import sys
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -49,30 +51,41 @@ def parse_year_month(year_month_str: str) -> datetime:
 
 
 def generate_month_range(start_date: datetime, end_date: datetime) -> list[str]:
-    """Generate list of YYYY-MM strings for months in range (2021 and 2025+).
+    """Generate list of YYYY-MM strings for every month in range.
+
+    The RD pod era starts in 2020-12, so no year is skipped; months without runs
+    are dropped later by :func:`months_with_runs` once a database is at hand.
 
     Args:
         start_date: Start month (inclusive)
         end_date: End month (inclusive)
 
     Returns:
-        List of month strings in YYYY-MM format (filtered to 2021 and 2025+).
-        Gap years (2022-2024) are excluded since no activity data exists.
+        List of month strings in YYYY-MM format.
 
     Example:
         >>> generate_month_range(datetime(2025, 12, 1), datetime(2026, 2, 1))
-        ['2025-12', '2026-01', '2026-02']  # 2025+ months
+        ['2025-12', '2026-01', '2026-02']
     """
     months = []
     current = start_date
 
     while current <= end_date:
-        # Only include months from 2021 or 2025 onward
-        if current.year == 2021 or current.year >= 2025:
-            months.append(current.strftime("%Y-%m"))
+        months.append(current.strftime("%Y-%m"))
         current += relativedelta(months=1)
 
     return months
+
+
+def months_with_runs(db_path: str) -> set[str]:
+    """Months (YYYY-MM) that contain at least one activity."""
+    from garmin_mcp.database.connection import get_connection
+
+    with get_connection(db_path) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT strftime(activity_date, '%Y-%m') FROM activities"
+        ).fetchall()
+    return {str(row[0]) for row in rows if row[0]}
 
 
 def train_month(
@@ -82,6 +95,7 @@ def train_month(
     min_samples: int,
     verbose: bool,
     dry_run: bool,
+    dynamics_sources: Sequence[str] | None = None,
 ) -> bool:
     """Train form baseline models for a single month.
 
@@ -92,6 +106,8 @@ def train_month(
         min_samples: Minimum number of samples required
         verbose: Enable verbose output
         dry_run: If True, only print command without executing
+        dynamics_sources: Sensors to train; ``None`` leaves the monthly CLI's
+            default (pod and wrist)
 
     Returns:
         True if training succeeded, False otherwise
@@ -111,6 +127,9 @@ def train_month(
         "--min-samples",
         str(min_samples),
     ]
+
+    if dynamics_sources:
+        cmd.extend(["--dynamics-source", *dynamics_sources])
 
     if verbose:
         cmd.append("--verbose")
@@ -171,6 +190,12 @@ def main() -> int:
         help="Minimum number of samples required (default: 50)",
     )
     parser.add_argument(
+        "--dynamics-source",
+        nargs="+",
+        default=["pod", "wrist"],
+        help="Dynamics sensor(s) to train a model for (default: pod wrist)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output",
@@ -222,6 +247,9 @@ def main() -> int:
 
     # Generate month range
     months = generate_month_range(start_date, end_date)
+    if not args.dry_run:
+        with_runs = months_with_runs(args.db_path)
+        months = [m for m in months if m in with_runs]
 
     print(
         f"Backfilling {len(months)} months: {args.start_date} to {end_date.strftime('%Y-%m')}"
@@ -244,6 +272,7 @@ def main() -> int:
             min_samples=args.min_samples,
             verbose=args.verbose,
             dry_run=args.dry_run,
+            dynamics_sources=args.dynamics_source,
         )
 
         if success:

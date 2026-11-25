@@ -316,12 +316,22 @@ def _linear_model_type(model: LinearModel) -> str:
     return "linear_flat" if model.degenerate else "linear"
 
 
+def _sensor_clause(dynamics_source: str) -> str:
+    """SQL predicate restricting splits to one sensor (none for ``'all'``)."""
+    return "" if dynamics_source == "all" else "AND a.dynamics_source = ?"
+
+
+def _sensor_params(dynamics_source: str) -> list[str]:
+    return [] if dynamics_source == "all" else [dynamics_source]
+
+
 def train_power_efficiency_baseline(
     user_id: str = "default",
     condition_group: str = "flat_road",
     end_date: str | None = None,
     window_months: int = 2,
     db_path: str | None = None,
+    dynamics_source: str = "all",
 ) -> dict | None:
     """Train power efficiency baseline model.
 
@@ -333,6 +343,8 @@ def train_power_efficiency_baseline(
         end_date: End date (YYYY-MM-DD). If None, uses today
         window_months: Training window in months (default: 2)
         db_path: Database path. If None, uses GARMIN_DATA_DIR
+        dynamics_source: Sensor whose runs form the training population
+            (``activities.dynamics_source``); ``'all'`` mixes every sensor
 
     Returns:
         Dict with trained model or None if insufficient data
@@ -392,10 +404,17 @@ def train_power_efficiency_baseline(
                   AND s.grade_adjusted_speed > 1.5
                   AND s.grade_adjusted_speed < 7.0
                   AND {running_split_sql("s")}
+                  {_sensor_clause(dynamics_source)}
             """
 
             result = conn.execute(
-                query, [period_start, period_end, *running_split_params()]
+                query,
+                [
+                    period_start,
+                    period_end,
+                    *running_split_params(),
+                    *_sensor_params(dynamics_source),
+                ],
             ).fetchall()
 
             if len(result) < 10:
@@ -429,6 +448,7 @@ def train_power_efficiency_baseline(
                     history_id,
                     user_id,
                     condition_group,
+                    dynamics_source,
                     metric,
                     model_type,
                     period_start,
@@ -437,8 +457,8 @@ def train_power_efficiency_baseline(
                     power_a,
                     power_b,
                     power_rmse
-                ) VALUES (nextval('form_baseline_history_seq'), ?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+                ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, 'power', 'linear', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (user_id, condition_group, dynamics_source, metric, period_start, period_end)
                 DO UPDATE SET
                     model_type = EXCLUDED.model_type,
                     n_samples = EXCLUDED.n_samples,
@@ -449,6 +469,7 @@ def train_power_efficiency_baseline(
                 [
                     user_id,
                     condition_group,
+                    dynamics_source,
                     period_start,
                     period_end,
                     len(power_wkg_values),
@@ -483,6 +504,8 @@ def train_form_baselines(
     window_months: int = 2,
     db_path: str | None = None,
     min_samples: int = 50,
+    dynamics_source: str = "all",
+    max_window_months: int = 6,
 ) -> dict[str, Any] | None:
     """Train all form baselines (GCT, VO, VR, cadence, Power) with rolling window.
 
@@ -504,6 +527,13 @@ def train_form_baselines(
         min_samples: Minimum number of samples required, both before and after
             outlier removal (default: 50). Below this the window is skipped and
             None is returned.
+        dynamics_source: ``activities.dynamics_source`` whose splits are fitted
+            (``'pod'`` / ``'wrist'`` / ...); ``'all'`` mixes every sensor (the
+            legacy behaviour).
+        max_window_months: A sensor with fewer than ``min_samples`` in the
+            ``window_months`` window is widened one month at a time up to this
+            many months; ``period_start`` records the window actually used.
+            Ignored for ``'all'``.
 
     Returns:
         Dict with trained models or None if insufficient data
@@ -536,61 +566,88 @@ def train_form_baselines(
     else:
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
-    # Calculate period_start: 2 months before (60 days)
-    start_dt = end_dt - relativedelta(months=window_months) + relativedelta(days=1)
-    period_start = start_dt.strftime("%Y-%m-%d")
     period_end = end_dt.strftime("%Y-%m-%d")
+
+    # Query with date filter. The running-split predicate (walk breaks + GPS
+    # fragments) is shared with the evaluation side so the models are applied
+    # to the same population they were fitted on (#878); it drops 5-11 m
+    # manual-lap fragments whose pace is a measurement artifact and would
+    # otherwise invert the cadence slope (#873).
+    query = f"""
+    SELECT
+        s.pace_seconds_per_km,
+        s.ground_contact_time,
+        s.vertical_oscillation,
+        s.vertical_ratio,
+        s.stride_length,
+        s.cadence
+    FROM splits s
+    JOIN activities a ON s.activity_id = a.activity_id
+    WHERE s.ground_contact_time IS NOT NULL
+      AND s.vertical_oscillation IS NOT NULL
+      AND s.vertical_ratio IS NOT NULL
+      AND a.activity_date >= ?
+      AND a.activity_date <= ?
+      AND {running_split_sql("s")}
+      {_sensor_clause(dynamics_source)}
+    """
+
+    # A single sensor's window may be thin (e.g. the wrist while the pod was in
+    # use), so widen it one month at a time. Sensors are never mixed to make up
+    # the count; 'all' is the legacy mixed model and keeps one fixed window.
+    last_window = (
+        window_months
+        if dynamics_source == "all"
+        else max(window_months, max_window_months)
+    )
 
     # Connect to database
     from garmin_mcp.database.connection import get_write_connection
 
     try:
         with get_write_connection(db_path) as conn:
-            # Query with date filter for 2-month window. The running-split
-            # predicate (walk breaks + GPS fragments) is shared with the
-            # evaluation side so the models are applied to the same population
-            # they were fitted on (#878); it drops 5-11 m manual-lap fragments
-            # whose pace is a measurement artifact and would otherwise invert
-            # the cadence slope (#873).
-            query = f"""
-            SELECT
-                s.pace_seconds_per_km,
-                s.ground_contact_time,
-                s.vertical_oscillation,
-                s.vertical_ratio,
-                s.stride_length,
-                s.cadence
-            FROM splits s
-            JOIN activities a ON s.activity_id = a.activity_id
-            WHERE s.ground_contact_time IS NOT NULL
-              AND s.vertical_oscillation IS NOT NULL
-              AND s.vertical_ratio IS NOT NULL
-              AND a.activity_date >= ?
-              AND a.activity_date <= ?
-              AND {running_split_sql("s")}
-        """
+            df_clean = None
+            period_start = ""
+            effective_window = window_months
+            for effective_window in range(window_months, last_window + 1):
+                start_dt = (
+                    end_dt
+                    - relativedelta(months=effective_window)
+                    + relativedelta(days=1)
+                )
+                period_start = start_dt.strftime("%Y-%m-%d")
 
-            df = conn.execute(
-                query, [period_start, period_end, *running_split_params()]
-            ).df()
+                df = conn.execute(
+                    query,
+                    [
+                        period_start,
+                        period_end,
+                        *running_split_params(),
+                        *_sensor_params(dynamics_source),
+                    ],
+                ).df()
 
-            if len(df) < min_samples:
-                # Insufficient data
-                return None
+                if len(df) < min_samples:
+                    continue
 
-            # Preprocess data
-            df_clean = df.copy()
-            df_clean = utils.drop_outliers(
-                df_clean, "ground_contact_time", (150.0, 350.0)
-            )
-            df_clean = utils.drop_outliers(
-                df_clean, "vertical_oscillation", (5.0, 20.0)
-            )
-            df_clean = utils.drop_outliers(df_clean, "vertical_ratio", (4.0, 15.0))
-            df_clean = utils.drop_outliers(df_clean, "cadence", (140.0, 210.0))
+                # Preprocess data
+                candidate = utils.drop_outliers(
+                    df.copy(), "ground_contact_time", (150.0, 350.0)
+                )
+                candidate = utils.drop_outliers(
+                    candidate, "vertical_oscillation", (5.0, 20.0)
+                )
+                candidate = utils.drop_outliers(
+                    candidate, "vertical_ratio", (4.0, 15.0)
+                )
+                candidate = utils.drop_outliers(candidate, "cadence", (140.0, 210.0))
 
-            if len(df_clean) < min_samples:
-                # Insufficient data after outlier removal
+                if len(candidate) >= min_samples:
+                    df_clean = candidate
+                    break
+
+            if df_clean is None:
+                # Insufficient data (before or after outlier removal)
                 return None
 
             # Add derived columns
@@ -612,12 +669,13 @@ def train_form_baselines(
             conn.execute(
                 """
             INSERT INTO form_baseline_history (
-                history_id, user_id, condition_group, metric, model_type,
+                history_id, user_id, condition_group, dynamics_source,
+                metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
                 period_start, period_end,
                 n_samples, rmse, speed_range_min, speed_range_max
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, dynamics_source, metric, period_start, period_end)
             DO UPDATE SET
                 model_type = EXCLUDED.model_type,
                 coef_alpha = EXCLUDED.coef_alpha,
@@ -633,6 +691,7 @@ def train_form_baselines(
                 [
                     user_id,
                     condition_group,
+                    dynamics_source,
                     "gct",
                     GCT_MODEL_TYPE,
                     gct_model.alpha,
@@ -652,12 +711,13 @@ def train_form_baselines(
             conn.execute(
                 """
             INSERT INTO form_baseline_history (
-                history_id, user_id, condition_group, metric, model_type,
+                history_id, user_id, condition_group, dynamics_source,
+                metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
                 period_start, period_end,
                 n_samples, rmse, speed_range_min, speed_range_max
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, dynamics_source, metric, period_start, period_end)
             DO UPDATE SET
                 model_type = EXCLUDED.model_type,
                 coef_alpha = EXCLUDED.coef_alpha,
@@ -673,6 +733,7 @@ def train_form_baselines(
                 [
                     user_id,
                     condition_group,
+                    dynamics_source,
                     "vo",
                     _linear_model_type(vo_model),
                     None,
@@ -692,12 +753,13 @@ def train_form_baselines(
             conn.execute(
                 """
             INSERT INTO form_baseline_history (
-                history_id, user_id, condition_group, metric, model_type,
+                history_id, user_id, condition_group, dynamics_source,
+                metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
                 period_start, period_end,
                 n_samples, rmse, speed_range_min, speed_range_max
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, dynamics_source, metric, period_start, period_end)
             DO UPDATE SET
                 model_type = EXCLUDED.model_type,
                 coef_alpha = EXCLUDED.coef_alpha,
@@ -713,6 +775,7 @@ def train_form_baselines(
                 [
                     user_id,
                     condition_group,
+                    dynamics_source,
                     "vr",
                     _linear_model_type(vr_model),
                     None,
@@ -732,12 +795,13 @@ def train_form_baselines(
             conn.execute(
                 """
             INSERT INTO form_baseline_history (
-                history_id, user_id, condition_group, metric, model_type,
+                history_id, user_id, condition_group, dynamics_source,
+                metric, model_type,
                 coef_alpha, coef_d, coef_a, coef_b,
                 period_start, period_end,
                 n_samples, rmse, speed_range_min, speed_range_max
-            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (user_id, condition_group, metric, period_start, period_end)
+            ) VALUES (nextval('form_baseline_history_seq'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (user_id, condition_group, dynamics_source, metric, period_start, period_end)
             DO UPDATE SET
                 model_type = EXCLUDED.model_type,
                 coef_alpha = EXCLUDED.coef_alpha,
@@ -753,6 +817,7 @@ def train_form_baselines(
                 [
                     user_id,
                     condition_group,
+                    dynamics_source,
                     "cadence",
                     _linear_model_type(cadence_model),
                     None,
@@ -773,8 +838,9 @@ def train_form_baselines(
                 user_id=user_id,
                 condition_group=condition_group,
                 end_date=period_end,
-                window_months=window_months,
+                window_months=effective_window,
                 db_path=db_path,
+                dynamics_source=dynamics_source,
             )
 
             result = {
@@ -851,8 +917,11 @@ def ensure_form_baselines_for_date(
     db_path: str | None = None,
     user_id: str = "default",
     condition_group: str = "flat_road",
+    dynamics_source: str = "all",
 ) -> dict[str, list[str]]:
     """Generate the form baseline for an activity's month + prior month if missing.
+
+    Only the given sensor's baseline is checked and trained (#1631).
 
     Self-healing helper invoked from prefetch so that form-trend comparison is
     always available. Never raises: any error is swallowed and reflected in the
@@ -863,6 +932,7 @@ def ensure_form_baselines_for_date(
         db_path: Database path. If None, uses GARMIN_DATA_DIR resolution.
         user_id: User identifier.
         condition_group: Condition group (e.g., 'flat_road').
+        dynamics_source: Sensor to check / train (``'all'`` = legacy mixed model).
 
     Returns:
         Dict with three buckets keyed by period_end ("YYYY-MM-DD"):
@@ -898,8 +968,9 @@ def ensure_form_baselines_for_date(
                       AND metric IN ('gct', 'vo', 'vr', 'cadence')
                       AND user_id = ?
                       AND condition_group = ?
+                      AND dynamics_source = ?
                     """,
-                    [period_end, user_id, condition_group],
+                    [period_end, user_id, condition_group, dynamics_source],
                 ).fetchone()
             exists = count_row is not None and count_row[0] == 4
         except Exception:
@@ -918,6 +989,7 @@ def ensure_form_baselines_for_date(
                 end_date=period_end,
                 window_months=2,
                 db_path=db_path,
+                dynamics_source=dynamics_source,
             )
         except Exception:
             trained = None

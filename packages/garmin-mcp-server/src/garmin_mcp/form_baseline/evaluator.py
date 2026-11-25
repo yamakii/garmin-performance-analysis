@@ -20,6 +20,7 @@ from .power_calculator import (
 )
 from .scorer import compute_star_rating, score_observation
 from .text_generator import generate_evaluation_text, generate_overall_text
+from .utils import resolve_dynamics_source
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +96,34 @@ def evaluate_and_store(
         FileNotFoundError: If model file doesn't exist
         ValueError: If no splits found for activity
     """
+    # The expectation models are per dynamics sensor (#1631): a run is judged
+    # only by the model trained on its own sensor. NULL -> 'all' (legacy).
+    from garmin_mcp.database.connection import get_connection
+
+    def _resolve_sensor() -> str:
+        with get_connection(db_path) as sensor_conn:
+            return resolve_dynamics_source(sensor_conn, activity_id)
+
     # Load models
     if model_file is None:
+        dynamics_source = _resolve_sensor()
         models = load_models_from_db(
             db_path=db_path,
             activity_date=activity_date,
             user_id="default",
             condition_group=condition_group,
+            dynamics_source=dynamics_source,
         )
     else:
         models = load_models_from_file(model_file)
 
     # Get actual data from splits
     splits_data = get_splits_data(db_path, activity_id)
+
+    if model_file is not None:
+        # File models carry no sensor; the baseline freshness check and the power
+        # baseline below still follow the run's own sensor.
+        dynamics_source = _resolve_sensor()
 
     # Build observation dict for scorer
     obs = {
@@ -278,7 +294,7 @@ def evaluate_and_store(
     evaluation["overall_text"] = overall_text
 
     # Scope 1: Check baseline freshness (read-only)
-    from garmin_mcp.database.connection import get_connection, get_write_connection
+    from garmin_mcp.database.connection import get_write_connection
     from garmin_mcp.form_baseline.trainer import train_form_baselines
 
     with get_connection(db_path) as conn:
@@ -288,9 +304,10 @@ def evaluate_and_store(
             FROM form_baseline_history
             WHERE user_id = 'default'
               AND condition_group = ?
+              AND dynamics_source = ?
               AND metric IN ('gct', 'vo', 'vr', 'power')
             """,
-            [condition_group],
+            [condition_group, dynamics_source],
         ).fetchone()
 
     # Scope 2: Auto-retrain if baselines are stale (trainer owns its own connections)
@@ -312,6 +329,7 @@ def evaluate_and_store(
                 user_id="default",
                 condition_group=condition_group,
                 window_months=2,
+                dynamics_source=dynamics_source,
             )
             if retrain_result:
                 print(
@@ -345,6 +363,7 @@ def evaluate_and_store(
             "default",
             condition_group,
             form_penalties,
+            dynamics_source=dynamics_source,
         )
 
         if power_result:

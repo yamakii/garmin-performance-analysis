@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from tests.database.readers.run_report._helpers import (
@@ -138,3 +139,57 @@ def test_power_signal_ignores_extrapolation(reader_db_path: Path) -> None:
     power = _signal(report, "power")
     assert power["status"] == "within"
     assert power["reason"] is None
+
+
+def _stamp_sensor(db_path: Path, source: str) -> None:
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("UPDATE activities SET dynamics_source = ?", [source])
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("source", "judged"),
+    [("wrist", False), ("pod", True)],
+)
+def test_extrapolation_flag_uses_run_sensor_range(
+    reader_db_path: Path, source: str, judged: bool
+) -> None:
+    """Each run is read against its own sensor's trained speed range (#1631).
+
+    The wrist model only knows 1.97-2.38 m/s, the pod model 1.50-4.00 m/s: the
+    same 2.70 m/s run is an extrapolation on the wrist and an ordinary run on the
+    pod, whichever model happens to be listed first.
+    """
+    _seed_history(reader_db_path, pace_base=_INSIDE_RANGE_PACE)
+    _seed_baseline(
+        reader_db_path,
+        speed_min=1.97,
+        speed_max=2.38,
+        dynamics_source="wrist",
+        first_id=1,
+    )
+    _seed_baseline(
+        reader_db_path,
+        speed_min=1.5,
+        speed_max=4.0,
+        dynamics_source="pod",
+        first_id=11,
+    )
+    _seed_run(
+        reader_db_path,
+        activity_id=ACTIVITY_ID,
+        activity_date=TODAY,
+        pace=_TEMPO_PACE,
+        training_type="tempo_run",
+        vr_delta_pct=5 * _VR_SPREAD,
+    )
+    _stamp_sensor(reader_db_path, source)
+
+    report = _report(reader_db_path)
+
+    assert report is not None
+    reason = _signal(report, "vr")["reason"] or ""
+    assert ("速度の範囲" not in reason) is judged

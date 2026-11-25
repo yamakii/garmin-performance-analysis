@@ -21,7 +21,8 @@ def _seed_baseline_db(db_path: str) -> None:
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            base_weight_kg FLOAT
+            base_weight_kg FLOAT,
+            dynamics_source VARCHAR
         )
         """)
     conn.execute("""
@@ -48,6 +49,7 @@ def _seed_baseline_db(db_path: str) -> None:
             history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
             user_id VARCHAR DEFAULT 'default',
             condition_group VARCHAR DEFAULT 'flat_road',
+            dynamics_source VARCHAR NOT NULL DEFAULT 'all',
             metric VARCHAR,
             model_type VARCHAR,
             coef_alpha FLOAT,
@@ -64,7 +66,7 @@ def _seed_baseline_db(db_path: str) -> None:
             power_a FLOAT,
             power_b FLOAT,
             power_rmse FLOAT,
-            UNIQUE (user_id, condition_group, metric, period_start, period_end)
+            UNIQUE (user_id, condition_group, dynamics_source, metric, period_start, period_end)
         )
         """)
 
@@ -110,7 +112,11 @@ def _seed_baseline_db(db_path: str) -> None:
                 )
             )
 
-    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (?, ?, ?)",
+        activity_rows,
+    )
     conn.executemany(
         "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )
@@ -123,7 +129,8 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            base_weight_kg FLOAT
+            base_weight_kg FLOAT,
+            dynamics_source VARCHAR
         )
         """)
     conn.execute("""
@@ -150,6 +157,7 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
             history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
             user_id VARCHAR DEFAULT 'default',
             condition_group VARCHAR DEFAULT 'flat_road',
+            dynamics_source VARCHAR NOT NULL DEFAULT 'all',
             metric VARCHAR,
             model_type VARCHAR,
             coef_alpha FLOAT,
@@ -166,7 +174,7 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
             power_a FLOAT,
             power_b FLOAT,
             power_rmse FLOAT,
-            UNIQUE (user_id, condition_group, metric, period_start, period_end)
+            UNIQUE (user_id, condition_group, dynamics_source, metric, period_start, period_end)
         )
         """)
 
@@ -234,7 +242,11 @@ def _seed_two_month_window(db_path: str, activity_date: str, splits_per_month: i
             split_rows.extend(_make_splits(activity_id))
 
     if activity_rows:
-        conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+        conn.executemany(
+            "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+            "VALUES (?, ?, ?)",
+            activity_rows,
+        )
     if split_rows:
         conn.executemany(
             "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -299,7 +311,11 @@ def _seed_fragment_contaminated_db(db_path: str) -> None:
             )
         )
 
-    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (?, ?, ?)",
+        activity_rows,
+    )
     conn.executemany(
         "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )

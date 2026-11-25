@@ -440,7 +440,8 @@ def prefetch_activity_context(activity_id: int) -> dict:
                 start_time_local::DATE AS activity_date,
                 avg_heart_rate,
                 avg_pace_seconds_per_km,
-                total_distance_km
+                total_distance_km,
+                dynamics_source
             FROM activities
             WHERE activity_id = ?
             """,
@@ -454,6 +455,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
         avg_heart_rate = activity_row[1]
         avg_pace_s_per_km = activity_row[2]
         total_distance_km = activity_row[3]
+        # The form baseline is per dynamics sensor (#1631): self-heal only the
+        # model this run is graded by (NULL -> the legacy 'all' model).
+        dynamics_source = activity_row[4] or "all"
 
         # Which shoe, and how far into its life this run sits (Issue #1207).
         gear = collect_activity_gear(conn, activity_id)
@@ -478,7 +482,9 @@ def prefetch_activity_context(activity_id: int) -> dict:
     from garmin_mcp.form_baseline.trainer import ensure_form_baselines_for_date
 
     try:
-        autogen = ensure_form_baselines_for_date(activity_date, db_path_str)
+        autogen = ensure_form_baselines_for_date(
+            activity_date, db_path_str, dynamics_source=dynamics_source
+        )
         if autogen.get("generated"):
             logger.info("form baselines generated: %s", autogen["generated"])
     except Exception:

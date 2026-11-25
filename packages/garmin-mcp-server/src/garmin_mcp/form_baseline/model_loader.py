@@ -92,8 +92,13 @@ def load_models_from_db(
     activity_date: str,
     user_id: str = "default",
     condition_group: str = "flat_road",
+    dynamics_source: str = "all",
 ) -> dict[str, GCTPowerModel | LinearModel]:
     """Load trained models from DuckDB form_baseline_history.
+
+    Only rows of ``dynamics_source`` are considered (#1631). A known sensor with
+    no baseline of its own raises ``ValueError``; it is never graded by the
+    legacy ``'all'`` model.
 
     Selects the baseline period that *covers* the activity date
     (``period_start <= activity_date <= period_end``), preferring the most
@@ -116,6 +121,7 @@ def load_models_from_db(
         activity_date: Activity date in YYYY-MM-DD format
         user_id: User identifier (default: 'default')
         condition_group: Condition group name (default: 'flat_road')
+        dynamics_source: Sensor the models were trained on (default: 'all')
 
     Returns:
         Dictionary of models: {'gct': GCTPowerModel, 'vo': LinearModel,
@@ -140,6 +146,7 @@ def load_models_from_db(
                 FROM form_baseline_history
                 WHERE user_id = ?
                   AND condition_group = ?
+                  AND dynamics_source = ?
                   AND period_start <= ?
                   -- The power-efficiency baseline is trained on its own window
                   -- (period_start can differ by a day) and is loaded elsewhere.
@@ -168,22 +175,26 @@ def load_models_from_db(
              AND f.period_end = s.period_end
             WHERE f.user_id = ?
               AND f.condition_group = ?
+              AND f.dynamics_source = ?
             """,
             [
                 activity_date,
                 activity_date,
                 user_id,
                 condition_group,
+                dynamics_source,
                 activity_date,
                 user_id,
                 condition_group,
+                dynamics_source,
             ],
         ).fetchall()
 
         if not baselines:
             raise ValueError(
                 f"No baseline found for activity_date={activity_date}, "
-                f"user_id={user_id}, condition_group={condition_group}. "
+                f"user_id={user_id}, condition_group={condition_group}, "
+                f"dynamics_source={dynamics_source}. "
                 f"Train a baseline model with period_start <= {activity_date}"
             )
 

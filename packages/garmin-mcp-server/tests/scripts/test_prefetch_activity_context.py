@@ -18,8 +18,8 @@ from garmin_mcp.scripts.prefetch_activity_context import (
 )
 
 # Activity row: (date, avg_hr, avg_pace_s_per_km, total_distance_km,
-# total_time_seconds).
-ACTIVITY_ROW = (datetime.date(2026, 2, 16), 148, 330.0, 8.2, 2706)
+# dynamics_source).
+ACTIVITY_ROW = (datetime.date(2026, 2, 16), 148, 330.0, 8.2, "wrist")
 
 
 @pytest.mark.unit
@@ -184,7 +184,10 @@ class TestPrefetchActivityContext:
         ) as ensure:
             result = prefetch_activity_context(12345)
 
-        ensure.assert_called_once_with("2026-02-16", "/fake/db.duckdb")
+        # Only the run's own sensor model is self-healed (#1631).
+        ensure.assert_called_once_with(
+            "2026-02-16", "/fake/db.duckdb", dynamics_source="wrist"
+        )
         assert "form_baseline_autogen" not in result
 
         # A failing self-heal never takes the bundle down with it.
@@ -628,7 +631,7 @@ def test_run_note_context_standing_is_as_of_activity_date(
     mock_get_conn.return_value.__enter__ = MagicMock(return_value=mock_conn)
     mock_get_conn.return_value.__exit__ = MagicMock(return_value=False)
     mock_conn.execute.return_value.fetchone.side_effect = [
-        (datetime.date(2026, 3, 1), 148, 330.0, 8.2, 2706),
+        (datetime.date(2026, 3, 1), 148, 330.0, 8.2, "wrist"),
         None,  # gear
         ("aerobic_base",),
     ]

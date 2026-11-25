@@ -16,6 +16,7 @@ def analyze_form_trend(
     db_path: str,
     activity_date: str,
     comparison_months_back: int = 1,
+    dynamics_source: str = "all",
 ) -> dict[str, Any]:
     """Analyze form trend by comparing model coefficients with past period.
 
@@ -35,6 +36,8 @@ def analyze_form_trend(
         db_path: Path to DuckDB database
         activity_date: Activity date in YYYY-MM-DD format
         comparison_months_back: Number of months to look back (default: 1)
+        dynamics_source: Sensor whose baselines are compared (default: 'all').
+            Periods of different sensors are never compared (#1631).
 
     Returns:
         Dictionary containing:
@@ -81,9 +84,9 @@ def analyze_form_trend(
                 period_start, period_end,
                 metric, coef_d, coef_b
             FROM form_baseline_history
-            WHERE period_end = ?
+            WHERE period_end = ? AND dynamics_source = ?
         """,
-            [current_month_end],
+            [current_month_end, dynamics_source],
         ).fetchall()
 
         if not current_baseline:
@@ -133,9 +136,9 @@ def analyze_form_trend(
                 period_start, period_end,
                 metric, coef_d, coef_b
             FROM form_baseline_history
-            WHERE period_end = ?
+            WHERE period_end = ? AND dynamics_source = ?
         """,
-            [past_month_end],
+            [past_month_end, dynamics_source],
         ).fetchall()
 
         if not past_baseline:

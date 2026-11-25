@@ -22,10 +22,12 @@ def test_generate_month_range_includes_2026():
 
 
 @pytest.mark.unit
-def test_generate_month_range_excludes_gap_years():
-    """Gap years 2022-2024 produce no months."""
+def test_generate_month_range_includes_pod_era_years():
+    """2022-2024 are the RD pod era: every month is a candidate (#1631)."""
     result = generate_month_range(datetime(2022, 1, 1), datetime(2024, 12, 1))
-    assert result == []
+    assert len(result) == 36
+    assert result[0] == "2022-01"
+    assert result[-1] == "2024-12"
 
 
 @pytest.mark.unit

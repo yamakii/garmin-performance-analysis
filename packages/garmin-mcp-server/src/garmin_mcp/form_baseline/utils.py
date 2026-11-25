@@ -28,6 +28,30 @@ def drop_outliers(
     return df[mask].copy()
 
 
+def resolve_dynamics_source(conn, activity_id: int) -> str:
+    """Return the dynamics sensor of an activity, ``'all'`` when it is unknown.
+
+    The form expectation models are trained and applied per
+    ``activities.dynamics_source`` (#1631). Only a NULL / missing sensor (e.g. a
+    run ingested without ``activity.json``) maps to ``'all'``, the legacy
+    mixed-sensor model; a known sensor never falls back to it.
+
+    Args:
+        conn: DuckDB connection
+        activity_id: Garmin activity ID
+
+    Returns:
+        The sensor name (``'pod'``, ``'wrist'``, ...) or ``'all'``.
+    """
+    row = conn.execute(
+        "SELECT dynamics_source FROM activities WHERE activity_id = ?",
+        [activity_id],
+    ).fetchone()
+    if row is None or not row[0]:
+        return "all"
+    return str(row[0])
+
+
 def to_speed(pace_seconds_per_km: float) -> float:
     """
     Convert pace (sec/km) to speed (m/s).

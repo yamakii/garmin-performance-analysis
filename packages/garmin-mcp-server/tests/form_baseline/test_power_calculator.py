@@ -95,18 +95,22 @@ def _conn_with_splits(splits: list[tuple[int, float, float, float]]):
     conn.execute(
         "CREATE TABLE form_baseline_history (user_id VARCHAR, "
         "condition_group VARCHAR, metric VARCHAR, period_start DATE, "
-        "period_end DATE, power_a DOUBLE, power_b DOUBLE, power_rmse DOUBLE)"
+        "period_end DATE, power_a DOUBLE, power_b DOUBLE, power_rmse DOUBLE, "
+        "dynamics_source VARCHAR DEFAULT 'all')"
     )
 
     today = datetime.now().date()
     activity_date = today - timedelta(days=1)
     conn.execute(
-        "INSERT INTO activities VALUES (?, ?, 75.0)", [_ACTIVITY_ID, activity_date]
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (?, ?, 75.0)",
+        [_ACTIVITY_ID, activity_date],
     )
     conn.execute("INSERT INTO hr_efficiency VALUES (?, 'low_moderate')", [_ACTIVITY_ID])
     conn.execute(
-        "INSERT INTO form_baseline_history VALUES ('default', 'flat_road', 'power', "
-        "?, ?, 1.0, 0.7, 0.1)",
+        "INSERT INTO form_baseline_history (user_id, condition_group, metric, "
+        "period_start, period_end, power_a, power_b, power_rmse) VALUES "
+        "('default', 'flat_road', 'power', ?, ?, 1.0, 0.7, 0.1)",
         [today - timedelta(days=60), today],
     )
     for split_id, distance_km, pace, power_w in splits:

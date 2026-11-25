@@ -94,6 +94,13 @@ def main() -> int:
         help="Minimum number of samples required (default: 50)",
     )
     parser.add_argument(
+        "--dynamics-source",
+        nargs="+",
+        default=["pod", "wrist"],
+        help="Dynamics sensor(s) to train a model for (default: pod wrist; "
+        "'all' is the legacy mixed-sensor model)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -115,6 +122,7 @@ def main() -> int:
         db_path=Path(args.db_path),
         min_samples=args.min_samples,
         verbose=args.verbose,
+        dynamics_sources=args.dynamics_source,
     )
 
 

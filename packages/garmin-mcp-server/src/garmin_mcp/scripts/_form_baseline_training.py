@@ -17,6 +17,7 @@ month-boundary periods (#640).
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -31,6 +32,7 @@ def train_and_store_baseline(
     db_path: Path,
     min_samples: int = 50,
     verbose: bool = False,
+    dynamics_sources: Sequence[str] = ("all",),
 ) -> int:
     """Train all form baselines for a window and persist them.
 
@@ -54,9 +56,12 @@ def train_and_store_baseline(
         min_samples: Minimum number of samples required (before and after
             outlier removal).
         verbose: Enable verbose logging to stderr.
+        dynamics_sources: Sensors to train, one model set each (#1631). The
+            training CLIs pass ``("pod", "wrist")``; ``"all"`` is the legacy
+            mixed-sensor model.
 
     Returns:
-        Process exit code (0 on success, 1 on failure).
+        Process exit code (0 when at least one sensor trained, 1 otherwise).
     """
     if verbose:
         print(
@@ -68,32 +73,48 @@ def train_and_store_baseline(
         print(f"Error: Database not found: {db_path}", file=sys.stderr)
         return 1
 
-    result = trainer.train_form_baselines(
-        condition_group=condition,
-        end_date=period_end.strftime("%Y-%m-%d"),
-        window_months=2,
-        db_path=str(db_path),
-        min_samples=min_samples,
-    )
+    trained_any = False
+    for source in dynamics_sources:
+        result = trainer.train_form_baselines(
+            condition_group=condition,
+            end_date=period_end.strftime("%Y-%m-%d"),
+            window_months=2,
+            db_path=str(db_path),
+            min_samples=min_samples,
+            dynamics_source=source,
+        )
 
-    if result is None:
+        if result is None:
+            # A sensor with too few splits (even after the trainer widens its
+            # window) is skipped; the others are still trained.
+            print(
+                f"Warning: no baseline for dynamics_source={source} "
+                f"(need at least {min_samples} samples) for window ending "
+                f"{period_end.date()}.",
+                file=sys.stderr,
+            )
+            continue
+
+        trained_any = True
+        if verbose:
+            print(f"✓ Training complete! ({source})", file=sys.stderr)
+            print(
+                f"  Period: {result['period_start']} to {result['period_end']}",
+                file=sys.stderr,
+            )
+            for metric in ("gct", "vo", "vr", "cadence", "power"):
+                model = result.get(metric)
+                if model:
+                    print(
+                        f"  {metric.upper()}: n={model['n_samples']}", file=sys.stderr
+                    )
+
+    if not trained_any:
         print(
-            f"Error: Training failed or insufficient data "
-            f"(need at least {min_samples} samples) for window ending "
+            f"Error: Training failed or insufficient data for window ending "
             f"{period_end.date()}.",
             file=sys.stderr,
         )
         return 1
-
-    if verbose:
-        print("✓ Training complete!", file=sys.stderr)
-        print(
-            f"  Period: {result['period_start']} to {result['period_end']}",
-            file=sys.stderr,
-        )
-        for metric in ("gct", "vo", "vr", "cadence", "power"):
-            model = result.get(metric)
-            if model:
-                print(f"  {metric.upper()}: n={model['n_samples']}", file=sys.stderr)
 
     return 0
