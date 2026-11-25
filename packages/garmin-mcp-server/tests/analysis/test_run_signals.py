@@ -293,6 +293,76 @@ def test_form_signal_judged_on_pod_baseline_when_enough():
 
 
 @pytest.mark.unit
+def test_thin_sensor_baseline_tops_up_from_older_runs():
+    """Eight recent wrist runs are topped up with older wrist runs to 20 (#1629)."""
+    recent = _stamped(_history(count=8, first_days_ago=1), "wrist")
+    older = _stamped(_history(count=12, first_days_ago=70), "wrist")
+    oldest = _stamped(_history(count=5, first_days_ago=140), "wrist")
+    today = _run(0, dynamics_source="wrist")
+
+    signals = build_signals(today, recent + older + oldest, hr_model=_COEFFS)
+
+    for metric in ("gct", "vo", "vr", "cadence", "power"):
+        signal = _signal(signals, metric)
+        assert signal["n"] == 20, metric
+        assert signal["status"] != "insufficient", metric
+
+
+@pytest.mark.unit
+def test_dense_sensor_baseline_keeps_sixty_day_window():
+    """With 25 runs inside 60 days nothing older is added."""
+    recent = _stamped(_history(count=25, first_days_ago=1), "wrist")
+    older = _stamped(_history(count=10, first_days_ago=70), "wrist")
+    today = _run(0, dynamics_source="wrist")
+
+    gct = _signal(build_signals(today, recent + older, hr_model=_COEFFS), "gct")
+
+    assert gct["n"] == 25
+
+
+@pytest.mark.unit
+def test_top_up_never_reaches_past_max_window():
+    """Runs older than FORM_MAX_WINDOW_DAYS never top a baseline up."""
+    recent = _stamped(_history(count=5, first_days_ago=1), "wrist")
+    ancient = _stamped(_history(count=10, first_days_ago=200), "wrist")
+    today = _run(0, dynamics_source="wrist")
+
+    gct = _signal(build_signals(today, recent + ancient, hr_model=_COEFFS), "gct")
+
+    assert gct["status"] == "insufficient"
+    assert gct["n"] == 5
+    assert gct["reason_code"] == REASON_SENSOR_THIN_BASELINE
+
+
+@pytest.mark.unit
+def test_top_up_skips_other_sensor_runs():
+    """Older pod runs are never used to top up a wrist baseline."""
+    recent = _stamped(_history(count=8, first_days_ago=1), "wrist")
+    older_pod = _stamped(_history(count=20, first_days_ago=70), "pod")
+    older_wrist = _stamped(_history(count=4, first_days_ago=100), "wrist")
+    today = _run(0, dynamics_source="wrist")
+
+    gct = _signal(
+        build_signals(today, recent + older_pod + older_wrist, hr_model=_COEFFS),
+        "gct",
+    )
+
+    assert gct["n"] == 12
+
+
+@pytest.mark.unit
+def test_cardio_signals_keep_sixty_day_window():
+    """The top-up is form-only: hr_drift ignores runs older than 60 days."""
+    recent = _stamped(_history(count=12, first_days_ago=1), "wrist")
+    older = _stamped(_history(count=12, first_days_ago=70), "wrist")
+    today = _run(0, dynamics_source="wrist")
+
+    drift = _signal(build_signals(today, recent + older, hr_model=_COEFFS), "hr_drift")
+
+    assert drift["n"] == 12
+
+
+@pytest.mark.unit
 def test_form_signal_unknown_source_keeps_all_rows():
     """Without a recorded sensor today is judged against every run, as before."""
     history = [

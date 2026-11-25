@@ -24,7 +24,10 @@ signal               judged value                              bad side
 The four form metrics and power are already pace-corrected, so their baseline
 is every prior run measured by today's dynamics sensor (``dynamics_source``):
 a pod and the wrist read the same stride on different scales, and a pod run
-judged against a wrist history is "outside" on every metric (#1470). The two
+judged against a wrist history is "outside" on every metric (#1470). When the
+athlete alternates sensors, the same-sensor runs inside ``WINDOW_DAYS`` can be
+too few for a band, so that baseline is topped up with older same-sensor runs
+up to ``FORM_BASELINE_TARGET_RUNS``, never past ``FORM_MAX_WINDOW_DAYS`` (#1629). The two
 cardio signals are not comparable across sessions -- an
 interval session's drift says nothing about an easy run's -- so their baseline
 is restricted to the **same intensity family**, which is what turned a useless
@@ -54,6 +57,8 @@ from datetime import date
 from typing import Any
 
 from garmin_mcp.analysis.normal_range import (
+    FORM_BASELINE_TARGET_RUNS,
+    FORM_MAX_WINDOW_DAYS,
     MIN_VALID_SPLITS,
     OUTSIDE_Z,
     REASON_NO_SPREAD,
@@ -236,8 +241,10 @@ def build_signals(
             keys are tolerated -- the affected signal reports why it could not
             be judged.
         history: Prior runs in the same shape, ascending by date (re-sorted
-            defensively). Rows dated on or after ``today`` and rows older than
-            ``WINDOW_DAYS`` are dropped, so a caller may pass a wider slice.
+            defensively). Rows dated on or after ``today`` are dropped, and so
+            are rows older than ``WINDOW_DAYS`` -- except that a thin form
+            baseline may reach back to ``FORM_MAX_WINDOW_DAYS`` -- so a caller
+            may pass a wider slice.
         hr_model: Coefficients from ``HeatAdjustmentModel.fit`` over that same
             window. Without them the ``hr_vs_expected`` signal is not judged;
             every other signal is unaffected.
@@ -259,7 +266,7 @@ def build_signals(
         ``within`` / ``edge`` / ``outside`` / ``insufficient``.
     """
     prior = _window(today, history)
-    form_prior = _same_sensor(today, prior)
+    form_prior = _same_sensor(today, _window(today, history, FORM_MAX_WINDOW_DAYS))
 
     signals = [_form_signal(spec, today, form_prior) for spec in _FORM_SPECS]
     signals.append(_power_signal(today, form_prior))
@@ -298,7 +305,9 @@ def _form_signal(
             reason_params=blocker.params,
         )
 
-    eligible = [row for row in prior if _eligibility_reason(row, spec.metric) is None]
+    eligible = _topped_up(
+        today, [row for row in prior if _eligibility_reason(row, spec.metric) is None]
+    )
     series = [_form_deviation_pct(row, spec) for row in eligible]
     band = _sensor_band(
         today,
@@ -351,7 +360,9 @@ def _power_signal(
             reason_params=blocker.params,
         )
 
-    eligible = [row for row in prior if _eligibility_reason(row, "power") is None]
+    eligible = _topped_up(
+        today, [row for row in prior if _eligibility_reason(row, "power") is None]
+    )
     band = _sensor_band(
         today,
         compute_band(
@@ -766,10 +777,39 @@ def _base_date(
     return min(dates) if dates else None
 
 
+def _topped_up(
+    today: Mapping[str, Any], eligible: Sequence[Mapping[str, Any]]
+) -> list[Mapping[str, Any]]:
+    """A form baseline: the ``WINDOW_DAYS`` runs, topped up when that is thin.
+
+    ``eligible`` is the same-sensor, eligible slice of the wider
+    ``FORM_MAX_WINDOW_DAYS`` window, ascending. Every run inside ``WINDOW_DAYS``
+    is kept; only when those number fewer than ``FORM_BASELINE_TARGET_RUNS`` are
+    older runs added, newest first, up to that target (#1629). A run measured
+    by a sensor the athlete uses once a week thus reaches back far enough for a
+    band instead of going ``insufficient`` on a fixed calendar window.
+    """
+    today_date = _row_date(today)
+    if today_date is None:
+        return list(eligible)
+
+    def recent(row: Mapping[str, Any]) -> bool:
+        row_date = _row_date(row)
+        return row_date is None or (today_date - row_date).days <= WINDOW_DAYS
+
+    inside = [row for row in eligible if recent(row)]
+    older = [row for row in eligible if not recent(row)]
+    missing = max(0, FORM_BASELINE_TARGET_RUNS - len(inside))
+    added = older[len(older) - missing :] if missing else []
+    return [*added, *inside]
+
+
 def _window(
-    today: Mapping[str, Any], history: Sequence[Mapping[str, Any]]
+    today: Mapping[str, Any],
+    history: Sequence[Mapping[str, Any]],
+    max_days: int = WINDOW_DAYS,
 ) -> list[dict[str, Any]]:
-    """Prior runs inside the trailing ``WINDOW_DAYS``, ascending by date.
+    """Prior runs inside the trailing ``max_days``, ascending by date.
 
     Rows dated on or after today are dropped (a later run cannot judge today).
     Rows without a parseable date are kept in the order given -- the caller
@@ -791,7 +831,7 @@ def _window(
             continue
         if row_date >= today_date:
             continue
-        if (today_date - row_date).days > WINDOW_DAYS:
+        if (today_date - row_date).days > max_days:
             continue
         kept.append(row)
     return kept
