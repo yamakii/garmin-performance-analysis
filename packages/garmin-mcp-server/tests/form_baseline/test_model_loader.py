@@ -57,7 +57,8 @@ def _create_baseline_table(conn: duckdb.DuckDBPyConnection) -> None:
             rmse DOUBLE,
             speed_range_min DOUBLE,
             speed_range_max DOUBLE,
-            model_type VARCHAR
+            model_type VARCHAR,
+            dynamics_source VARCHAR DEFAULT 'all'
         )
     """)
 
@@ -79,12 +80,17 @@ def _insert_baseline_row(
     speed_max: float = 4.5,
     model_type: str = "linear",
     period_start: str = "2025-01-01",
+    dynamics_source: str = "all",
 ) -> None:
     """Insert a single baseline row."""
     conn.execute(
         """
-        INSERT INTO form_baseline_history
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO form_baseline_history (
+            user_id, condition_group, metric, period_start, period_end,
+            coef_alpha, coef_d, coef_a, coef_b, n_samples, rmse,
+            speed_range_min, speed_range_max, model_type, dynamics_source
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             user_id,
@@ -101,6 +107,7 @@ def _insert_baseline_row(
             speed_min,
             speed_max,
             model_type,
+            dynamics_source,
         ],
     )
 
@@ -191,6 +198,49 @@ class TestLoadModelsFromDbBaselineExists:
         assert result["gct"].alpha == 5.0
         assert result["vo"].a == 11.0
         assert result["vr"].a == 9.0
+
+
+@pytest.mark.integration
+def test_load_models_picks_sensor_rows(tmp_path: Path) -> None:
+    """'all' and 'wrist' rows for the same period load separately (#1631)."""
+    db_path = str(tmp_path / "test.duckdb")
+    conn = duckdb.connect(db_path)
+    _create_baseline_table(conn)
+    for metric in ("gct", "vo", "vr"):
+        _insert_baseline_row(conn, metric, "2025-10-31", a=12.0, alpha=5.0)
+        _insert_baseline_row(
+            conn,
+            metric,
+            "2025-10-31",
+            a=7.5,
+            alpha=4.2,
+            dynamics_source="wrist",
+        )
+    conn.close()
+
+    wrist = load_models_from_db(db_path, "2025-10-15", dynamics_source="wrist")
+    legacy = load_models_from_db(db_path, "2025-10-15")
+
+    for models, alpha, vo_a in ((wrist, 4.2, 7.5), (legacy, 5.0, 12.0)):
+        gct, vo = models["gct"], models["vo"]
+        assert isinstance(gct, GCTPowerModel)
+        assert isinstance(vo, LinearModel)
+        assert gct.alpha == pytest.approx(alpha)
+        assert vo.a == pytest.approx(vo_a)
+
+
+@pytest.mark.integration
+def test_load_models_no_fallback_to_all_for_known_sensor(tmp_path: Path) -> None:
+    """A pod run with only legacy 'all' rows has no model (#1631)."""
+    db_path = str(tmp_path / "test.duckdb")
+    conn = duckdb.connect(db_path)
+    _create_baseline_table(conn)
+    for metric in ("gct", "vo", "vr"):
+        _insert_baseline_row(conn, metric, "2025-10-31")
+    conn.close()
+
+    with pytest.raises(ValueError, match="dynamics_source=pod"):
+        load_models_from_db(db_path, "2025-10-15", dynamics_source="pod")
 
 
 @pytest.mark.integration

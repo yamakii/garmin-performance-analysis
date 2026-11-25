@@ -78,6 +78,73 @@ def test_shared_training_body_invoked() -> None:
 
 
 @pytest.mark.unit
+def test_clis_default_to_pod_and_wrist() -> None:
+    """Both CLIs train the pod and the wrist model unless told otherwise (#1631)."""
+    from garmin_mcp.scripts import (
+        train_form_baselines_monthly as monthly,
+    )
+    from garmin_mcp.scripts import (
+        train_form_baselines_weekly as weekly,
+    )
+
+    for module, argv in (
+        (weekly, ["prog", "--end-date", "2025-10-06"]),
+        (monthly, ["prog", "--year-month", "2025-10"]),
+    ):
+        with (
+            patch.object(module, "train_and_store_baseline", return_value=0) as body,
+            patch("sys.argv", argv),
+        ):
+            assert module.main() == 0
+        assert list(body.call_args.kwargs["dynamics_sources"]) == ["pod", "wrist"]
+
+        with (
+            patch.object(module, "train_and_store_baseline", return_value=0) as body,
+            patch("sys.argv", [*argv, "--dynamics-source", "wrist"]),
+        ):
+            assert module.main() == 0
+        assert list(body.call_args.kwargs["dynamics_sources"]) == ["wrist"]
+
+
+@pytest.mark.unit
+def test_train_and_store_baseline_trains_each_sensor(tmp_path) -> None:
+    """One trainer call per sensor; a thin sensor is skipped, not fatal."""
+    from garmin_mcp.scripts import _form_baseline_training as body
+
+    db_file = tmp_path / "baseline.duckdb"
+    db_file.write_text("")
+
+    results = {"pod": {"period_start": "a", "period_end": "b"}, "wrist": None}
+    with patch.object(
+        body.trainer,
+        "train_form_baselines",
+        side_effect=lambda **kw: results[kw["dynamics_source"]],
+    ) as mock_train:
+        rc = body.train_and_store_baseline(
+            datetime(2025, 9, 1),
+            datetime(2025, 10, 31),
+            condition="flat_road",
+            db_path=db_file,
+            dynamics_sources=("pod", "wrist"),
+        )
+    assert rc == 0
+    assert [c.kwargs["dynamics_source"] for c in mock_train.call_args_list] == [
+        "pod",
+        "wrist",
+    ]
+
+    with patch.object(body.trainer, "train_form_baselines", return_value=None):
+        rc = body.train_and_store_baseline(
+            datetime(2025, 9, 1),
+            datetime(2025, 10, 31),
+            condition="flat_road",
+            db_path=db_file,
+            dynamics_sources=("pod", "wrist"),
+        )
+    assert rc == 1
+
+
+@pytest.mark.unit
 def test_train_and_store_baseline_delegates_to_trainer(tmp_path) -> None:
     """train_and_store_baseline delegates to trainer.train_form_baselines (#640)."""
     from garmin_mcp.scripts import _form_baseline_training as body

@@ -1029,16 +1029,27 @@ def _mark_extrapolated(
     if not ranges:
         return
 
-    periods = sorted({period for period, _metric in ranges})
+    # Baselines are trained per dynamics sensor (#1631): a run is read against
+    # its own sensor's periods and ranges, and a known sensor with no baseline
+    # of its own is never judged by another sensor's (or the legacy 'all') range.
+    periods_by_source: dict[str, list[tuple[str, str]]] = {}
+    for range_source, range_period, _metric in ranges:
+        known = periods_by_source.setdefault(range_source, [])
+        if range_period not in known:
+            known.append(range_period)
+
     for activity_id, run in runs.items():
         speed = speeds.get(activity_id)
         if not speed:
             continue
-        period = _select_baseline_period(periods, str(run["activity_date"]))
+        source = str(run.get("dynamics_source") or "all")
+        period = _select_baseline_period(
+            sorted(periods_by_source.get(source, [])), str(run["activity_date"])
+        )
         if period is None:
             continue
         for metric in _FORM_METRICS:
-            speed_range = ranges.get((period, metric))
+            speed_range = ranges.get((source, period, metric))
             if speed_range is None:
                 continue
             if extrapolation_factor(speed_range, speed) >= EXTRAPOLATION_NOT_JUDGED:
@@ -1101,8 +1112,8 @@ def _fetch_evaluation_speeds(
 
 def _fetch_baseline_ranges(
     conn: Any, tables: set[str], activity_date: str
-) -> dict[tuple[tuple[str, str], str], tuple[float | None, float | None]]:
-    """``{((period_start, period_end), metric): (min, max)}`` speed ranges."""
+) -> dict[tuple[str, tuple[str, str], str], tuple[float | None, float | None]]:
+    """``{(dynamics_source, (period_start, period_end), metric): (min, max)}``."""
     if "form_baseline_history" not in tables:
         return {}
 
@@ -1110,7 +1121,7 @@ def _fetch_baseline_ranges(
     rows = conn.execute(
         f"""
         SELECT metric, CAST(period_start AS VARCHAR), CAST(period_end AS VARCHAR),
-               speed_range_min, speed_range_max
+               speed_range_min, speed_range_max, dynamics_source
         FROM form_baseline_history
         WHERE user_id = ? AND condition_group = ?
           AND metric IN ({placeholders})
@@ -1125,7 +1136,7 @@ def _fetch_baseline_ranges(
     ).fetchall()
 
     return {
-        ((str(row[1]), str(row[2])), str(row[0])): (
+        (str(row[5]), (str(row[1]), str(row[2])), str(row[0])): (
             _as_float(row[3]),
             _as_float(row[4]),
         )

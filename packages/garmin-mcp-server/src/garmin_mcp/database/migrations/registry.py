@@ -318,6 +318,13 @@ def _wrap_add_activity_context_replaces(conn: duckdb.DuckDBPyConnection) -> None
     add_activity_context_replaces(conn)
 
 
+def _wrap_add_form_baseline_dynamics_source(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the form_baseline_history dynamics_source rebuild (#1631)."""
+    from .form_baseline_sensor import add_form_baseline_dynamics_source
+
+    add_form_baseline_dynamics_source(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -405,4 +412,9 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
         _wrap_add_activity_context_and_coaching_rules,
     ),
     (37, "add_activity_context_replaces", _wrap_add_activity_context_replaces),
+    (
+        38,
+        "add_form_baseline_dynamics_source",
+        _wrap_add_form_baseline_dynamics_source,
+    ),
 ]

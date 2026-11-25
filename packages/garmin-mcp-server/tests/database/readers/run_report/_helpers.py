@@ -338,6 +338,8 @@ def _seed_baseline(
     speed_max: float,
     period_start: str = "2000-01-01",
     period_end: str = "2100-01-01",
+    dynamics_source: str = "all",
+    first_id: int = 1,
 ) -> None:
     """Insert a form baseline whose window covers every seeded run's date.
 
@@ -350,14 +352,16 @@ def _seed_baseline(
             conn.execute(
                 """
                 INSERT INTO form_baseline_history (
-                    history_id, user_id, condition_group, metric, model_type,
+                    history_id, user_id, condition_group, dynamics_source,
+                    metric, model_type,
                     coef_a, coef_b, period_start, period_end, n_samples, rmse,
                     speed_range_min, speed_range_max
-                ) VALUES (?, 'default', 'flat_road', ?, 'linear',
+                ) VALUES (?, 'default', 'flat_road', ?, ?, 'linear',
                           1.0, 0.0, ?, ?, 150, 0.2, ?, ?)
                 """,
                 [
-                    index + 1,
+                    first_id + index,
+                    dynamics_source,
                     metric,
                     period_start,
                     period_end,

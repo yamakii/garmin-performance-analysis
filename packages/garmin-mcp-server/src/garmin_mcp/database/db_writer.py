@@ -554,6 +554,7 @@ class GarminDBWriter:
                     history_id INTEGER PRIMARY KEY,
                     user_id VARCHAR DEFAULT 'default',
                     condition_group VARCHAR DEFAULT 'flat_road',
+                    dynamics_source VARCHAR NOT NULL DEFAULT 'all',
                     metric VARCHAR,
                     model_type VARCHAR,
 
@@ -575,7 +576,8 @@ class GarminDBWriter:
                     speed_range_min FLOAT,
                     speed_range_max FLOAT,
 
-                    UNIQUE(user_id, condition_group, metric, period_start, period_end)
+                    UNIQUE(user_id, condition_group, dynamics_source, metric,
+                           period_start, period_end)
                 )
             """)
 

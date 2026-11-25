@@ -243,7 +243,13 @@ class PhysiologyReader(BaseDBReader):
         from dateutil.relativedelta import relativedelta
 
         try:
+            from garmin_mcp.form_baseline.utils import resolve_dynamics_source
+
             with self._get_connection() as conn:
+                # Baselines are per dynamics sensor (#1631): compare the run's
+                # own sensor across periods, never one sensor against another.
+                dynamics_source = resolve_dynamics_source(conn, activity_id)
+
                 # Get current period baseline
                 current_baselines = conn.execute(
                     """
@@ -252,11 +258,18 @@ class PhysiologyReader(BaseDBReader):
                     FROM form_baseline_history
                     WHERE user_id = ?
                       AND condition_group = ?
+                      AND dynamics_source = ?
                       AND period_start <= ?
                       AND period_end >= ?
                     ORDER BY metric
                     """,
-                    [user_id, condition_group, activity_date, activity_date],
+                    [
+                        user_id,
+                        condition_group,
+                        dynamics_source,
+                        activity_date,
+                        activity_date,
+                    ],
                 ).fetchall()
 
                 if not current_baselines:
@@ -280,11 +293,18 @@ class PhysiologyReader(BaseDBReader):
                     FROM form_baseline_history
                     WHERE user_id = ?
                       AND condition_group = ?
+                      AND dynamics_source = ?
                       AND period_start <= ?
                       AND period_end >= ?
                     ORDER BY metric
                     """,
-                    [user_id, condition_group, target_date, target_date],
+                    [
+                        user_id,
+                        condition_group,
+                        dynamics_source,
+                        target_date,
+                        target_date,
+                    ],
                 ).fetchall()
 
             if not previous_baselines:

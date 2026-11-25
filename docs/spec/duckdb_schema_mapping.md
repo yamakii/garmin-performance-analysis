@@ -76,6 +76,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 - **`weekly_reviews` UNIQUE index dropped** (migration `drop_weekly_review_index`, version 8) to allow multiple revisions per week.
 - **`body_composition` date index added** as a UNIQUE index (migration `add_body_composition_date_index`, version 9; also created in `_ensure_tables()`).
 - **`form_baseline_history` extended** with `model_type` and power-model coefficients (`power_a`, `power_b`, `power_rmse`) alongside the existing `coef_alpha/d/a/b`.
+- **`form_baseline_history.dynamics_source` added** (migration `add_form_baseline_dynamics_source`, version 38, #1631) and put in the UNIQUE key via a CTAS backup/recreate; existing rows are kept as `'all'`.
 
 ### Version 2.2 (2025-10-28)
 - Introduced the unified pace-corrected form evaluation system (`form_baseline_history`, `form_evaluations`, plus the now-dropped `form_baselines`) and MCP tools `get_form_evaluations()`, `get_form_baseline_trend()`.
@@ -532,6 +533,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | history_id (PK) | INTEGER |
 | user_id | VARCHAR |
 | condition_group | VARCHAR |
+| dynamics_source | VARCHAR |
 | metric | VARCHAR |
 | model_type | VARCHAR |
 | coef_alpha | FLOAT |
@@ -550,7 +552,7 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 | speed_range_max | FLOAT |
 <!-- END GENERATED: schema:form_baseline_history -->
 
-**Units & notes**: `user_id` defaults to `'default'`, `condition_group` to `'flat_road'`; `metric` is `gct` / `vo` / `vr`; `model_type` distinguishes power vs linear. GCT power-model coefficients `coef_alpha` (α, `log(v)` intercept) and `coef_d` (exponent, d < 0); VO/VR linear-model `coef_a` (intercept) and `coef_b` (slope). `period_start`/`period_end` bound the (inclusive) training window; `n_samples` is the sample count; `rmse` the error; `speed_range_min`/`speed_range_max` (m/s) — the band the model can be **trusted** over: the 5-95 percentile of the training speeds, not their raw min/max (#1096). Predictions outside it inflate the metric's sigma so the star rating stays conservative, and the evaluation carries `extrapolated: true` (#1088). Percentiles rather than extremes because a baseline covering an activity may be trained on that activity's own splits, so one fast workout would otherwise stretch the range past everything else and silence the guard. Below 20 samples, or when the percentile band collapses, the raw min/max is stored instead. `power_a`/`power_b` are the speed-from-power coefficients and `power_rmse` its error.
+**Units & notes**: `user_id` defaults to `'default'`, `condition_group` to `'flat_road'`; `dynamics_source` (`NOT NULL`, default `'all'`, migration v38 / #1631) names the `activities.dynamics_source` sensor (`pod` / `wrist` / ...) whose splits the model was fitted on, and is part of the UNIQUE key `(user_id, condition_group, dynamics_source, metric, period_start, period_end)`. Sensors read GCT / VO / VR on different scales, so a model is trained and applied per sensor: a run is graded only by its own sensor's model (a known sensor with no model gets no form evaluation), and a sensor with fewer than `min_samples` splits in the 2-month window widens it one month at a time up to 6 (`period_start` records the real window) rather than mixing sensors. `'all'` rows are the legacy mixed-sensor models, used only for runs with no recorded sensor; `metric` is `gct` / `vo` / `vr`; `model_type` distinguishes power vs linear. GCT power-model coefficients `coef_alpha` (α, `log(v)` intercept) and `coef_d` (exponent, d < 0); VO/VR linear-model `coef_a` (intercept) and `coef_b` (slope). `period_start`/`period_end` bound the (inclusive) training window; `n_samples` is the sample count; `rmse` the error; `speed_range_min`/`speed_range_max` (m/s) — the band the model can be **trusted** over: the 5-95 percentile of the training speeds, not their raw min/max (#1096). Predictions outside it inflate the metric's sigma so the star rating stays conservative, and the evaluation carries `extrapolated: true` (#1088). Percentiles rather than extremes because a baseline covering an activity may be trained on that activity's own splits, so one fast workout would otherwise stretch the range past everything else and silence the guard. Below 20 samples, or when the percentile band collapses, the raw min/max is stored instead. `power_a`/`power_b` are the speed-from-power coefficients and `power_rmse` its error.
 
 `model_type` values: `power_gct` (GCT, fitted in the prediction direction), `power` (legacy GCT rows written before #1088, systematically too demanding at fast paces — retrain to replace), `linear` (VO/VR/cadence), `linear_flat` (slope-suppressed linear, see #873).
 
@@ -561,8 +563,8 @@ Warmup = `WARMUP` · Run = `INTERVAL` / active (main work) · Recovery = `RECOVE
 
 ### Trend Usage
 `get_form_baseline_trend(activity_id, activity_date)`:
-1. Retrieves the baseline whose `[period_start, period_end]` contains `activity_date`.
-2. Retrieves the ~1-month-earlier baseline.
+1. Resolves the activity's `dynamics_source` (NULL → `'all'`) and retrieves that sensor's baseline whose `[period_start, period_end]` contains `activity_date`.
+2. Retrieves the same sensor's ~1-month-earlier baseline.
 3. Computes Δd (GCT) / Δb (VO/VR); negative deltas = improvement (shorter GCT / less bounce at the same pace).
 
 > Baselines are **not** generated automatically — monthly backfill is required, and "No baseline found" usually means no trained window covers the year/period of the activity.

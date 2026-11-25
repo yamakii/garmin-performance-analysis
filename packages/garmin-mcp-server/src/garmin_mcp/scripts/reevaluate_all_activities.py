@@ -18,28 +18,48 @@ from garmin_mcp.database.connection import get_connection
 from garmin_mcp.form_baseline.evaluator import evaluate_and_store
 
 
-def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
+def get_activities_to_reevaluate(
+    db_path: str,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> list[tuple[int, str]]:
     """Get list of activities that can be re-evaluated.
 
     Returns activities that:
     1. Have splits data with form metrics
-    2. Have a corresponding baseline in form_baseline_history
+    2. Have a baseline in form_baseline_history trained on the activity's own
+       dynamics sensor (NULL sensor -> the legacy ``'all'`` model, #1631)
+    3. Fall inside the optional ``start_date`` / ``end_date`` (inclusive)
 
     Args:
         db_path: Path to DuckDB database
+        start_date: Earliest activity date (YYYY-MM-DD), or None
+        end_date: Latest activity date (YYYY-MM-DD), or None
 
     Returns:
         List of (activity_id, activity_date) tuples
     """
+    date_clause = ""
+    params: list[str] = []
+    if start_date:
+        date_clause += " AND a.activity_date >= CAST(? AS DATE)"
+        params.append(start_date)
+    if end_date:
+        date_clause += " AND a.activity_date <= CAST(? AS DATE)"
+        params.append(end_date)
+
     with get_connection(db_path) as conn:
-        result = conn.execute("""
+        result = conn.execute(
+            f"""
             WITH activities_with_form AS (
-                SELECT DISTINCT a.activity_id, a.activity_date
+                SELECT DISTINCT a.activity_id, a.activity_date,
+                       COALESCE(a.dynamics_source, 'all') AS dynamics_source
                 FROM activities a
                 JOIN splits s ON a.activity_id = s.activity_id
                 WHERE s.ground_contact_time IS NOT NULL
                   AND s.vertical_oscillation IS NOT NULL
                   AND s.vertical_ratio IS NOT NULL
+                  {date_clause}
             )
             SELECT awf.activity_id, awf.activity_date
             FROM activities_with_form awf
@@ -50,9 +70,12 @@ def get_activities_to_reevaluate(db_path: str) -> list[tuple[int, str]]:
                   AND fbh.period_end >= awf.activity_date
                   AND fbh.user_id = 'default'
                   AND fbh.condition_group = 'flat_road'
+                  AND fbh.dynamics_source = awf.dynamics_source
             )
             ORDER BY awf.activity_date
-        """).fetchall()
+            """,
+            params,
+        ).fetchall()
 
         return [(int(row[0]), str(row[1])) for row in result]
 
@@ -78,6 +101,14 @@ def main() -> int:
         help="Re-evaluate specific activity IDs only",
     )
     parser.add_argument(
+        "--start-date",
+        help="Only activities on or after this date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--end-date",
+        help="Only activities on or before this date (YYYY-MM-DD)",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose output",
@@ -100,7 +131,9 @@ def main() -> int:
 
     # Get activities to re-evaluate
     print("Finding activities to re-evaluate...", file=sys.stderr)
-    activities = get_activities_to_reevaluate(db_path)
+    activities = get_activities_to_reevaluate(
+        db_path, start_date=args.start_date, end_date=args.end_date
+    )
 
     # Filter by specific IDs if requested
     if args.activity_ids:

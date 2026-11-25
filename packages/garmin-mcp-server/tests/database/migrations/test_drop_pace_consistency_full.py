@@ -83,5 +83,5 @@ def test_drop_pace_consistency_full_registered_as_v22() -> None:
         "drop_pace_consistency_full",
         _wrap_drop_pace_consistency_full,
     ) in MIGRATIONS
-    # Head moved to 37 with activity_context.replaces_context_ids (#1596).
-    assert max(version for version, _, _ in MIGRATIONS) == 37
+    # Head moved to 38 with form_baseline_history.dynamics_source (#1631).
+    assert max(version for version, _, _ in MIGRATIONS) == 38

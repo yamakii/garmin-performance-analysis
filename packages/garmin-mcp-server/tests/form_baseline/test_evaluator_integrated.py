@@ -20,7 +20,8 @@ def tmp_db_with_data(tmp_path):
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            base_weight_kg DOUBLE
+            base_weight_kg DOUBLE,
+            dynamics_source VARCHAR
         )
     """)
 
@@ -41,6 +42,7 @@ def tmp_db_with_data(tmp_path):
         CREATE TABLE form_baseline_history (
             user_id VARCHAR,
             condition_group VARCHAR,
+            dynamics_source VARCHAR DEFAULT 'all',
             metric VARCHAR,
             period_start DATE,
             period_end DATE,
@@ -55,7 +57,7 @@ def tmp_db_with_data(tmp_path):
             power_a DOUBLE,
             power_b DOUBLE,
             power_rmse DOUBLE,
-            UNIQUE (user_id, condition_group, metric, period_start, period_end)
+            UNIQUE (user_id, condition_group, dynamics_source, metric, period_start, period_end)
         )
     """)
 
@@ -87,7 +89,8 @@ def tmp_db_with_data(tmp_path):
     # Insert test data
     # Activity with interval_sprint training type
     conn.execute("""
-        INSERT INTO activities VALUES (12345, '2025-10-28', 70.0)
+        INSERT INTO activities (activity_id, activity_date, base_weight_kg)
+        VALUES (12345, '2025-10-28', 70.0)
     """)
 
     # split_id, activity_id, power, average_speed, grade_adjusted_speed,
@@ -106,7 +109,11 @@ def tmp_db_with_data(tmp_path):
 
     # Baseline for power
     conn.execute("""
-        INSERT INTO form_baseline_history VALUES
+        INSERT INTO form_baseline_history (
+            user_id, condition_group, metric, period_start, period_end,
+            coef_alpha, coef_d, coef_a, coef_b, n_samples, rmse,
+            speed_range_min, speed_range_max, power_a, power_b, power_rmse
+        ) VALUES
             ('default', 'flat_road', 'power',
              '2025-10-01', '2025-10-31',
              NULL, NULL, NULL, NULL, 100, 0.1, 3.0, 6.0, 1.5, 0.8, 0.1)
@@ -121,7 +128,8 @@ def tmp_db_with_data(tmp_path):
 
     # Activity without power data (old activity from 2021)
     conn.execute("""
-        INSERT INTO activities VALUES (67890, '2021-06-01', 68.0)
+        INSERT INTO activities (activity_id, activity_date, base_weight_kg)
+        VALUES (67890, '2021-06-01', 68.0)
     """)
 
     conn.execute("""

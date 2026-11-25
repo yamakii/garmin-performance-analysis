@@ -390,6 +390,47 @@ class TestGetFormBaselineTrend:
         assert "delta_d" not in power
         assert "delta_b" not in power
 
+    def test_form_baseline_trend_same_sensor(self, reader_db_path: Path):
+        """The trend compares the run's own sensor across periods (#1631)."""
+        conn = duckdb.connect(str(reader_db_path))
+        conn.execute(
+            "INSERT INTO activities (activity_id, activity_date, dynamics_source) "
+            "VALUES (777, '2025-10-15', 'wrist')"
+        )
+        rows = [
+            # (hid, source, coef_d, start, end)
+            (0, "wrist", -0.15, "2025-10-01", "2025-10-31"),
+            (1, "wrist", -0.12, "2025-09-01", "2025-09-30"),
+            # The pod curve sits on another scale in both periods.
+            (2, "pod", -0.40, "2025-10-01", "2025-10-31"),
+            (3, "pod", -0.35, "2025-09-01", "2025-09-30"),
+            (4, "all", -0.90, "2025-09-01", "2025-09-30"),
+        ]
+        for hid, source, cd, ps, pe in rows:
+            conn.execute(
+                """
+                INSERT INTO form_baseline_history
+                    (history_id, user_id, condition_group, dynamics_source,
+                     metric, coef_d, period_start, period_end)
+                VALUES (?, 'default', 'flat_road', ?, 'gct', ?, ?, ?)
+                """,
+                [hid, source, cd, ps, pe],
+            )
+        conn.close()
+        reader = PhysiologyReader(db_path=str(reader_db_path))
+
+        result = reader.get_form_baseline_trend(777, "2025-10-15")
+
+        assert result["success"] is True
+        gct = result["metrics"]["gct"]
+        assert gct["current"]["coef_d"] == pytest.approx(-0.15)
+        assert gct["previous"]["coef_d"] == pytest.approx(-0.12)
+        assert gct["delta_d"] == pytest.approx(-0.03)
+
+        # An activity the table does not know falls back to the legacy 'all' rows.
+        legacy = reader.get_form_baseline_trend(12345, "2025-10-15")
+        assert legacy["success"] is False
+
     def test_power_no_previous_omits_delta(self, reader_db_path: Path):
         # Current power row exists but no previous power row. A previous GCT row
         # keeps the overall comparison successful; power just gets no delta.

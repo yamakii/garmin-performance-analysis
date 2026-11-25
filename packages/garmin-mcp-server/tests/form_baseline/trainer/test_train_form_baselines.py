@@ -80,7 +80,11 @@ def test_train_form_baselines_respects_min_samples(tmp_path):
         act_date = date(2026, 3, 1) + timedelta(days=k)
         activity_rows.append((activity_id, act_date, 70.0))
         split_rows.extend(_make_splits(activity_id))
-    conn.executemany("INSERT INTO activities VALUES (?, ?, ?)", activity_rows)
+    conn.executemany(
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (?, ?, ?)",
+        activity_rows,
+    )
     conn.executemany(
         "INSERT INTO splits VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", split_rows
     )

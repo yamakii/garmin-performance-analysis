@@ -28,7 +28,8 @@ def tmp_db_with_baseline(tmp_path):
         CREATE TABLE activities (
             activity_id INTEGER PRIMARY KEY,
             activity_date DATE,
-            base_weight_kg FLOAT
+            base_weight_kg FLOAT,
+            dynamics_source VARCHAR
         )
     """)
 
@@ -50,6 +51,7 @@ def tmp_db_with_baseline(tmp_path):
             history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'),
             user_id VARCHAR DEFAULT 'default',
             condition_group VARCHAR DEFAULT 'flat_road',
+            dynamics_source VARCHAR DEFAULT 'all',
             metric VARCHAR,
             period_start DATE,
             period_end DATE,
@@ -105,7 +107,9 @@ def tmp_db_with_baseline(tmp_path):
 
     # Insert activity
     conn.execute(
-        "INSERT INTO activities VALUES (1001, ?, 75.0)", [today - timedelta(days=5)]
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (1001, ?, 75.0)",
+        [today - timedelta(days=5)],
     )
 
     # Insert hr_efficiency (training type)
@@ -170,7 +174,9 @@ def test_evaluate_power_efficiency_no_power(tmp_db_with_baseline):
     conn = duckdb.connect(tmp_db_with_baseline)
     today = datetime.now().date()
     conn.execute(
-        "INSERT INTO activities VALUES (1002, ?, 75.0)", [today - timedelta(days=3)]
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (1002, ?, 75.0)",
+        [today - timedelta(days=3)],
     )
     conn.execute(
         "INSERT INTO splits VALUES (10003, 1002, 9.0, 3.5, NULL, 'run', 1.0, 300.0)"
@@ -257,7 +263,7 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
     conn.execute(
         "CREATE TABLE activities (activity_id INTEGER PRIMARY KEY, "
-        "activity_date DATE, base_weight_kg FLOAT)"
+        "activity_date DATE, base_weight_kg FLOAT, dynamics_source VARCHAR)"
     )
     conn.execute(
         "CREATE TABLE splits (split_id INTEGER PRIMARY KEY, activity_id INTEGER, "
@@ -269,7 +275,7 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
         "history_id INTEGER PRIMARY KEY DEFAULT nextval('seq_history_id'), "
         "user_id VARCHAR, condition_group VARCHAR, metric VARCHAR, "
         "period_start DATE, period_end DATE, power_a DOUBLE, power_b DOUBLE, "
-        "power_rmse DOUBLE)"
+        "power_rmse DOUBLE, dynamics_source VARCHAR DEFAULT 'all')"
     )
     conn.execute(
         "CREATE TABLE hr_efficiency (activity_id INTEGER PRIMARY KEY, "
@@ -284,7 +290,9 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
         [today - timedelta(days=60), today, power_rmse],
     )
     conn.execute(
-        "INSERT INTO activities VALUES (2001, ?, 75.0)", [today - timedelta(days=5)]
+        "INSERT INTO activities (activity_id, activity_date, base_weight_kg) "
+        "VALUES (2001, ?, 75.0)",
+        [today - timedelta(days=5)],
     )
     conn.execute("INSERT INTO hr_efficiency VALUES (2001, 'low_moderate')")
     conn.execute(

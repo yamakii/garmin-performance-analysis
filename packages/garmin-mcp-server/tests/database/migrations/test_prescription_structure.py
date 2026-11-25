@@ -84,4 +84,5 @@ def test_registry_has_version_33() -> None:
         (35, "add_sensor_source_columns"),
         (36, "add_activity_context_and_coaching_rules"),
         (37, "add_activity_context_replaces"),
+        (38, "add_form_baseline_dynamics_source"),
     ]
