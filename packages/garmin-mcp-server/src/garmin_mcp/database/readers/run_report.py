@@ -82,7 +82,10 @@ from garmin_mcp.analysis.hr_windows import (
     seconds_over,
     steady_mask,
 )
-from garmin_mcp.analysis.normal_range import EXTRAPOLATION_NOT_JUDGED
+from garmin_mcp.analysis.normal_range import (
+    EXTRAPOLATION_NOT_JUDGED,
+    FORM_MAX_WINDOW_DAYS,
+)
 from garmin_mcp.analysis.plan_axes import (
     EASY_PURPOSES,
     STRIDES_MAX_WORK_S,
@@ -131,7 +134,8 @@ logger = logging.getLogger(__name__)
 # Trailing window loaded for the baselines. ``normal_range.WINDOW_DAYS`` (60)
 # trims the signal baselines further inside ``build_signals``; the wider window
 # is what the heat-adjustment model is fitted on, and what the same-family
-# recurrence lookback picks its previous runs from.
+# recurrence lookback picks its previous runs from. The load itself reaches
+# ``normal_range.FORM_MAX_WINDOW_DAYS`` back, for the form baseline top-up only.
 HISTORY_DAYS = 90
 
 # Verdict symbol -> the label the page puts in the headline.
@@ -295,11 +299,26 @@ class RunReportReader(BaseDBReader):
 
             activity_date = str(today_core["activity_date"])
             window_start = _shift_days(activity_date, -HISTORY_DAYS)
+            # A thin same-sensor form baseline may reach further back than the
+            # rest of the report (#1629), so the load covers that reach; every
+            # other consumer keeps the ``HISTORY_DAYS`` slice below.
+            form_window_start = _shift_days(activity_date, -FORM_MAX_WINDOW_DAYS)
 
-            runs = _fetch_window(conn, tables, window_start, activity_date)
-            _mark_extrapolated(conn, tables, runs, window_start, activity_date)
+            runs = _fetch_window(conn, tables, form_window_start, activity_date)
+            _mark_extrapolated(conn, tables, runs, form_window_start, activity_date)
             today = runs.get(activity_id) or today_core
-            history = _history_before(runs, activity_id, activity_date)
+            form_history = _history_before(runs, activity_id, activity_date)
+            history = [
+                run
+                for run in form_history
+                if str(run["activity_date"])[:10] >= window_start
+            ]
+            runs = {
+                run_id: run
+                for run_id, run in runs.items()
+                if run_id == activity_id
+                or str(run["activity_date"])[:10] >= window_start
+            }
 
             zone_rows = (
                 _fetch_zone_rows(conn, activity_id)
@@ -418,7 +437,7 @@ class RunReportReader(BaseDBReader):
         today = {**today, "form_judged_share": shares["form"]}
 
         jog_avg_hr = _ceiling_avg_hr(today_splits, hr_samples, steady)
-        signals = self._signals(today, history)
+        signals = self._signals(today, history, form_history)
         # Scenes read each kilometre's HR over its steady seconds only (#1320):
         # a stride and its recovery inside a kilometre are not a ceiling touch.
         steady_splits = _steady_splits(told_splits, hr_samples, steady)
@@ -675,9 +694,16 @@ class RunReportReader(BaseDBReader):
         return sessions
 
     def _signals(
-        self, today: dict[str, Any], history: list[dict[str, Any]]
+        self,
+        today: dict[str, Any],
+        history: list[dict[str, Any]],
+        form_history: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Judge today's metrics against the athlete's own normal range.
+
+        ``build_signals`` gets the wider ``form_history`` (it trims each
+        baseline to its own window, #1629); the heat-adjustment model is still
+        fitted on the ``HISTORY_DAYS`` ``history`` only.
 
         The import is function-local for the same reason as in
         :meth:`_fit_hr_model`: ``analysis.run_signals`` pulls in the
@@ -687,7 +713,7 @@ class RunReportReader(BaseDBReader):
         from garmin_mcp.analysis.run_signals import build_signals
 
         return build_signals(
-            today, history, hr_model=self._fit_hr_model(today, history)
+            today, form_history, hr_model=self._fit_hr_model(today, history)
         )
 
     def _fit_hr_model(

@@ -48,6 +48,18 @@ WINDOW_DAYS = 60
 #: reported ``insufficient`` rather than judged against two or three runs.
 MIN_BASELINE_RUNS = 10
 
+#: A form baseline restricted to today's dynamics sensor (#1470) can run thin
+#: inside ``WINDOW_DAYS`` when the athlete alternates sensors (a pod most days,
+#: the wrist once a week). Below this many eligible same-sensor runs the
+#: baseline is topped up with older ones, newest first (#1629). Dense periods
+#: already hold this many and judge exactly as before.
+FORM_BASELINE_TARGET_RUNS = 20
+
+#: How far back that top-up may reach (days). The form values are
+#: pace-corrected deviations, so older runs stay on today's scale, but a form
+#: from half a year ago is no longer "the athlete's normal".
+FORM_MAX_WINDOW_DAYS = 180
+
 #: Minimum running splits (see ``form_baseline/split_filter.py``) a run needs
 #: before its form averages describe anything. A 2-split run is a warmup.
 MIN_VALID_SPLITS = 3
