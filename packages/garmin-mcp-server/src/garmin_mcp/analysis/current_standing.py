@@ -124,14 +124,20 @@ def _step_view(
     ``with_note`` adds the step's ``note``: where the plan says what each
     session of the week is for and what decides what. Without it a reader sees
     only the block's one-line purpose and fills in the meaning itself (#1613).
+
+    Every step carries its planned ``hr_ceiling``: the race step's is the
+    goal's own heart-rate yardstick, so a reader does not fall back on the
+    easy-long ceiling of the run in front of it (#1630).
     """
     if step is None:
         return None
     target_km = step.get("target_km")
+    hr_ceiling = step.get("hr_ceiling")
     view: dict[str, Any] = {
         "week_start": str(step.get("week_start")),
         "target_km": float(target_km) if target_km is not None else None,
         "kind": step.get("kind"),
+        "hr_ceiling": int(hr_ceiling) if hr_ceiling is not None else None,
     }
     if with_note:
         note = step.get("note")
