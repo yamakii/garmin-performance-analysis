@@ -86,7 +86,8 @@ def _conn_with_splits(splits: list[tuple[int, float, float, float]]):
     conn.execute(
         "CREATE TABLE splits (split_id INTEGER PRIMARY KEY, activity_id BIGINT, "
         "grade_adjusted_speed FLOAT, power FLOAT, role_phase VARCHAR, "
-        "distance FLOAT, pace_seconds_per_km FLOAT)"
+        "distance FLOAT, pace_seconds_per_km FLOAT, "
+        "dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE))"
     )
     conn.execute(
         "CREATE TABLE hr_efficiency (activity_id BIGINT PRIMARY KEY, "

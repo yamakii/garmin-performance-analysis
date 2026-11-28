@@ -125,8 +125,8 @@ from garmin_mcp.database.readers.base import BaseDBReader
 from garmin_mcp.form_baseline.scorer import extrapolation_factor
 from garmin_mcp.form_baseline.split_filter import (
     MIN_SPLIT_KM,
-    running_split_params,
-    running_split_sql,
+    form_split_params,
+    form_split_sql,
 )
 
 logger = logging.getLogger(__name__)
@@ -595,6 +595,10 @@ class RunReportReader(BaseDBReader):
             "sensors": {
                 "dynamics_source": today.get("dynamics_source"),
                 "hr_source": today.get("hr_source"),
+                # Pod splits dropped from every form path as collapsed (#1635).
+                "dynamics_suspect_splits": int(
+                    today.get("dynamics_suspect_splits") or 0
+                ),
             },
             "provenance": provenance_map(today.get("dynamics_source")),
             "next_run_target": next_run_target,
@@ -1015,14 +1019,29 @@ def _fetch_window(
             f"""
             SELECT activity_id, COUNT(*)
             FROM splits
-            WHERE {in_window} AND {running_split_sql()}
+            WHERE {in_window} AND {form_split_sql()}
             GROUP BY activity_id
             """,
-            [*window_params, *running_split_params()],
+            [*window_params, *form_split_params()],
         ).fetchall():
             target = runs.get(int(row[0]))
             if target is not None:
                 target["n_valid_splits"] = int(row[1])
+        # Splits dropped as collapsed pod dynamics (#1635). They are flagged only
+        # when they would otherwise pass the running filter, so the flag count is
+        # what the clean count lost.
+        for row in conn.execute(
+            f"""
+            SELECT activity_id, COUNT(*)
+            FROM splits
+            WHERE {in_window} AND coalesce(dynamics_suspect, FALSE)
+            GROUP BY activity_id
+            """,
+            window_params,
+        ).fetchall():
+            target = runs.get(int(row[0]))
+            if target is not None:
+                target["dynamics_suspect_splits"] = int(row[1])
 
     return runs
 
@@ -1111,7 +1130,7 @@ def _fetch_evaluation_speeds(
     rows = conn.execute(
         f"""
         SELECT s.activity_id,
-               AVG(CASE WHEN {running_split_sql("s")}
+               AVG(CASE WHEN {form_split_sql("s")}
                         THEN s.pace_seconds_per_km END),
                AVG(s.pace_seconds_per_km)
         FROM splits s {join}
@@ -1125,7 +1144,7 @@ def _fetch_evaluation_speeds(
           {phase_clause}
         GROUP BY s.activity_id
         """,
-        [*running_split_params(), window_start, activity_date],
+        [*form_split_params(), window_start, activity_date],
     ).fetchall()
 
     speeds: dict[int, float] = {}
@@ -1432,6 +1451,7 @@ def _activity_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "training_type": None,
         "intensity_category": "unknown",
         "n_valid_splits": 0,
+        "dynamics_suspect_splits": 0,
     }
 
 

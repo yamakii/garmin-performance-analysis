@@ -17,6 +17,7 @@ import pytest
 from garmin_mcp.analysis import run_signals
 from garmin_mcp.analysis.normal_range import MAD_SCALE, compute_band
 from garmin_mcp.analysis.run_signals import (
+    REASON_DYNAMICS_SUSPECT,
     REASON_EXTRAPOLATED,
     REASON_HOT,
     REASON_LOW_JUDGED_SHARE,
@@ -51,6 +52,7 @@ _COEFFS = HeatModelCoefficients(
 # silently printing a brace to the reader.
 _REASON_PARAMS: dict[str, dict[str, Any]] = {
     REASON_SHORT_RUN: {"n": 2, "required": 3},
+    REASON_DYNAMICS_SUSPECT: {"n": 2, "required": 3},
     REASON_THIN_BASELINE: {"n": 0, "required": 10},
     REASON_SENSOR_THIN_BASELINE: {"sensor": "ランニングポッド", "n": 3, "required": 10},
     REASON_HOT: {"temp": 31.0},
@@ -158,6 +160,26 @@ def test_short_run_signals_are_insufficient():
         assert signal["streak"] == 0
         assert signal["reason_code"] == REASON_SHORT_RUN
         assert signal["reason"] == "有効なスプリットが 2 本で、判定には 3 本以上が必要"
+
+
+@pytest.mark.unit
+def test_form_signal_reason_dynamics_suspect():
+    """2 clean splits, 4 dropped as suspect pod dynamics: not a short run."""
+    signals = build_signals(
+        _run(0, n_valid_splits=2, dynamics_suspect_splits=4),
+        _history(),
+        hr_model=_COEFFS,
+    )
+
+    form = [s for s in signals if s["family"] == "form"]
+    assert len(form) == 5
+    for signal in form:
+        assert signal["status"] == "insufficient", signal["metric"]
+        assert signal["reason_code"] == "dynamics_suspect"
+        assert signal["reason"] == (
+            "ポッドの測定が乱れた区間を除くと有効なスプリットが 2 本で、"
+            "判定には 3 本以上が必要"
+        )
 
 
 @pytest.mark.unit
@@ -478,7 +500,7 @@ def test_every_reason_code_has_a_japanese_message():
         for name, value in vars(run_signals).items()
         if name.startswith("REASON_") and isinstance(value, str)
     }
-    assert len(codes) == 11
+    assert len(codes) == 12
 
     for code in codes:
         message = run_signals.describe_reason(code, _REASON_PARAMS.get(code))

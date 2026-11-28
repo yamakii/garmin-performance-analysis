@@ -198,6 +198,22 @@ def _insert_table(
             conn=conn,
             raw_splits_file=str(raw_splits_file) if raw_splits_file else None,
         )
+        if success:
+            # Flag collapsed pod dynamics before anything reads the splits, so
+            # form evaluation (run by both ingest paths afterwards) sees only
+            # clean splits (#1635).
+            from garmin_mcp.form_baseline.dynamics_quality import (
+                flag_suspect_dynamics,
+            )
+
+            try:
+                flag_suspect_dynamics(conn, activity_id)
+            except Exception as exc:  # flags are an aid; never lose the ingest
+                logger.warning(
+                    "Could not flag suspect dynamics for activity %s: %s",
+                    activity_id,
+                    exc,
+                )
     elif table_name == "form_efficiency":
         from garmin_mcp.database.inserters.form_efficiency import (
             insert_form_efficiency,

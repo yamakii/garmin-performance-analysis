@@ -128,7 +128,11 @@ def test_report_exposes_sensors_and_provenance(reader_db_path: Path) -> None:
     report = _report(reader_db_path)
 
     assert report is not None
-    assert report["sensors"] == {"dynamics_source": "pod", "hr_source": None}
+    assert report["sensors"] == {
+        "dynamics_source": "pod",
+        "hr_source": None,
+        "dynamics_suspect_splits": 0,
+    }
     assert report["provenance"]["stride_length_cm"] == "device_derived"
     assert report["provenance"]["gct_ms"] == "measured"
     assert report["provenance"]["avg_hr"] == "measured"

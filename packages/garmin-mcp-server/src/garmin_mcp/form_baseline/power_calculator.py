@@ -16,7 +16,7 @@ a 10-14 m manual-lap fragment whose power is a measurement artifact: on activity
 298.57 W and flipped the label to "下回る" (#1231).
 """
 
-from .split_filter import running_split_params, running_split_sql
+from .split_filter import form_split_params, form_split_sql
 
 
 def calculate_power_efficiency_label(
@@ -135,9 +135,9 @@ def calculate_power_efficiency_internal(
               AND power IS NOT NULL
               AND grade_adjusted_speed IS NOT NULL
               AND role_phase = 'run'
-              AND {running_split_sql()}
+              AND {form_split_sql()}
             """,
-            [activity_id, *running_split_params()],
+            [activity_id, *form_split_params()],
         ).fetchone()
 
         if not splits_data or splits_data[0] is None:

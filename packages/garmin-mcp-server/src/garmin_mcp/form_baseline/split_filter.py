@@ -33,8 +33,11 @@ MIN_SPLIT_KM = 0.4
 MAX_RUNNING_PACE_S_PER_KM = 600.0
 
 
-def running_split_sql(alias: str = "") -> str:
-    """Return the SQL predicate selecting running (non-walk, non-fragment) splits.
+def form_split_sql(alias: str = "") -> str:
+    """Return the SQL predicate selecting splits the form code may use.
+
+    Running (non-walk, non-fragment) splits whose pod dynamics were not flagged
+    ``dynamics_suspect`` at ingest (#1635).
 
     Args:
         alias: Optional table alias to prefix each column with, e.g. ``"s"``
@@ -42,16 +45,17 @@ def running_split_sql(alias: str = "") -> str:
 
     Returns:
         A parameterised SQL boolean expression. Bind the values returned by
-        :func:`running_split_params` in the same order.
+        :func:`form_split_params` in the same order.
     """
     prefix = f"{alias}." if alias else ""
     return (
         f"{prefix}pace_seconds_per_km > 0 "
         f"AND {prefix}pace_seconds_per_km < ? "
-        f"AND {prefix}distance >= ?"
+        f"AND {prefix}distance >= ? "
+        f"AND NOT coalesce({prefix}dynamics_suspect, FALSE)"
     )
 
 
-def running_split_params() -> list[float]:
-    """Return bind params matching the placeholders in :func:`running_split_sql`."""
+def form_split_params() -> list[float]:
+    """Return bind params matching the placeholders in :func:`form_split_sql`."""
     return [MAX_RUNNING_PACE_S_PER_KM, MIN_SPLIT_KM]

@@ -95,6 +95,7 @@ REASON_NO_HR_INPUTS = "no_hr_inputs"
 REASON_HOT = "drift_in_heat"
 REASON_LOW_JUDGED_SHARE = "low_judged_share"
 REASON_SENSOR_THIN_BASELINE = "sensor_thin_baseline"
+REASON_DYNAMICS_SUSPECT = "dynamics_suspect"
 
 #: How each ``activities.dynamics_source`` is named to the reader. A pod and
 #: the wrist measure the form metrics on different scales (wrist GCT is a
@@ -118,6 +119,10 @@ MIN_JUDGED_SHARE = 0.5
 #: without its Japanese wording.
 REASON_MESSAGES_JA: dict[str, str] = {
     REASON_SHORT_RUN: "有効なスプリットが {n} 本で、判定には {required} 本以上が必要",
+    REASON_DYNAMICS_SUSPECT: (
+        "ポッドの測定が乱れた区間を除くと有効なスプリットが {n} 本で、"
+        "判定には {required} 本以上が必要"
+    ),
     REASON_NO_SPLIT_COUNT: "このランの有効なスプリット数が分からないため判定できない",
     REASON_EXTRAPOLATED: "学習した速度の範囲から大きく外れているため参考値",
     REASON_NO_HR_MODEL: "同じ種類のランが少なく、想定心拍を計算できない",
@@ -674,6 +679,14 @@ def _eligibility_reason(row: Mapping[str, Any], metric: str) -> _Reason | None:
     if splits is None:
         return _Reason(REASON_NO_SPLIT_COUNT)
     if splits < MIN_VALID_SPLITS:
+        # Dropped pod splits are why the run falls short when they would have
+        # made up the count (#1635).
+        suspect = as_float(row.get("dynamics_suspect_splits")) or 0.0
+        if suspect > 0 and splits + suspect >= MIN_VALID_SPLITS:
+            return _Reason(
+                REASON_DYNAMICS_SUSPECT,
+                {"n": int(splits), "required": MIN_VALID_SPLITS},
+            )
         return _Reason(
             REASON_SHORT_RUN, {"n": int(splits), "required": MIN_VALID_SPLITS}
         )

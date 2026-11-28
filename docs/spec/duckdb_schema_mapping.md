@@ -1,7 +1,7 @@
 # DuckDB Schema Mapping Specification
 
-**Version**: 2.16
-**Last Updated**: 2026-11-07
+**Version**: 2.18
+**Last Updated**: 2026-11-28
 **Database**: `garmin_performance.duckdb`
 **Total Tables**: 32 domain tables (+ `schema_version` migration bookkeeping)
 
@@ -23,6 +23,9 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 > **Schema bookkeeping**: a 33rd table, `schema_version` (`version INTEGER PK`, `name`, `applied_at`), tracks applied migrations and is **not** a domain table. The migration runner (`database/migrations/registry.py`) applies numbered migrations after `_ensure_tables()` and records them there.
 
 ## Change History
+
+### Version 2.18 (2026-11-28)
+- **`splits.dynamics_suspect` added** (migration `add_splits_dynamics_suspect`, version 39; also in the `_ensure_tables()` DDL), `BOOLEAN DEFAULT FALSE`. A pod that collapses mid-run (GCT 30-50 ms short, VO 2-5 cm large at the same pace and cadence) leaves splits that are measurement artifacts. `form_baseline/dynamics_quality.flag_suspect_dynamics` flags them at ingest, right after the splits insert: a pod split is scored `S = max(-z_gct, 0) + max(z_vo, 0)` against the median / 1.4826*MAD of every prior same-sensor split in its 30 s/km pace bin (bins under 30 samples are skipped), and `S >= 5` sets the flag. Wrist dynamics are derived, not measured, and are never flagged. The rows are kept; `split_filter.form_split_sql` (formerly `running_split_sql`) drops them from model training, `form_evaluations`, `n_valid_splits` and the baselines. Backfill with `garmin_mcp.scripts.backfill_dynamics_suspect` (issue #1635).
 
 ### Version 2.17 (2026-11-15)
 - **`activity_context.replaces_context_ids` added** (migration `add_activity_context_replaces`, version 37; also in the `_ensure_tables()` DDL). The reader used to keep only the newest row per `(activity_id, kind)`, so a second `other` row about one run hid the first. Now only the single-valued kinds (`commute`, `load`, `strides_carried`) keep their newest row; the other kinds return every row, and a save retires earlier rows of the same activity only by listing their `context_id`s in `replaces` (issue #1596).
@@ -249,6 +252,7 @@ This document provides comprehensive schema documentation for all DuckDB tables 
 | average_speed | DOUBLE |
 | grade_adjusted_speed | DOUBLE |
 | workout_step_index | INTEGER |
+| dynamics_suspect | BOOLEAN |
 <!-- END GENERATED: schema:splits -->
 
 **Sources** (raw lapDTO field → column): `activityId`→`activity_id`, `lapIndex`→`split_index`, `distance`→`distance` (m), `duration`→`duration_seconds` (s), `startTimeGMT`→`start_time_gmt`, `intensityType`→`intensity_type` (WARMUP/INTERVAL/RECOVERY/COOLDOWN/REST), `averageSpeed`→`pace_str`/`pace_seconds_per_km`/`average_speed`, `averageHR`→`heart_rate`, `averageRunCadence`→`cadence` (spm, both feet), `avgPower`→`power` (W), `strideLength`→`stride_length` (cm), `groundContactTime`→`ground_contact_time` (ms), `verticalOscillation`→`vertical_oscillation` (cm), `verticalRatio`→`vertical_ratio` (%), `elevationGain`/`elevationLoss`→`elevation_gain`/`elevation_loss` (m), `maxHR`→`max_heart_rate`, `maxRunCadence`→`max_cadence`, `maxPower`→`max_power`, `normPower`→`normalized_power`, `gradeAdjustedSpeed`→`grade_adjusted_speed` (m/s), `wktStepIndex`→`workout_step_index` (NULL for laps recorded without a structured workout). `start_time_s` / `end_time_s` are computed offsets.

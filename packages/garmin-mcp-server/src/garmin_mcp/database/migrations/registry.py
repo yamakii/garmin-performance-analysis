@@ -325,6 +325,13 @@ def _wrap_add_form_baseline_dynamics_source(conn: duckdb.DuckDBPyConnection) -> 
     add_form_baseline_dynamics_source(conn)
 
 
+def _wrap_add_splits_dynamics_suspect(conn: duckdb.DuckDBPyConnection) -> None:
+    """Wrap the splits dynamics_suspect column migration (#1635)."""
+    from .splits_dynamics_suspect import add_splits_dynamics_suspect
+
+    add_splits_dynamics_suspect(conn)
+
+
 def _wrap_plan_versioning(conn: duckdb.DuckDBPyConnection) -> None:
     """Wrap plan versioning migration to run on an existing connection."""
     from .add_plan_versioning import _column_exists, _table_exists
@@ -417,4 +424,5 @@ MIGRATIONS: list[tuple[int, str, Callable[[duckdb.DuckDBPyConnection], None]]] =
         "add_form_baseline_dynamics_source",
         _wrap_add_form_baseline_dynamics_source,
     ),
+    (39, "add_splits_dynamics_suspect", _wrap_add_splits_dynamics_suspect),
 ]
