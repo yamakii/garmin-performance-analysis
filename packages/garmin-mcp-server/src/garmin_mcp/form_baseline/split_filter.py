@@ -59,3 +59,25 @@ def form_split_sql(alias: str = "") -> str:
 def form_split_params() -> list[float]:
     """Return bind params matching the placeholders in :func:`form_split_sql`."""
     return [MAX_RUNNING_PACE_S_PER_KM, MIN_SPLIT_KM]
+
+
+def form_split_sql_no_pace_ceiling(alias: str = "") -> str:
+    """:func:`form_split_sql` without the walking-pace ceiling.
+
+    For the walk-dominated fallback (#878): a session slower than 10:00/km is
+    still evaluable, but its GPS fragments (< ``MIN_SPLIT_KM``) and its
+    ``dynamics_suspect`` splits stay out -- a fragment trailing a collapsed pod
+    run is never scored, so admitting it re-graded the run from the collapse
+    (#1639). Bind :func:`form_split_no_pace_ceiling_params`.
+    """
+    prefix = f"{alias}." if alias else ""
+    return (
+        f"{prefix}pace_seconds_per_km > 0 "
+        f"AND {prefix}distance >= ? "
+        f"AND NOT coalesce({prefix}dynamics_suspect, FALSE)"
+    )
+
+
+def form_split_no_pace_ceiling_params() -> list[float]:
+    """Bind params for :func:`form_split_sql_no_pace_ceiling`."""
+    return [MIN_SPLIT_KM]
