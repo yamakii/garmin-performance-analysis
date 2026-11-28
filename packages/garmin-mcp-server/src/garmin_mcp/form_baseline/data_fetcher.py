@@ -7,8 +7,11 @@ from typing import Any
 
 from garmin_mcp.database.connection import get_connection
 from garmin_mcp.form_baseline.split_filter import (
+    MIN_SPLIT_KM,
+    form_split_no_pace_ceiling_params,
     form_split_params,
     form_split_sql,
+    form_split_sql_no_pace_ceiling,
 )
 
 _AGGREGATES = """
@@ -57,10 +60,10 @@ def get_splits_data(
 
     When that filter would leave no rows at all -- walk-dominated sessions
     slower than 10:00/km exist in the history -- the average without the
-    pace / distance filter is returned instead so such activities stay
-    evaluable, flagged by ``running_splits_only=False``. That fallback still
-    drops ``dynamics_suspect`` splits; when nothing else is left it raises
-    :class:`AllSplitsSuspectError` (#1637).
+    pace ceiling is returned instead so such activities stay evaluable,
+    flagged by ``running_splits_only=False``. That fallback still drops GPS
+    fragments and ``dynamics_suspect`` splits (#1639); when only suspect
+    splits are left it raises :class:`AllSplitsSuspectError` (#1637).
 
     Args:
         db_path: Path to DuckDB database
@@ -123,19 +126,20 @@ def get_splits_data(
             ).fetchone()
             excluded = int(total[0]) - int(running[5]) if total is not None else 0
         else:
-            # Every split is a walk / fragment: keep the activity evaluable,
-            # but still without the collapsed pod splits (#1637).
+            # Every split is a walk: keep the activity evaluable, relaxing only
+            # the pace ceiling -- GPS fragments and collapsed pod splits stay
+            # out (#1637, #1639).
             running_splits_only = False
             unfiltered = conn.execute(
                 f"SELECT {_AGGREGATES} FROM splits "
-                f"WHERE {base_where} AND {_NOT_SUSPECT}",
-                base_params,
+                f"WHERE {base_where} AND {form_split_sql_no_pace_ceiling()}",
+                [*base_params, *form_split_no_pace_ceiling_params()],
             ).fetchone()
             if unfiltered is None or unfiltered[0] is None:
                 suspect = conn.execute(
                     f"SELECT COUNT(*) FROM splits WHERE {base_where} "
-                    f"AND NOT {_NOT_SUSPECT}",
-                    base_params,
+                    f"AND distance >= ? AND NOT {_NOT_SUSPECT}",
+                    [*base_params, MIN_SPLIT_KM],
                 ).fetchone()
                 if suspect is not None and int(suspect[0]) > 0:
                     raise AllSplitsSuspectError(

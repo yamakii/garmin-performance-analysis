@@ -419,3 +419,51 @@ def test_reevaluate_counts_all_suspect_as_skipped(initialized_db_path: Path) -> 
     counts = reevaluate([(9203, ACTIVITY_DATE)], str(initialized_db_path))
 
     assert counts == {"success": 0, "skipped": 1, "failed": 0}
+
+
+@pytest.mark.integration
+def test_fallback_ignores_short_fragments_of_all_suspect_run(
+    initialized_db_path: Path,
+) -> None:
+    """Unflagged sub-0.4 km fragments do not re-grade a collapsed run (#1639)."""
+    _seed_flagged_run(
+        initialized_db_path, 9300, [205.0, 210.0, 200.0], [True, True, True]
+    )
+    conn = duckdb.connect(str(initialized_db_path))
+    try:
+        for index, distance in ((4, 0.379), (5, 0.169)):
+            conn.execute(
+                """
+                INSERT INTO splits (
+                    activity_id, split_index, distance, duration_seconds,
+                    pace_seconds_per_km, cadence, ground_contact_time,
+                    vertical_oscillation, vertical_ratio, role_phase,
+                    dynamics_suspect
+                ) VALUES (9300, ?, ?, 170.0, 446.0, 178.0, 205.0, 12.5, 8.0,
+                          'run', FALSE)
+                """,
+                [index, distance],
+            )
+    finally:
+        conn.close()
+
+    with pytest.raises(AllSplitsSuspectError):
+        get_splits_data(str(initialized_db_path), 9300)
+
+
+@pytest.mark.integration
+def test_fallback_still_rescues_slow_walk_session(initialized_db_path: Path) -> None:
+    """A session slower than 10:00/km is still averaged by the fallback (#878)."""
+    _seed_flagged_run(
+        initialized_db_path,
+        9301,
+        [260.0, 262.0, 264.0],
+        [False, False, False],
+        pace=660.0,
+    )
+
+    data = get_splits_data(str(initialized_db_path), 9301)
+
+    assert data["running_splits_only"] is False
+    assert data["split_count"] == 3
+    assert data["gct_ms"] == pytest.approx(262.0)
