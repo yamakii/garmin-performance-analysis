@@ -26,6 +26,17 @@ _FORM_METRICS_PRESENT = """
     AND vertical_ratio IS NOT NULL
 """
 
+#: Splits whose pod dynamics collapsed (#1635) never describe the run's form,
+#: not even in the walk-dominated fallback below.
+_NOT_SUSPECT = "NOT coalesce(dynamics_suspect, FALSE)"
+
+
+class AllSplitsSuspectError(ValueError):
+    """Every split with form metrics is ``dynamics_suspect`` (#1637).
+
+    The run has no trustworthy form average, so it must not be graded at all.
+    """
+
 
 def get_splits_data(
     db_path: str,
@@ -45,9 +56,11 @@ def get_splits_data(
     deliberate walk lap is still recorded with ``role_phase='run'``.
 
     When that filter would leave no rows at all -- walk-dominated sessions
-    slower than 10:00/km exist in the history -- the unfiltered average is
-    returned instead so such activities stay evaluable, flagged by
-    ``running_splits_only=False``.
+    slower than 10:00/km exist in the history -- the average without the
+    pace / distance filter is returned instead so such activities stay
+    evaluable, flagged by ``running_splits_only=False``. That fallback still
+    drops ``dynamics_suspect`` splits; when nothing else is left it raises
+    :class:`AllSplitsSuspectError` (#1637).
 
     Args:
         db_path: Path to DuckDB database
@@ -110,13 +123,24 @@ def get_splits_data(
             ).fetchone()
             excluded = int(total[0]) - int(running[5]) if total is not None else 0
         else:
-            # Every split is a walk / fragment: keep the activity evaluable.
+            # Every split is a walk / fragment: keep the activity evaluable,
+            # but still without the collapsed pod splits (#1637).
             running_splits_only = False
             unfiltered = conn.execute(
-                f"SELECT {_AGGREGATES} FROM splits WHERE {base_where}",
+                f"SELECT {_AGGREGATES} FROM splits "
+                f"WHERE {base_where} AND {_NOT_SUSPECT}",
                 base_params,
             ).fetchone()
             if unfiltered is None or unfiltered[0] is None:
+                suspect = conn.execute(
+                    f"SELECT COUNT(*) FROM splits WHERE {base_where} "
+                    f"AND NOT {_NOT_SUSPECT}",
+                    base_params,
+                ).fetchone()
+                if suspect is not None and int(suspect[0]) > 0:
+                    raise AllSplitsSuspectError(
+                        f"Every split of activity {activity_id} is dynamics_suspect"
+                    )
                 raise ValueError(f"No splits found for activity {activity_id}")
             result = unfiltered
             excluded = 0
