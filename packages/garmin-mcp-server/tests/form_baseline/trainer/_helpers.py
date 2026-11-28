@@ -39,7 +39,9 @@ def _seed_baseline_db(db_path: str) -> None:
             grade_adjusted_speed FLOAT,
             power FLOAT,
             role_phase VARCHAR,
-            distance FLOAT
+            distance FLOAT,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")
@@ -147,7 +149,9 @@ def _create_baseline_schema(conn: duckdb.DuckDBPyConnection) -> None:
             grade_adjusted_speed FLOAT,
             power FLOAT,
             role_phase VARCHAR,
-            distance FLOAT
+            distance FLOAT,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
         """)
     conn.execute("CREATE SEQUENCE seq_history_id START 1")

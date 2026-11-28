@@ -19,7 +19,9 @@ def _create_tables(conn: duckdb.DuckDBPyConnection) -> None:
             vertical_oscillation DOUBLE,
             vertical_ratio DOUBLE,
             cadence DOUBLE,
-            distance DOUBLE
+            distance DOUBLE,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
     """)
     conn.execute("""

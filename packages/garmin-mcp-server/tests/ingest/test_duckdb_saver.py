@@ -176,6 +176,45 @@ class TestSaveData:
 
 
 @pytest.mark.integration
+def test_ingest_flags_before_form_evaluation(
+    mocker: Any, initialized_db_path: Path
+) -> None:
+    """The splits insert is followed by the flag step inside the same save.
+
+    Both ingest paths run ``evaluate_form_safely`` only after ``save_data``
+    returns, so flags written here are visible to the evaluation (#1635).
+    """
+    from garmin_mcp.ingest.duckdb_saver import _insert_table
+
+    order: list[str] = []
+    conn = duckdb.connect(str(initialized_db_path))
+    try:
+
+        def fake_insert_splits(**kwargs: Any) -> bool:
+            order.append("insert_splits")
+            return True
+
+        def fake_flag(connection: Any, activity_id: int) -> int:
+            order.append("flag_suspect_dynamics")
+            return 0
+
+        mocker.patch(
+            "garmin_mcp.database.inserters.splits.insert_splits", fake_insert_splits
+        )
+        mocker.patch(
+            "garmin_mcp.form_baseline.dynamics_quality.flag_suspect_dynamics",
+            fake_flag,
+        )
+
+        _insert_table("splits", 4242, conn, raw_splits_file=None)
+        _insert_table("form_efficiency", 4242, conn, raw_splits_file=None)
+    finally:
+        conn.close()
+
+    assert order == ["insert_splits", "flag_suspect_dynamics"]
+
+
+@pytest.mark.integration
 class TestInsertActivities:
     """Regression tests for _insert_activities after legacy fallback removal."""
 

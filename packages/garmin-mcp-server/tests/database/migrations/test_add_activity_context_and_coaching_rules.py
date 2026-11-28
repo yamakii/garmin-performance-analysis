@@ -19,7 +19,7 @@ def test_registry_has_version_36() -> None:
     assert (36, "add_activity_context_and_coaching_rules") in [
         (version, name) for version, name, _ in MIGRATIONS
     ]
-    assert max(version for version, _, _ in MIGRATIONS) == 38
+    assert max(version for version, _, _ in MIGRATIONS) == 39
 
 
 @pytest.mark.integration

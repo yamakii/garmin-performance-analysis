@@ -9,8 +9,8 @@ import pandas as pd
 from sklearn.linear_model import HuberRegressor, RANSACRegressor
 
 from garmin_mcp.form_baseline.split_filter import (
-    running_split_params,
-    running_split_sql,
+    form_split_params,
+    form_split_sql,
 )
 from garmin_mcp.form_baseline.utils import drop_outliers
 
@@ -403,7 +403,7 @@ def train_power_efficiency_baseline(
                   AND s.role_phase = 'run'
                   AND s.grade_adjusted_speed > 1.5
                   AND s.grade_adjusted_speed < 7.0
-                  AND {running_split_sql("s")}
+                  AND {form_split_sql("s")}
                   {_sensor_clause(dynamics_source)}
             """
 
@@ -412,7 +412,7 @@ def train_power_efficiency_baseline(
                 [
                     period_start,
                     period_end,
-                    *running_split_params(),
+                    *form_split_params(),
                     *_sensor_params(dynamics_source),
                 ],
             ).fetchall()
@@ -588,7 +588,7 @@ def train_form_baselines(
       AND s.vertical_ratio IS NOT NULL
       AND a.activity_date >= ?
       AND a.activity_date <= ?
-      AND {running_split_sql("s")}
+      AND {form_split_sql("s")}
       {_sensor_clause(dynamics_source)}
     """
 
@@ -622,7 +622,7 @@ def train_form_baselines(
                     [
                         period_start,
                         period_end,
-                        *running_split_params(),
+                        *form_split_params(),
                         *_sensor_params(dynamics_source),
                     ],
                 ).df()

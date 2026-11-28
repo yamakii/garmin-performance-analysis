@@ -7,8 +7,8 @@ from typing import Any
 
 from garmin_mcp.database.connection import get_connection
 from garmin_mcp.form_baseline.split_filter import (
-    running_split_params,
-    running_split_sql,
+    form_split_params,
+    form_split_sql,
 )
 
 _AGGREGATES = """
@@ -39,7 +39,7 @@ def get_splits_data(
     - Recovery run: Uses all splits if run_splits covers entire activity
 
     On top of that phase selection, walk breaks and GPS-fragment laps are
-    excluded via :func:`~garmin_mcp.form_baseline.split_filter.running_split_sql`
+    excluded via :func:`~garmin_mcp.form_baseline.split_filter.form_split_sql`
     so the averages describe the same population the baseline models were
     trained on (#878). ``run_splits`` cannot do this on its own because a
     deliberate walk lap is still recorded with ``role_phase='run'``.
@@ -97,8 +97,8 @@ def get_splits_data(
         # Preferred path: running splits only (no walk breaks, no GPS fragments)
         running = conn.execute(
             f"SELECT {_AGGREGATES} FROM splits "
-            f"WHERE {base_where} AND {running_split_sql()}",
-            [*base_params, *running_split_params()],
+            f"WHERE {base_where} AND {form_split_sql()}",
+            [*base_params, *form_split_params()],
         ).fetchone()
 
         if running is not None and running[0] is not None:

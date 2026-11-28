@@ -42,7 +42,9 @@ def tmp_db_with_baseline(tmp_path):
             power FLOAT,
             role_phase VARCHAR,
             distance FLOAT,
-            pace_seconds_per_km FLOAT
+            pace_seconds_per_km FLOAT,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
     """)
 
@@ -268,7 +270,8 @@ def _build_gate_db(tmp_path, speed_actual: float, power_rmse: float) -> str:
     conn.execute(
         "CREATE TABLE splits (split_id INTEGER PRIMARY KEY, activity_id INTEGER, "
         "average_speed FLOAT, grade_adjusted_speed FLOAT, power FLOAT, "
-        "role_phase VARCHAR, distance FLOAT, pace_seconds_per_km FLOAT)"
+        "role_phase VARCHAR, distance FLOAT, pace_seconds_per_km FLOAT, "
+        "dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE))"
     )
     conn.execute(
         "CREATE TABLE form_baseline_history ("

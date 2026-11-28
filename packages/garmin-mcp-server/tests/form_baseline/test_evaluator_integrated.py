@@ -34,7 +34,9 @@ def tmp_db_with_data(tmp_path):
             grade_adjusted_speed DOUBLE,
             role_phase VARCHAR,
             distance DOUBLE,
-            pace_seconds_per_km DOUBLE
+            pace_seconds_per_km DOUBLE,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
     """)
 

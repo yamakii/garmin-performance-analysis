@@ -41,7 +41,9 @@ def _base_tmp_db(tmp_path_factory: pytest.TempPathFactory) -> str:
             power FLOAT,
             role_phase VARCHAR,
             distance FLOAT,
-            pace_seconds_per_km FLOAT
+            pace_seconds_per_km FLOAT,
+            -- generated: stays out of the positional INSERTs below (#1635)
+            dynamics_suspect BOOLEAN GENERATED ALWAYS AS (FALSE)
         )
     """)
 
