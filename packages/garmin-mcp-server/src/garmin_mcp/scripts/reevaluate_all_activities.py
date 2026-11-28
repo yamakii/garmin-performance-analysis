@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from garmin_mcp.database.connection import get_connection
+from garmin_mcp.form_baseline.data_fetcher import AllSplitsSuspectError
 from garmin_mcp.form_baseline.evaluator import evaluate_and_store
 
 
@@ -155,10 +156,31 @@ def main() -> int:
             print(f"[{i}/{len(activities)}] {activity_date}: {activity_id}")
         return 0
 
-    # Re-evaluate each activity
-    success_count = 0
-    fail_count = 0
+    counts = reevaluate(activities, db_path, verbose=args.verbose)
 
+    # Summary
+    print()
+    print("=" * 60)
+    print("Re-evaluation Summary:")
+    print(f"  Total activities: {len(activities)}")
+    print(f"  Successful: {counts['success']}")
+    print(f"  Skipped (all splits dynamics_suspect): {counts['skipped']}")
+    print(f"  Failed: {counts['failed']}")
+    print("=" * 60)
+
+    return 0 if counts["failed"] == 0 else 1
+
+
+def reevaluate(
+    activities: list[tuple[int, str]], db_path: str, verbose: bool = False
+) -> dict[str, int]:
+    """Re-evaluate each ``(activity_id, activity_date)``; return outcome counts.
+
+    A run whose every split is ``dynamics_suspect`` has no trustworthy form
+    average: it is counted as ``skipped``, not ``failed`` (#1637), and its old
+    grade has already been removed by :func:`evaluate_and_store`.
+    """
+    counts = {"success": 0, "skipped": 0, "failed": 0}
     for i, (activity_id, activity_date) in enumerate(activities, 1):
         print(
             f"[{i}/{len(activities)}] Re-evaluating {activity_date} (ID: {activity_id})...",
@@ -174,27 +196,21 @@ def main() -> int:
                 condition_group="flat_road",
             )
 
-            if args.verbose:
+            if verbose:
                 print(f"\n  Overall: {result['overall_star_rating']}", end=" ")
 
             print("\u2713")
-            success_count += 1
+            counts["success"] += 1
+
+        except AllSplitsSuspectError:
+            print("- (all splits dynamics_suspect)")
+            counts["skipped"] += 1
 
         except Exception as e:
             print("\u2717")
             print(f"  Error: {e}", file=sys.stderr)
-            fail_count += 1
-
-    # Summary
-    print()
-    print("=" * 60)
-    print("Re-evaluation Summary:")
-    print(f"  Total activities: {len(activities)}")
-    print(f"  Successful: {success_count}")
-    print(f"  Failed: {fail_count}")
-    print("=" * 60)
-
-    return 0 if fail_count == 0 else 1
+            counts["failed"] += 1
+    return counts
 
 
 if __name__ == "__main__":

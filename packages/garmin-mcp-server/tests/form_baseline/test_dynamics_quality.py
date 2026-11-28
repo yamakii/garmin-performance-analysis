@@ -9,15 +9,23 @@ import duckdb
 import numpy as np
 import pytest
 
+from garmin_mcp.form_baseline.data_fetcher import (
+    AllSplitsSuspectError,
+    get_splits_data,
+)
 from garmin_mcp.form_baseline.dynamics_quality import (
     MIN_BIN_SAMPLES,
     BinReference,
     flag_suspect_dynamics,
     suspect_score,
 )
-from garmin_mcp.form_baseline.evaluator import evaluate_and_store
+from garmin_mcp.form_baseline.evaluator import (
+    evaluate_and_store,
+    evaluate_form_safely,
+)
 from garmin_mcp.form_baseline.split_filter import form_split_params, form_split_sql
 from garmin_mcp.form_baseline.trainer import train_form_baselines
+from garmin_mcp.scripts.reevaluate_all_activities import reevaluate
 from tests.form_baseline.test_evaluator_sensor import (
     ACTIVITY_DATE,
     PACE,
@@ -322,3 +330,92 @@ def test_evaluation_uses_clean_splits_only(initialized_db_path: Path) -> None:
         conn.close()
     assert row is not None
     assert row[0] == pytest.approx(sum(clean) / len(clean))
+
+
+def _seed_flagged_run(
+    db_path: Path,
+    activity_id: int,
+    gcts: list[float],
+    suspect: list[bool],
+    pace: float = PACE,
+) -> None:
+    conn = duckdb.connect(str(db_path))
+    try:
+        _insert_activity(conn, activity_id, ACTIVITY_DATE, "wrist")
+        for index, (gct, flagged) in enumerate(zip(gcts, suspect, strict=True), 1):
+            _insert_split(
+                conn, activity_id, index, gct, 8.0, pace=pace, suspect=flagged
+            )
+    finally:
+        conn.close()
+
+
+@pytest.mark.integration
+def test_fetcher_fallback_keeps_suspect_exclusion(initialized_db_path: Path) -> None:
+    """The walk-dominated fallback (> 10:00/km) still drops suspect splits (#1637)."""
+    _seed_flagged_run(
+        initialized_db_path,
+        9200,
+        [250.0, 254.0, 200.0],
+        [False, False, True],
+        pace=660.0,
+    )
+
+    data = get_splits_data(str(initialized_db_path), 9200)
+
+    assert data["running_splits_only"] is False
+    assert data["split_count"] == 2
+    assert data["gct_ms"] == pytest.approx(252.0)
+
+
+@pytest.mark.integration
+def test_fetcher_raises_when_all_splits_suspect(initialized_db_path: Path) -> None:
+    _seed_flagged_run(
+        initialized_db_path, 9201, [205.0, 210.0, 200.0], [True, True, True]
+    )
+
+    with pytest.raises(AllSplitsSuspectError):
+        get_splits_data(str(initialized_db_path), 9201)
+
+
+@pytest.mark.integration
+def test_evaluate_removes_row_when_all_splits_suspect(
+    initialized_db_path: Path,
+) -> None:
+    """A stale grade from before the flags is deleted, not left behind (#1637)."""
+    _seed_baselines(initialized_db_path, ("wrist",))
+    _seed_flagged_run(
+        initialized_db_path, 9202, [250.0, 252.0, 254.0], [False, False, False]
+    )
+    db = str(initialized_db_path)
+    assert evaluate_form_safely(9202, ACTIVITY_DATE, db) == "success"
+
+    conn = duckdb.connect(db)
+    try:
+        conn.execute(
+            "UPDATE splits SET dynamics_suspect = TRUE WHERE activity_id = 9202"
+        )
+    finally:
+        conn.close()
+
+    assert evaluate_form_safely(9202, ACTIVITY_DATE, db) == "dynamics_suspect"
+    conn = duckdb.connect(db, read_only=True)
+    try:
+        rows = conn.execute(
+            "SELECT COUNT(*) FROM form_evaluations WHERE activity_id = 9202"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert rows == (0,)
+
+
+@pytest.mark.integration
+def test_reevaluate_counts_all_suspect_as_skipped(initialized_db_path: Path) -> None:
+    _seed_baselines(initialized_db_path, ("wrist",))
+    _seed_flagged_run(
+        initialized_db_path, 9203, [205.0, 210.0, 200.0], [True, True, True]
+    )
+
+    counts = reevaluate([(9203, ACTIVITY_DATE)], str(initialized_db_path))
+
+    assert counts == {"success": 0, "skipped": 1, "failed": 0}

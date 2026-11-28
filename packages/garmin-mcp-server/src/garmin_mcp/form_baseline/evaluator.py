@@ -13,7 +13,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from .data_fetcher import get_splits_data
+from .data_fetcher import AllSplitsSuspectError, get_splits_data
 from .model_loader import load_models_from_db, load_models_from_file
 from .power_calculator import (
     calculate_power_efficiency_internal,
@@ -34,6 +34,7 @@ def evaluate_form_safely(activity_id: int, activity_date: str, db_path: str) -> 
 
     Returns:
         ``"success"``, ``"model_not_found"`` (no trained baseline),
+        ``"dynamics_suspect"`` (every split's pod dynamics collapsed, #1637),
         ``"failed"`` (missing splits or other data issues) or ``"error"``.
     """
     try:
@@ -43,6 +44,9 @@ def evaluate_form_safely(activity_id: int, activity_date: str, db_path: str) -> 
     except FileNotFoundError as e:
         logger.warning("Form evaluation skipped for %s: %s", activity_id, e)
         return "model_not_found"
+    except AllSplitsSuspectError as e:
+        logger.warning("Form evaluation skipped for %s: %s", activity_id, e)
+        return "dynamics_suspect"
     except ValueError as e:
         logger.error("Form evaluation failed for %s: %s", activity_id, e)
         return "failed"
@@ -118,7 +122,19 @@ def evaluate_and_store(
         models = load_models_from_file(model_file)
 
     # Get actual data from splits
-    splits_data = get_splits_data(db_path, activity_id)
+    try:
+        splits_data = get_splits_data(db_path, activity_id)
+    except AllSplitsSuspectError:
+        # No trustworthy split is left: drop any earlier grade so no reader
+        # (vs_previous, the Web page, get_form_evaluations) keeps showing a
+        # value built from the collapsed splits (#1637).
+        from garmin_mcp.database.connection import get_write_connection
+
+        with get_write_connection(db_path) as write_conn:
+            write_conn.execute(
+                "DELETE FROM form_evaluations WHERE activity_id = ?", [activity_id]
+            )
+        raise
 
     if model_file is not None:
         # File models carry no sensor; the baseline freshness check and the power
