@@ -47,6 +47,7 @@ def _insert_split(
     *,
     pace: float = BIN_PACE,
     suspect: bool = False,
+    cadence: float = 176.0,
 ) -> None:
     conn.execute(
         """
@@ -54,16 +55,24 @@ def _insert_split(
             activity_id, split_index, distance, duration_seconds,
             pace_seconds_per_km, cadence, ground_contact_time,
             vertical_oscillation, vertical_ratio, role_phase, dynamics_suspect
-        ) VALUES (?, ?, 1.0, ?, ?, 176.0, ?, ?, 8.0, 'run', ?)
+        ) VALUES (?, ?, 1.0, ?, ?, ?, ?, ?, 8.0, 'run', ?)
         """,
-        [activity_id, index, pace, pace, gct, vo, suspect],
+        [activity_id, index, pace, pace, cadence, gct, vo, suspect],
     )
 
 
 def _seed_reference(
-    db_path: Path, source: str = "pod", n_splits: int = 60, start_id: int = 1000
+    db_path: Path,
+    source: str = "pod",
+    n_splits: int = 60,
+    start_id: int = 1000,
+    cadence_sd: float = 0.0,
 ) -> None:
-    """``n_splits`` normal splits (GCT 255 +-5 / VO 8.0 +-0.3) over prior runs."""
+    """``n_splits`` normal splits (GCT 255 +-5 / VO 8.0 +-0.3) over prior runs.
+
+    Cadence is a flat 176 spm unless ``cadence_sd`` gives it a spread
+    (178 +- ``cadence_sd``).
+    """
     rng = np.random.default_rng(7)
     conn = duckdb.connect(str(db_path))
     try:
@@ -79,6 +88,9 @@ def _seed_reference(
                     index,
                     float(rng.normal(255.0, 5.0)),
                     float(rng.normal(8.0, 0.3)),
+                    cadence=(
+                        float(rng.normal(178.0, cadence_sd)) if cadence_sd else 176.0
+                    ),
                 )
     finally:
         conn.close()
@@ -90,12 +102,14 @@ def _seed_today(
     source: str = "pod",
     day: str = TODAY,
     activity_id: int = TODAY_ID,
+    cadences: list[float] | None = None,
 ) -> None:
     conn = duckdb.connect(str(db_path))
     try:
         _insert_activity(conn, activity_id, day, source)
         for index, (gct, vo) in enumerate(splits, start=1):
-            _insert_split(conn, activity_id, index, gct, vo)
+            cadence = cadences[index - 1] if cadences else 176.0
+            _insert_split(conn, activity_id, index, gct, vo, cadence=cadence)
     finally:
         conn.close()
 
@@ -136,6 +150,23 @@ def test_flag_marks_collapsed_pod_splits(initialized_db_path: Path) -> None:
 
     assert count == 1
     assert flags == [True, False]
+
+
+@pytest.mark.integration
+def test_flag_spares_low_cadence_bounce(initialized_db_path: Path) -> None:
+    """A high VO at a clearly low cadence is real running, not a pod artifact."""
+    _seed_reference(initialized_db_path, cadence_sd=2.0)
+    # Same high-VO split twice: at 166 spm (z ~ -6) and at a normal 178 spm.
+    _seed_today(
+        initialized_db_path,
+        [(250.0, 12.0), (250.0, 12.0)],
+        cadences=[166.0, 178.0],
+    )
+
+    count, flags = _flag(initialized_db_path)
+
+    assert count == 1
+    assert flags == [False, True]
 
 
 @pytest.mark.integration
